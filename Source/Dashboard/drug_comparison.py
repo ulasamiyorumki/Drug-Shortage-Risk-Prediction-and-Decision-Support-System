@@ -77,7 +77,7 @@ def render(st, context):
                 values.append({"Alan": services.FIELD_NAMES_TR.get(field, field), "Değer": str(value), "Kaynak": source_names[source_name]})
         with column:
             st.markdown(f"#### {anchor.get('Drug / product', 'Drug')}")
-            st.dataframe(pd.DataFrame(values), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(values), width="stretch", hide_index=True)
 
     st.markdown("### Kaynaklar arası ölçüler")
     rows = []
@@ -109,7 +109,7 @@ def render(st, context):
     })
     comparison = comparison.rename(columns={col: f"İlaç {index}" for index, col in enumerate(comparison.columns[1:], start=1)})
     # Transposing mixed numeric/text measurements creates object columns that Arrow cannot infer reliably.
-    st.dataframe(comparison.astype("string"), use_container_width=True, hide_index=True)
+    st.dataframe(comparison.astype("string"), width="stretch", hide_index=True)
 
     with st.expander("Temel kaynak kayıtları"):
         record_tabs = st.tabs([str(entity[0].get("Drug / product", f"Drug {i+1}")) for i, entity in enumerate(entities)])

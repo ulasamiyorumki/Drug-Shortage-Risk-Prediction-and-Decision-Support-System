@@ -62,7 +62,7 @@ def render(st, context):
         if "Doz birimi başına harcama (USD)" in chart_data:
             st.markdown("#### Doz birimi başına ortalama harcama")
             st.line_chart(chart_data["Doz birimi başına harcama (USD)"])
-        st.dataframe(chart_data, use_container_width=True)
+        st.dataframe(chart_data, width="stretch")
         st.caption("CMS ölçüleri yıllık çalışma kitaplarında verildiği biçimde gösterilir. Çakışan yılları tekrar saymamak için her raporun en son yıl bloğu kullanılır.")
         st.download_button("CMS kayıtlarını dışa aktar", cms[[c for c in cms.columns if not c.startswith("_")]].to_csv(index=False).encode("utf-8-sig"), "cms_medicare_part_d.csv", "text/csv")
 
@@ -76,7 +76,7 @@ def render(st, context):
         price_data = va.copy()
         for column in price_cols:
             price_data[column] = pd.to_numeric(price_data[column].astype(str).str.replace(r"[$,]", "", regex=True), errors="coerce")
-        st.dataframe(price_data.drop(columns=[c for c in price_data if c.startswith("_")]), use_container_width=True, hide_index=True)
+        st.dataframe(price_data.drop(columns=[c for c in price_data if c.startswith("_")]), width="stretch", hide_index=True)
         if price_cols:
             st.markdown("#### Fiyat dağılımları")
             st.bar_chart(price_data[price_cols].describe().loc[["min", "50%", "mean", "max"]].T)
@@ -104,11 +104,11 @@ def _render_sqlite(st, store):
         if "Average Spending Per Dosage Unit (Weighted)" in summary:
             st.markdown("#### Ağırlıklı doz birimi başına harcama")
             st.line_chart(summary["Average Spending Per Dosage Unit (Weighted)"])
-        st.dataframe(summary, use_container_width=True)
+        st.dataframe(summary, width="stretch")
         cms_records = store.search("CMS Medicare Part D", query, limit=100)
         columns = [column for column in ["Drug / product", "Generic name", "Brand name", "Manufacturer", "Report year", "Total Claims", "Total Spending", "Spending (latest year in report)"] if column in cms_records]
         if columns:
-            st.dataframe(cms_records[columns].astype("string"), use_container_width=True, hide_index=True)
+            st.dataframe(cms_records[columns].astype("string"), width="stretch", hide_index=True)
         st.download_button("Eşleşen CMS kayıtları (ilk 100) CSV", cms_records[[c for c in cms_records if not c.startswith("_")]].to_csv(index=False).encode("utf-8-sig"), "cms_matching_records.csv", "text/csv")
 
     st.subheader("VA tedarik / sözleşme fiyatları")
@@ -122,5 +122,5 @@ def _render_sqlite(st, store):
         for column in price_columns:
             va[column] = pd.to_numeric(va[column].astype(str).str.replace(r"[$,]", "", regex=True), errors="coerce")
         visible = [column for column in ["Drug / product", "Generic name", "Trade name", "Vendor", "Contract number", "NDC", *price_columns] if column in va]
-        st.dataframe(va[visible].astype("string"), use_container_width=True, hide_index=True)
+        st.dataframe(va[visible].astype("string"), width="stretch", hide_index=True)
         st.caption("En fazla 500 VA satırı gösteriliyor; tam sayfalı erişim Veri Kümesi İnceleyici'de bulunur.")

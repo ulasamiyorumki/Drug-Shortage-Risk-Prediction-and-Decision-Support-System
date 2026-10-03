@@ -351,7 +351,7 @@ def display_matches(frame: pd.DataFrame, max_rows: int = 50, key: str = "matches
     for column in output.columns:
         output[column] = output[column].map(str).astype("string")
     output = translated_frame(output)
-    st.dataframe(output, use_container_width=True, hide_index=True)
+    st.dataframe(output, width="stretch", hide_index=True)
     st.download_button(
         "Eşleşen satırları CSV olarak indir",
         frame[visible].to_csv(index=False).encode("utf-8-sig"),
@@ -389,7 +389,7 @@ def show_raw_fields(record, source_name: str, key: str) -> None:
         frame.insert(0, "Kaynak veri kümesi", SOURCE_NAMES_TR.get(source_name, source_name))
         frame["Anlaşılır alan adı"] = frame["Original field"].map(lambda name: name.replace(".", " · ").replace("_", " ").replace("[", " ").replace("]", ""))
         frame = frame.rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"})
-        st.dataframe(frame[["Kaynak veri kümesi", "Kaynak alanın özgün adı", "Anlaşılır alan adı", "Değer"]], use_container_width=True, hide_index=True)
+        st.dataframe(frame[["Kaynak veri kümesi", "Kaynak alanın özgün adı", "Anlaşılır alan adı", "Değer"]], width="stretch", hide_index=True)
         field_name = st.selectbox("Kopyalanacak alan değerini seçin", frame["Kaynak alanın özgün adı"].tolist(), key=f"copy_{key}")
         value = frame.loc[frame["Kaynak alanın özgün adı"] == field_name, "Değer"].iloc[0]
         st.code(value, language=None)
@@ -432,7 +432,7 @@ def show_linked_raw_records(frame: pd.DataFrame, source_name: str, key: str, lim
             lambda name: name.replace(".", " · ").replace("_", " ").replace("[", " ").replace("]", "")
         )
         details = details.rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"})
-        st.dataframe(details[["Kaynak veri kümesi", "Kaynak alanın özgün adı", "Anlaşılır alan adı", "Değer"]], use_container_width=True, hide_index=True)
+        st.dataframe(details[["Kaynak veri kümesi", "Kaynak alanın özgün adı", "Anlaşılır alan adı", "Değer"]], width="stretch", hide_index=True)
         st.download_button(
             "Seçili bağlantılı kaydı dışa aktar",
             details.to_csv(index=False).encode("utf-8-sig"),
@@ -541,7 +541,7 @@ def render(st, context):
     ]
     st.dataframe(
         pd.DataFrame([{"Alan": FIELD_NAMES_TR.get(name, name), "Değer": value if value is not None and str(value).strip() else "Mevcut değil", "Kaynak": SOURCE_NAMES_TR.get(start_source, start_source)} for name, value in overview_fields]),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -586,7 +586,7 @@ def render(st, context):
             status = "Olası bağlantı · NDC / başvuru / ad"
         match_status.append({"Veri kümesi": SOURCE_NAMES_TR.get(source_name, source_name), "Eşleşme durumu": status, "Kayıt sayısı": len(frame)})
     st.markdown("#### Veri kümeleri arası eşleşme durumu")
-    st.dataframe(pd.DataFrame(match_status), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(match_status), width="stretch", hide_index=True)
 
     st.markdown("### Veri kümeleri arasındaki olası bağlantılar")
     match_tabs = st.tabs([SOURCE_NAMES_TR.get(source, source) for source in related])
@@ -606,7 +606,7 @@ def render(st, context):
                     }
                 ).sort_values("Tarih", ascending=False)
                 st.markdown("#### Tedarik sıkıntısı geçmişi")
-                st.dataframe(history_table, use_container_width=True, hide_index=True)
+                st.dataframe(history_table, width="stretch", hide_index=True)
                 if history["Date"].notna().any():
                     timeline = history.dropna(subset=["Date"]).groupby("Date").size().sort_index()
                     st.markdown("#### Tedarik sıkıntısı güncellemelerinin zaman çizelgesi")
@@ -635,15 +635,15 @@ def render(st, context):
                 )
             st.markdown("**Ürünler**")
             if product_rows:
-                st.dataframe(pd.DataFrame(product_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(product_rows), width="stretch", hide_index=True)
             submissions = raw_application.get("submissions", [])
             st.markdown("**Düzenleyici işlemler**")
             if submissions:
-                st.dataframe(pd.json_normalize(submissions, sep="."), use_container_width=True, hide_index=True)
+                st.dataframe(pd.json_normalize(submissions, sep="."), width="stretch", hide_index=True)
             openfda = raw_application.get("openfda")
             if openfda:
                 st.markdown("**Drugs@FDA kimlikleri ve sınıflandırmaları**")
-                st.dataframe(pd.DataFrame(flatten_raw(openfda)).rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"}), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(flatten_raw(openfda)).rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"}), width="stretch", hide_index=True)
             show_raw_fields(raw_application, "FDA Drugs@FDA", "fda_application")
     elif isinstance(anchor.get("_raw_record"), dict):
         source_label = start_source

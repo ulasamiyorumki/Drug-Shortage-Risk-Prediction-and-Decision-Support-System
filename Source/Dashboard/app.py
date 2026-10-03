@@ -128,8 +128,12 @@ if "floating_chat_open" not in st.session_state:
     st.session_state["floating_chat_open"] = False
 
 
+chat_background = "#262730" if st.context.theme.type == "dark" else "#ffffff"
+chat_text = "#fafafa" if st.context.theme.type == "dark" else "#31333f"
+chat_border = "rgba(255,255,255,.18)" if st.context.theme.type == "dark" else "rgba(49,51,63,.2)"
+
 st.markdown(
-    f"""
+    """
     <style>
     .st-key-floating_chat_launcher {
         position: fixed !important;
@@ -154,14 +158,16 @@ st.markdown(
         max-height: min(72vh, 650px);
         overflow-y: auto;
         padding: .5rem .9rem .8rem;
-        background: {"#262730" if st.context.theme.type == "dark" else "#ffffff"};
-        color: {"#fafafa" if st.context.theme.type == "dark" else "#31333f"};
-        border: 1px solid {"rgba(255,255,255,.18)" if st.context.theme.type == "dark" else "rgba(49,51,63,.2)"};
+        background: __CHAT_BACKGROUND__;
+        color: __CHAT_TEXT__;
+        border: 1px solid __CHAT_BORDER__;
         border-radius: 1rem;
         box-shadow: 0 8px 32px rgba(0,0,0,.22);
     }
     </style>
-    """,
+    """.replace("__CHAT_BACKGROUND__", chat_background)
+    .replace("__CHAT_TEXT__", chat_text)
+    .replace("__CHAT_BORDER__", chat_border),
     unsafe_allow_html=True,
 )
 with st.container(key="floating_chat_launcher"):
@@ -183,7 +189,7 @@ if st.session_state["floating_chat_open"]:
                 st.markdown(message["content"])
         with st.form("dashboard_chat_form", clear_on_submit=True):
             prompt = st.text_input("Mesajınız", placeholder="Bir mesaj yazın…", label_visibility="collapsed")
-            submitted = st.form_submit_button("Gönder", use_container_width=True)
+            submitted = st.form_submit_button("Gönder", width="stretch")
         if submitted and prompt.strip():
             st.session_state["assistant_messages"].append({"role": "user", "content": prompt.strip()})
             api_key = get_groq_api_key()

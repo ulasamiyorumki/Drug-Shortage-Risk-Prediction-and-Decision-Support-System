@@ -108,7 +108,7 @@ def render(st, context):
     current = filtered.iloc[start : start + page_size]
     st.caption(f"Süzgeçlerden geçen {len(filtered):,} kaydın {start + 1:,}–{min(start + page_size, len(filtered)):,} arası gösteriliyor. Kaydın tüm alanlarını incelemek için satır seçin.")
     visible_frame = current[shown_columns].rename(columns=lambda value: FIELD_LABELS_TR.get(value, value))
-    st.dataframe(_display_safe_frame(visible_frame), use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"table_{source}")
+    st.dataframe(_display_safe_frame(visible_frame), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row", key=f"table_{source}")
 
     st.download_button(
         "Süzülmüş sonuçları CSV olarak indir",
@@ -126,10 +126,10 @@ def render(st, context):
             if isinstance(raw_record, dict):
                 details = services.flatten_raw(raw_record)
                 detail_frame = pd.DataFrame(details).rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"})
-                st.dataframe(detail_frame, use_container_width=True, hide_index=True)
+                st.dataframe(detail_frame, width="stretch", hide_index=True)
             else:
                 public_values = selected[[col for col in selected.index if not col.startswith("_")]]
-                st.dataframe(public_values.rename(index=lambda value: FIELD_LABELS_TR.get(value, value)).rename("Değer").to_frame(), use_container_width=True)
+                st.dataframe(public_values.rename(index=lambda value: FIELD_LABELS_TR.get(value, value)).rename("Değer").to_frame(), width="stretch")
             st.download_button(
                 "Seçili kaydı dışa aktar",
                 pd.DataFrame([selected.drop(labels=[col for col in selected.index if col.startswith("_")]).to_dict()]).to_csv(index=False).encode("utf-8-sig"),
@@ -184,7 +184,7 @@ def _render_sqlite_browser(st, store, source: str, source_label: str) -> None:
     visible = st.multiselect("Görünür sütunlar", columns, default=defaults or columns[:10], key="sqlite_dataset_columns")
     st.caption(f"{offset + 1:,}–{min(offset + len(current), matching_count):,} / {matching_count:,} kayıt")
     table = current[visible].rename(columns=lambda value: FIELD_LABELS_TR.get(value, value))
-    st.dataframe(_display_safe_frame(table), use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"sqlite_table_{source}")
+    st.dataframe(_display_safe_frame(table), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row", key=f"sqlite_table_{source}")
     st.download_button(
         "Görünen sayfayı CSV olarak indir",
         current[columns].to_csv(index=False).encode("utf-8-sig"),
@@ -200,5 +200,5 @@ def _render_sqlite_browser(st, store, source: str, source_label: str) -> None:
             with st.expander("Seçili kaydın tüm özgün alanları", expanded=True):
                 details = store.flatten(raw)
                 detail_frame = pd.DataFrame(details).rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"})
-                st.dataframe(detail_frame, use_container_width=True, hide_index=True)
+                st.dataframe(detail_frame, width="stretch", hide_index=True)
                 st.download_button("Seçili kaydı JSON olarak indir", json.dumps(raw, ensure_ascii=False, indent=2), f"record_{row.get('_db_id')}.json", "application/json")

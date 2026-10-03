@@ -69,7 +69,7 @@ def render(st, context):
     visible = [column for column in visible if column in filtered]
     st.markdown("#### Eşleşen tedarik sıkıntısı kayıtları")
     shortage_table = filtered[visible].replace({None: "Mevcut değil", "": "Mevcut değil", "Not available": "Mevcut değil", "Current": "Güncel", "Resolved": "Çözüldü"}).fillna("Mevcut değil")
-    st.dataframe(services.translated_frame(shortage_table), use_container_width=True, hide_index=True)
+    st.dataframe(services.translated_frame(shortage_table), width="stretch", hide_index=True)
     st.download_button("Süzülmüş kayıtları dışa aktar", filtered[visible].to_csv(index=False).encode("utf-8-sig"), "shortage_analysis.csv", "text/csv")
 
     labels = [f"{row['Drug / product']} · {row.get('Updated', 'date unavailable')} · {row.get('Company', 'manufacturer unavailable')}" for _, row in filtered.head(500).iterrows()]

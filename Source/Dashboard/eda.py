@@ -371,7 +371,7 @@ def show_profile(df: pd.DataFrame, title: str, key: str, preview: bool = True) -
     with st.expander("Sütunlar ne anlama geliyor?", expanded=False):
         st.dataframe(
             pd.DataFrame({"Kaynak sütunun özgün adı": df.columns, "Türkçe açıklama": [column_meaning(column) for column in df.columns]}),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
     with st.expander("Veri kalitesi ve örnek kayıtlar"):
@@ -383,9 +383,9 @@ def show_profile(df: pd.DataFrame, title: str, key: str, preview: bool = True) -
                 "Farklı değer sayısı": df.nunique(dropna=True),
             }
         ).sort_values("Eksik %", ascending=False)
-        st.dataframe(profile, use_container_width=True)
+        st.dataframe(profile, width="stretch")
         if preview:
-            st.dataframe(_display_safe_frame(df.head(10)), use_container_width=True, hide_index=True)
+            st.dataframe(_display_safe_frame(df.head(10)), width="stretch", hide_index=True)
 
 
 def show_bar(df: pd.DataFrame, columns: list[str], title: str, key: str) -> None:
@@ -404,7 +404,7 @@ def show_bar(df: pd.DataFrame, columns: list[str], title: str, key: str) -> None
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.grid(axis="x", alpha=0.2)
     fig.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
 
@@ -457,7 +457,7 @@ def render(st, context):
                 {"Terim / kaynak alanı": "UNII", "Türkçe açıklama": "FDA'nın etken madde veya başka bir madde için verdiği kimlik."},
                 {"Terim / kaynak alanı": "Dosage form · Farmasötik biçim", "Türkçe açıklama": "Tablet, kapsül veya enjeksiyon gibi ilacın hazırlanış biçimi."},
                 {"Terim / kaynak alanı": "Route · Uygulama yolu", "Türkçe açıklama": "Oral, damar içi veya topikal gibi ilacın uygulanma yolu."},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
         with guide_tabs[1]:
             st.markdown("#### FDA İlaç ve Tedarik Sıkıntısı kayıtları")
             st.dataframe(pd.DataFrame([
@@ -468,7 +468,7 @@ def render(st, context):
                 {"Alan": "Initial posting / update date · İlk yayın / güncelleme tarihi", "Kaynak": "Tedarik sıkıntısı", "Türkçe açıklama": "Kaydın yayın ve güncelleme tarihi; kesintinin fiilî başlangıç veya bitiş tarihi olmayabilir."},
                 {"Alan": "Shortage reason / availability · Neden / bulunabilirlik", "Kaynak": "Tedarik sıkıntısı", "Türkçe açıklama": "FDA kaydında bildirilen tedarik sıkıntısı nedeni ve bulunabilirlik bilgisi."},
                 {"Alan": "Therapeutic category / presentation · Tedavi kategorisi / sunum", "Kaynak": "Tedarik sıkıntısı", "Türkçe açıklama": "FDA'nın ilaç için verdiği kategori ve ürün sunumu bilgisi."},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
         with guide_tabs[2]:
             st.markdown("#### CMS Medicare Part D ölçüleri")
             st.info("Bu değerler Medicare Part D kapsamında raporlanır. Reçete talepleri ve doz birimleri bu programdaki kullanım/talep göstergesidir; ABD genelindeki toplam talep değildir.")
@@ -482,7 +482,7 @@ def render(st, context):
                 {"Alan": "Total Beneficiaries · Yararlanıcı sayısı", "Türkçe açıklama": "Dönemde ilaçla ilişkilendirilen yararlanıcılar; yıllar boyunca tekil kişi sayısı olmayabilir."},
                 {"Alan": "Average Spending Per Dosage Unit (Weighted) · Ağırlıklı doz birimi harcaması", "Türkçe açıklama": "CMS yöntemine göre ağırlıklandırılmış doz birimi başına harcama; birimi ve yöntemiyle yorumlayın."},
                 {"Alan": "Çakışan rapor yılları", "Türkçe açıklama": "Yıllık çalışma kitaplarında birden fazla yıl bulunabilir. Yıllık özet her raporun en son yılını kullanır."},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
             if medicare_files:
                 try:
                     latest_book = medicare_files[-1]
@@ -497,7 +497,7 @@ def render(st, context):
                             "Kaynak alanın özgün adı": dictionary[field_column].dropna().astype(str),
                         })
                     cms_dictionary["Türkçe açıklama"] = cms_dictionary["Kaynak alanın özgün adı"].map(column_meaning)
-                    st.dataframe(cms_dictionary, use_container_width=True, hide_index=True)
+                    st.dataframe(cms_dictionary, width="stretch", hide_index=True)
                     st.caption("CMS'in özgün alan adları korunur; açıklamalar Türkçedir.")
                 except Exception as exc:
                     st.caption(f"Çalışma kitabının veri sözlüğü yüklenemedi: {exc}")
@@ -511,7 +511,7 @@ def render(st, context):
                 {"Alan": "FSS Price · FSS fiyatı", "Türkçe açıklama": "Federal Tedarik Çizelgesi sözleşme fiyatı."},
                 {"Alan": "NC Price · Ulusal sözleşme fiyatı", "Türkçe açıklama": "Kaynak katalogdaki National Contract fiyatı."},
                 {"Alan": "Big 4 Price · Big 4 fiyatı", "Türkçe açıklama": "VA Big 4 satın alma programına ait fiyat alanı."},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
             st.warning("VA fiyatları VA tedarik/sözleşme fiyatlarıdır; genel eczane, toptancı veya piyasa fiyatı değildir.")
         with guide_tabs[4]:
             st.markdown("#### Kayıtlar nasıl eşleştirilir?")
@@ -520,7 +520,7 @@ def render(st, context):
                 {"Gösterim": "Mevcut değil", "Anlamı": "Kaynak kaydı var; ancak bu alan boş veya kayıtta bulunmuyor."},
                 {"Gösterim": "Eşleşen kayıt yok", "Anlamı": "Seçilen ilaç için bu veri kümesinde bağlantılı kayıt bulunamadı."},
                 {"Gösterim": "Uygulanamaz", "Anlamı": "Alan bu kayıt türü için geçerli değil."},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
 
     tabs = st.tabs(["Genel Bakış", "FDA İlaçları", "FDA Tedarik Sıkıntıları", "VA Sözleşmeleri", "NDC Dizini", "CMS Medicare Part D"])
 
@@ -543,7 +543,7 @@ def render(st, context):
         ]
         overview = pd.DataFrame(overview_rows).rename(columns={"Source": "Kaynak", "File": "Dosya", "Records": "Kayıt sayısı", "Status": "Durum"})
         overview["Durum"] = overview["Durum"].replace({"Loaded": "Yüklendi", "Unavailable": "Mevcut değil"})
-        st.dataframe(overview, use_container_width=True, hide_index=True)
+        st.dataframe(overview, width="stretch", hide_index=True)
         if not medicare_files:
             st.error(f"Medicare raporları şu konumda bulunamadı: `{medicare_dir}`")
         failed_reports = [report for report in reports if "error" in report]
@@ -603,10 +603,10 @@ def render(st, context):
             price_cols = [column for column in va if "price" in column.lower()]
             if price_cols:
                 st.markdown("#### Sözleşme fiyatı özeti")
-                st.dataframe(va[price_cols].describe().T, use_container_width=True)
+                st.dataframe(va[price_cols].describe().T, width="stretch")
             if "PV" in va:
                 st.markdown("#### Ana tedarikçi göstergesi")
-                st.dataframe(va["PV"].fillna("Boş").value_counts().rename_axis("PV").to_frame("Kayıt sayısı"), use_container_width=True)
+                st.dataframe(va["PV"].fillna("Boş").value_counts().rename_axis("PV").to_frame("Kayıt sayısı"), width="stretch")
 
     with tabs[4]:
         st.subheader("Ulusal İlaç Kodu (NDC) dizini")
@@ -651,7 +651,7 @@ def render(st, context):
             st.line_chart(annual["Toplam harcama"])
             st.dataframe(
                 annual.style.format({"Toplam harcama": "${:,.0f}", "İlaç başına medyan harcama": "${:,.0f}"}),
-                use_container_width=True,
+                width="stretch",
             )
             with st.expander("Bir yıllık raporun ayrıntılarını açın"):
                 selected_report = st.selectbox(
@@ -671,7 +671,7 @@ def render(st, context):
                     brand = next((column for column in frame.columns if "brand name" in column.lower()), None)
                     if brand:
                         top = pd.DataFrame({"Marka adı": frame[brand], "Harcama": spending}).nlargest(10, "Harcama")
-                        right.dataframe(_display_safe_frame(top).style.format({"Harcama": "${:,.0f}"}), use_container_width=True, hide_index=True)
+                        right.dataframe(_display_safe_frame(top).style.format({"Harcama": "${:,.0f}"}), width="stretch", hide_index=True)
                     with st.expander("Çalışma sayfaları ve örnek satırlar"):
                         st.write("Çalışma sayfaları:", ", ".join(info["sheets"]))
                         for sheet in info["sheets"]:
@@ -679,11 +679,11 @@ def render(st, context):
                                 continue
                             sample = read_xlsx_sheet(Path(selected_report["path"]), sheet, nrows=5)
                             st.markdown(f"**{sheet}**")
-                            st.dataframe(_display_safe_frame(sample), use_container_width=True, hide_index=True)
+                            st.dataframe(_display_safe_frame(sample), width="stretch", hide_index=True)
                     with st.expander("CMS raporundaki sütunlar ne anlama geliyor?"):
                         st.dataframe(
                             pd.DataFrame({"Kaynak sütunun özgün adı": frame.columns, "Türkçe açıklama": [column_meaning(column) for column in frame.columns]}),
-                            use_container_width=True,
+                            width="stretch",
                             hide_index=True,
                         )
         else:
@@ -715,7 +715,7 @@ def _render_sqlite_eda(st, store) -> None:
             {"Terim": "CMS Medicare Part D", "Açıklama": "Medicare Part D kapsamındaki kullanım ve harcama ölçüleri; tüm ABD talebini temsil etmez."},
             {"Terim": "VA fiyatı", "Açıklama": "VA satın alma/sözleşme fiyatıdır; genel eczane veya piyasa fiyatı değildir."},
         ])
-        st.dataframe(guide, use_container_width=True, hide_index=True)
+        st.dataframe(guide, width="stretch", hide_index=True)
 
     source_options = ["FDA Drugs", "Drug Shortages", "NDC Products", "NDC Packages", "CMS Medicare Part D", "VA Contracts"]
     source = st.selectbox("Örnek kayıtlarını incele", source_options, format_func=lambda item: SOURCE_LABELS_TR.get(item, item), key="sqlite_eda_source")
@@ -723,13 +723,13 @@ def _render_sqlite_eda(st, store) -> None:
     fields = store.fields(source)
     dictionary = pd.DataFrame({"Kaynak alanı": fields, "Türkçe açıklama": [column_meaning(field) for field in fields]})
     with st.expander("Seçili kaynağın alan sözlüğü"):
-        st.dataframe(dictionary, use_container_width=True, hide_index=True)
+        st.dataframe(dictionary, width="stretch", hide_index=True)
     total = store.count(source, query=query)
     st.metric("Eşleşen kayıt", f"{total:,}")
     preview = store.search(source, query, limit=100)
     columns = [column for column in preview.columns if not column.startswith("_")]
     if not preview.empty:
-        st.dataframe(_display_safe_frame(preview[columns]), use_container_width=True, hide_index=True)
+        st.dataframe(_display_safe_frame(preview[columns]), width="stretch", hide_index=True)
     else:
         st.info("Bu kaynakta eşleşen kayıt bulunamadı.")
     st.caption("Ayrıntılı arama, filtreleme, sayfalama ve dışa aktarma için Veri Kümesi İnceleyici sayfasını kullanın.")
