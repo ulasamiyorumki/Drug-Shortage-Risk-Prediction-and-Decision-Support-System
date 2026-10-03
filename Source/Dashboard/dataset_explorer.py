@@ -9,6 +9,14 @@ import streamlit as st
 PAGE_TITLE = "Veri Kümesi İnceleyici"
 PAGE_ICON = "🗂️"
 
+
+def _display_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Convert mixed object columns to consistent display strings for Arrow."""
+    safe = frame.copy()
+    for column in safe.select_dtypes(include=["object"]).columns:
+        safe[column] = safe[column].map(lambda value: pd.NA if pd.isna(value) else str(value)).astype("string")
+    return safe
+
 FIELD_LABELS_TR = {
     "Drug / product": "İlaç / ürün", "Generic ingredient": "Jenerik etken madde", "Generic name": "Jenerik ad",
     "Brand name": "Marka adı", "Manufacturer / labeler": "Üretici / etiket sahibi", "Manufacturer": "Üretici",
@@ -89,7 +97,8 @@ def render(st, context):
     start = (page_number - 1) * page_size
     current = filtered.iloc[start : start + page_size]
     st.caption(f"Süzgeçlerden geçen {len(filtered):,} kaydın {start + 1:,}–{min(start + page_size, len(filtered)):,} arası gösteriliyor. Kaydın tüm alanlarını incelemek için satır seçin.")
-    st.dataframe(current[shown_columns].rename(columns=lambda value: FIELD_LABELS_TR.get(value, value)), use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"table_{source}")
+    visible_frame = current[shown_columns].rename(columns=lambda value: FIELD_LABELS_TR.get(value, value))
+    st.dataframe(_display_safe_frame(visible_frame), use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"table_{source}")
 
     st.download_button(
         "Süzülmüş sonuçları CSV olarak indir",

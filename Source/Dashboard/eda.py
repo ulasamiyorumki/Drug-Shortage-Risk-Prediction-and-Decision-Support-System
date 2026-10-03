@@ -159,6 +159,14 @@ def column_meaning(column: str) -> str:
     return "Kaynakta yer alan alan. Ayrıntılı anlamı için ham kaydı veya kaynağın veri sözlüğünü inceleyin."
 
 
+def _display_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize mixed Excel object columns for Streamlit/Arrow display."""
+    safe = frame.copy()
+    for column in safe.select_dtypes(include=["object"]).columns:
+        safe[column] = safe[column].map(lambda value: pd.NA if pd.isna(value) else str(value)).astype("string")
+    return safe
+
+
 def resolve_datasets_dir(context: dict) -> Path:
     """Resolve the project data directory from the app context or this module path."""
     candidates = [
@@ -358,7 +366,7 @@ def show_profile(df: pd.DataFrame, title: str, key: str, preview: bool = True) -
         ).sort_values("Eksik %", ascending=False)
         st.dataframe(profile, use_container_width=True)
         if preview:
-            st.dataframe(df.head(10), use_container_width=True, hide_index=True)
+            st.dataframe(_display_safe_frame(df.head(10)), use_container_width=True, hide_index=True)
 
 
 def show_bar(df: pd.DataFrame, columns: list[str], title: str, key: str) -> None:
@@ -641,7 +649,7 @@ def render(st, context):
                         brand = next((col for col in frame.columns if "brand name" in col.lower()), None)
                         if brand:
                             top = pd.DataFrame({"Marka adı": frame[brand], "Harcama": spending}).nlargest(10, "Harcama")
-                            right.dataframe(top.style.format({"Harcama": "${:,.0f}"}), use_container_width=True, hide_index=True)
+                            right.dataframe(_display_safe_frame(top).style.format({"Harcama": "${:,.0f}"}), use_container_width=True, hide_index=True)
                         with st.expander("Çalışma sayfaları ve örnek satırlar"):
                             st.write("Çalışma sayfaları:", ", ".join(info["sheets"]))
                             for sheet in info["sheets"]:
@@ -649,7 +657,7 @@ def render(st, context):
                                     continue
                                 sample = read_xlsx_sheet(report["path"], sheet, nrows=5)
                                 st.markdown(f"**{sheet}**")
-                                st.dataframe(sample, use_container_width=True, hide_index=True)
+                                st.dataframe(_display_safe_frame(sample), use_container_width=True, hide_index=True)
                         with st.expander("CMS raporundaki sütunlar ne anlama geliyor?"):
                             st.dataframe(
                                 pd.DataFrame({"Kaynak sütunun özgün adı": frame.columns, "Türkçe açıklama": [column_meaning(column) for column in frame.columns]}),

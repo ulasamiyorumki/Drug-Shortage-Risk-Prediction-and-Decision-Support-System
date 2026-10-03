@@ -98,7 +98,7 @@ with st.sidebar.expander("🔍 Genel ilaç arama", expanded=False):
 default_index = next((i for i, (module, _) in enumerate(pages) if module.PAGE_TITLE == "Keşifsel Veri Analizi"), 0)
 if st.session_state.get("page_navigation") not in labels:
     st.session_state["page_navigation"] = labels[default_index]
-selected = st.sidebar.radio("Sayfalar", labels, index=default_index, key="page_navigation")
+selected = st.sidebar.radio("Sayfalar", labels, key="page_navigation")
 module, _ = pages[labels.index(selected)]
 module.render(st, {
     "project_root": PROJECT_ROOT,
