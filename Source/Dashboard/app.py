@@ -93,13 +93,11 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         ),
     }, *messages[-12:]]
     payload = json.dumps({
-        "model": "qwen/qwen3.8-27b",
+        "model": "openai/gpt-oss-120b",
         "messages": conversation,
-        "reasoning_effort": "none",
+        "reasoning_effort": "low",
         "temperature": 0.7,
-        "top_p": 0.8,
-        "presence_penalty": 1.5,
-        "max_tokens": 1200,
+        "max_completion_tokens": 1200,
     }).encode("utf-8")
     request = Request(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -131,7 +129,7 @@ if "floating_chat_open" not in st.session_state:
 
 
 st.markdown(
-    """
+    f"""
     <style>
     .st-key-floating_chat_launcher {
         position: fixed !important;
@@ -156,8 +154,9 @@ st.markdown(
         max-height: min(72vh, 650px);
         overflow-y: auto;
         padding: .5rem .9rem .8rem;
-        background: var(--background-color, white);
-        border: 1px solid rgba(128,128,128,.35);
+        background: {"#262730" if st.context.theme.type == "dark" else "#ffffff"};
+        color: {"#fafafa" if st.context.theme.type == "dark" else "#31333f"};
+        border: 1px solid {"rgba(255,255,255,.18)" if st.context.theme.type == "dark" else "rgba(49,51,63,.2)"};
         border-radius: 1rem;
         box-shadow: 0 8px 32px rgba(0,0,0,.22);
     }

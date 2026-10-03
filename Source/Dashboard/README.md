@@ -24,7 +24,7 @@ Katalog kaynak kayıtlarının özgün alanlarını korur. Yeni kaynak verisi ge
 
 ## Groq destekli sayfa asistanı
 
-Asistan, sayfanın sol altındaki sabit sohbet düğmesinden açılıp kapanır; konuşma geçmişi aynı oturumda sayfalar arasında korunur. Groq'ta `qwen/qwen3.8-27b` modeli kullanılır. API anahtarını kaynak koda veya GitHub'a koymayın.
+Asistan, sayfanın sol altındaki sabit sohbet düğmesinden açılıp kapanır; konuşma geçmişi aynı oturumda sayfalar arasında korunur. Groq'ta `openai/gpt-oss-120b` modeli kullanılır. Sohbet penceresi Streamlit'in seçili açık/koyu temasına uyar. API anahtarını kaynak koda veya GitHub'a koymayın.
 
 Yerelde, proje kökünde `.env.example` dosyasını `.env` adıyla kopyalayın ve `GROQ_API_KEY` değerini kendi anahtarınızla doldurun. `.env` `.gitignore` içindedir; Git'e eklenmez.
 
