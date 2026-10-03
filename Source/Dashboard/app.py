@@ -67,19 +67,21 @@ module.render(st, {
 
 
 def get_groq_api_key() -> str:
+    # Streamlit Cloud's Secrets value must win over any stale deployment env var.
+    try:
+        secret = str(st.secrets["GROQ_API_KEY"]).strip()
+        if secret:
+            return secret
+    except (KeyError, FileNotFoundError):
+        pass
+
     try:
         from dotenv import load_dotenv
 
         load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
         pass
-    key = os.getenv("GROQ_API_KEY", "").strip()
-    if key:
-        return key
-    try:
-        return str(st.secrets["GROQ_API_KEY"]).strip()
-    except (KeyError, FileNotFoundError):
-        return ""
+    return os.getenv("GROQ_API_KEY", "").strip()
 
 
 def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> str:
@@ -111,11 +113,21 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         return result["choices"][0]["message"]["content"].strip()
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:500]
-        if error.code in (401, 403):
+        try:
+            error_message = json.loads(detail).get("error", {}).get("message", "")
+        except (AttributeError, json.JSONDecodeError):
+            error_message = ""
+        if error.code == 401:
             raise RuntimeError(
-                "Groq anahtarı doğrulanmadı veya bu anahtarın model erişimi yok. Streamlit Cloud → App settings → Secrets içinde "
-                'GROQ_API_KEY = "gsk_gercek_api_anahtari" biçiminde, Groq Console’dan oluşturduğunuz etkin anahtarı kullanın. '
-                "Anahtarı kaydettikten sonra uygulamayı yeniden başlatın."
+                "Groq 401: API anahtarı reddedildi. Streamlit Cloud Secrets'teki GROQ_API_KEY değerinin Groq Console'dan alınan "
+                "tam, etkin anahtar olduğunu kontrol edin (yer tutucu 'key' veya maskeli kopya olmamalı)."
+            ) from error
+        if error.code == 403:
+            reason = f" Groq yanıtı: {error_message}" if error_message else ""
+            raise RuntimeError(
+                "Groq 403: anahtar ulaştı ancak hesap/kurum bu modele erişemiyor. Groq Console'da "
+                "Settings → Limits/Model Permissions altında openai/gpt-oss-120b erişimini kontrol edin."
+                + reason
             ) from error
         raise RuntimeError(f"Groq API isteği başarısız oldu ({error.code}): {detail}") from error
     except (URLError, TimeoutError) as error:
