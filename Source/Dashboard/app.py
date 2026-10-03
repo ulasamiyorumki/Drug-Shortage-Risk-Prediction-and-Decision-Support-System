@@ -72,15 +72,32 @@ def get_groq_api_key() -> str:
         secret = str(st.secrets["GROQ_API_KEY"]).strip()
         if secret:
             return secret
-    except (KeyError, FileNotFoundError):
+    except Exception:
+        # A local run without .streamlit/secrets.toml may raise a Streamlit-specific
+        # missing-secrets exception rather than KeyError/FileNotFoundError.
         pass
 
+    env_file = PROJECT_ROOT / ".env"
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(env_file, override=False)
     except ImportError:
-        pass
+        # Keep local development working even when python-dotenv has not been
+        # installed in the interpreter used to launch Streamlit.
+        if env_file.is_file():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                entry = line.strip()
+                if not entry or entry.startswith("#"):
+                    continue
+                if entry.startswith("export "):
+                    entry = entry[7:].lstrip()
+                name, separator, value = entry.partition("=")
+                if separator and name.strip() == "GROQ_API_KEY" and not os.getenv(name.strip()):
+                    value = value.strip()
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                        value = value[1:-1]
+                    os.environ[name.strip()] = value
     return os.getenv("GROQ_API_KEY", "").strip()
 
 
@@ -95,9 +112,8 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         ),
     }, *messages[-12:]]
     payload = json.dumps({
-        "model": "openai/gpt-oss-120b",
+        "model": "llama-3.3-70b-versatile",
         "messages": conversation,
-        "reasoning_effort": "low",
         "temperature": 0.7,
         "max_completion_tokens": 1200,
     }).encode("utf-8")
