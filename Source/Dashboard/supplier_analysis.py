@@ -12,6 +12,10 @@ PAGE_ICON = "🏭"
 def render(st, context):
     services = context["data_services"]
     root = str(context["datasets_dir"])
+    store = context.get("data_store")
+    if store is not None and store.ready():
+        _render_sqlite(st, store)
+        return
     st.title("🏭 Tedarikçi Analizi")
     st.write("VA sözleşmelerindeki tedarikçi kapsamını; FDA kaynaklarındaki üretici ve etiket sahibi bilgilerini inceleyin.")
     va = services.load_va_entities(root)
@@ -84,3 +88,45 @@ def render(st, context):
     with manufacturer_tabs[2]:
         st.caption("Şirket adı her FDA Tedarik Sıkıntısı kaydından alınmıştır.")
         st.dataframe(shortages["Company"].value_counts().head(100).rename_axis("Şirket").to_frame("Tedarik sıkıntısı kaydı"), use_container_width=True)
+
+
+def _render_sqlite(st, store):
+    st.title("🏭 Tedarikçi Analizi")
+    st.write("VA sözleşmelerindeki tedarikçileri ve FDA/NDC kaynaklarındaki şirketleri SQLite üzerinden bellek dostu biçimde inceleyin.")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        vendor = st.text_input("Tedarikçi adında ara", key="supplier_vendor_filter")
+    with col_b:
+        drug = st.text_input("İlaç adında ara", key="supplier_drug_filter")
+    filters = {"Vendor": vendor} if vendor else None
+    total = store.count("VA Contracts", drug, filters)
+    va = store.search("VA Contracts", drug, limit=500, filters=filters)
+    top_vendors = store.value_counts("VA Contracts", "Vendor", drug, limit=20, filters=filters)
+    labelers = store.value_counts("NDC Products", "Labeler", limit=100)
+    sponsors = store.value_counts("FDA Drugs", "Sponsor", limit=100)
+    shortage_companies = store.value_counts("Drug Shortages", "Company", limit=100)
+    vendor_count = store.distinct_count("VA Contracts", "Vendor")
+
+    metrics = st.columns(4)
+    metrics[0].metric("Eşleşen VA sözleşmeleri", f"{total:,}")
+    metrics[1].metric("Tedarikçiler", f"{vendor_count:,}")
+    metrics[2].metric("NDC etiket sahipleri", f"{len(labelers):,}")
+    metrics[3].metric("Tedarik sıkıntısı şirketleri", f"{len(shortage_companies):,}")
+
+    if not top_vendors.empty:
+        st.subheader("En çok VA sözleşme kaydı bulunan tedarikçiler")
+        st.bar_chart(top_vendors)
+    if not va.empty:
+        st.subheader("Eşleşen VA sözleşme kayıtları")
+        visible = [column for column in ["Drug / product", "Generic name", "Trade name", "Vendor", "Contract number", "NDC", "FSS price", "NC price", "Big 4 price", "Prime Vendor", "VA Class"] if column in va]
+        st.dataframe(va[visible].astype("string"), use_container_width=True, hide_index=True)
+        st.download_button("Gösterilen VA kayıtlarını indir", va[visible].to_csv(index=False).encode("utf-8-sig"), "supplier_contracts.csv", "text/csv")
+        st.caption("Gösterilen liste en fazla 500 satırdır. Tüm eşleşen satırlara Veri Kümesi İnceleyici'den erişin.")
+    st.subheader("Kaynağa göre üretici / etiket sahibi")
+    tab_a, tab_b, tab_c = st.tabs(["NDC etiket sahipleri", "FDA başvuru sahipleri", "Tedarik sıkıntısı şirketleri"])
+    with tab_a:
+        st.dataframe(labelers.rename_axis("Etiket sahibi").to_frame("NDC ürün kaydı"), use_container_width=True)
+    with tab_b:
+        st.dataframe(sponsors.rename_axis("Başvuru sahibi").to_frame("FDA kayıt sayısı"), use_container_width=True)
+    with tab_c:
+        st.dataframe(shortage_companies.rename_axis("Şirket").to_frame("Tedarik sıkıntısı kaydı"), use_container_width=True)

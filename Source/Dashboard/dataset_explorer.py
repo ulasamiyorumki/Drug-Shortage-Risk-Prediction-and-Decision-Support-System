@@ -32,12 +32,22 @@ FIELD_LABELS_TR = {
 
 def render(st, context):
     services = context["data_services"]
+    store = context.get("data_store")
     datasets_dir = str(context["datasets_dir"])
     st.title("🗂️ Veri Kümesi İnceleyici")
     st.write("Kaynak dosyalarını açmadan kayıtları arayın, süzün, sıralayın, inceleyin ve dışa aktarın.")
     sources = ["FDA Drugs@FDA", "FDA Drug Shortages", "NDC Products", "NDC Packages", "CMS Medicare Part D", "VA Contracts"]
     source_names = {"FDA Drugs@FDA": "FDA İlaç Kayıtları", "FDA Drug Shortages": "FDA Tedarik Sıkıntıları", "NDC Products": "NDC Ürünleri", "NDC Packages": "NDC Paketleri", "CMS Medicare Part D": "CMS Medicare Part D", "VA Contracts": "VA Sözleşmeleri"}
     source = st.selectbox("Veri kümesi", sources, format_func=lambda value: source_names[value], key="dataset_browser_source")
+
+    if store is not None and store.ready():
+        database_source = {
+            "FDA Drugs@FDA": "FDA Drugs", "FDA Drug Shortages": "Drug Shortages",
+            "NDC Products": "NDC Products", "NDC Packages": "NDC Packages",
+            "CMS Medicare Part D": "CMS Medicare Part D", "VA Contracts": "VA Contracts",
+        }[source]
+        _render_sqlite_browser(st, store, database_source, source_names[source])
+        return
 
     loaders = {
         "FDA Drugs@FDA": lambda: services.load_fda_entities(datasets_dir),
@@ -127,3 +137,68 @@ def render(st, context):
                 mime="text/csv",
                 key=f"export_selected_{source}",
             )
+
+
+def _render_sqlite_browser(st, store, source: str, source_label: str) -> None:
+    st.caption("Kayıtlar SQLite üzerinde sayfalı olarak okunur; tüm kaynak tablosu belleğe alınmaz.")
+    with st.expander("Arama ve süzgeçler", expanded=True):
+        query = st.text_input("Kaynağın bütün alanlarında ara", key="sqlite_dataset_query")
+        fields = store.fields(source)
+        selected_fields = st.multiselect(
+            "Tam eşleşmeli süzgeç alanları",
+            fields,
+            format_func=lambda value: FIELD_LABELS_TR.get(value, value),
+            key="sqlite_dataset_filter_fields",
+        )
+        filters = {}
+        for index, field in enumerate(selected_fields):
+            values = store.distinct_values(source, field, query=query)
+            if len(values) <= 100:
+                selection = st.multiselect(
+                    FIELD_LABELS_TR.get(field, field),
+                    values,
+                    key=f"sqlite_filter_{index}_{field}",
+                )
+                if selection:
+                    filters[field] = selection
+            else:
+                partial = st.text_input(
+                    f"{FIELD_LABELS_TR.get(field, field)} içinde ara",
+                    key=f"sqlite_filter_text_{index}_{field}",
+                )
+                if partial:
+                    filters[field] = partial
+
+    matching_count = store.count(source, query=query, filters=filters)
+    if matching_count == 0:
+        st.info("Bu arama ve süzgeçlerle eşleşen kayıt yok.")
+        return
+    st.metric("Eşleşen kaynak kayıtları", f"{matching_count:,}")
+    page_size = st.selectbox("Sayfa başına satır", [25, 50, 100, 250], index=1, key="sqlite_dataset_page_size")
+    page_count = max(1, (matching_count + page_size - 1) // page_size)
+    page_number = st.number_input("Sayfa", min_value=1, max_value=page_count, value=1, step=1, key="sqlite_dataset_page")
+    offset = (page_number - 1) * page_size
+    current = store.search(source, query, limit=page_size, offset=offset, filters=filters)
+    columns = [column for column in current.columns if not column.startswith("_")]
+    defaults = [column for column in ["Drug / product", "Generic name", "Brand name", "Manufacturer", "Vendor", "NDC", "Product NDC", "Package NDC", "Application", "Status", "Report year"] if column in columns]
+    visible = st.multiselect("Görünür sütunlar", columns, default=defaults or columns[:10], key="sqlite_dataset_columns")
+    st.caption(f"{offset + 1:,}–{min(offset + len(current), matching_count):,} / {matching_count:,} kayıt")
+    table = current[visible].rename(columns=lambda value: FIELD_LABELS_TR.get(value, value))
+    st.dataframe(_display_safe_frame(table), use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"sqlite_table_{source}")
+    st.download_button(
+        "Görünen sayfayı CSV olarak indir",
+        current[columns].to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{source.lower().replace(' ', '_')}_page_{page_number}.csv",
+        mime="text/csv",
+        key=f"sqlite_export_{source}",
+    )
+    selected = st.session_state.get(f"sqlite_table_{source}", {}).get("selection", {}).get("rows", [])
+    if selected:
+        row = current.iloc[selected[0]]
+        raw = row.get("_raw_record")
+        if isinstance(raw, dict):
+            with st.expander("Seçili kaydın tüm özgün alanları", expanded=True):
+                details = store.flatten(raw)
+                detail_frame = pd.DataFrame(details).rename(columns={"Original field": "Kaynak alanın özgün adı", "Value": "Değer"})
+                st.dataframe(detail_frame, use_container_width=True, hide_index=True)
+                st.download_button("Seçili kaydı JSON olarak indir", json.dumps(raw, ensure_ascii=False, indent=2), f"record_{row.get('_db_id')}.json", "application/json")

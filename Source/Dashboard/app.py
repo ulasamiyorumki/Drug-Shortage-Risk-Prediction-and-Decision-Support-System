@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import streamlit as st
+from sqlite_store import DrugStore
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = DASHBOARD_DIR.parent.parent
@@ -45,6 +46,7 @@ if not pages:
 labels = [f"{module.PAGE_ICON} {module.PAGE_TITLE}" for module, _ in pages]
 page_by_title = {module.PAGE_TITLE: module for module, _ in pages}
 drug_page = page_by_title.get("İlaç İnceleyici")
+data_store = DrugStore(PROJECT_ROOT / "Datasets" / "drug_data.sqlite3")
 
 st.sidebar.markdown("## 💊 Drug Shortage Risk Analysis & Decision Support System")
 st.sidebar.caption("Developed by Ulaş, Cemre, Begüm, Melisa")
@@ -60,6 +62,7 @@ module.render(st, {
     "dashboard_dir": DASHBOARD_DIR,
     "datasets_dir": PROJECT_ROOT / "Datasets",
     "data_services": drug_page,
+    "data_store": data_store,
 })
 
 
@@ -112,27 +115,62 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         raise RuntimeError(f"Groq API'ye bağlanılamadı: {error}") from error
 
 
-st.divider()
-st.subheader("🤖 İlaç ve veri asistanı")
 if "assistant_messages" not in st.session_state:
     st.session_state["assistant_messages"] = []
-for message in st.session_state["assistant_messages"]:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
 
-prompt = st.chat_input("Bu sayfa veya ilaç verileri hakkında soru sorun…", key="dashboard_chat_input")
-if prompt:
-    st.session_state["assistant_messages"].append({"role": "user", "content": prompt})
-    api_key = get_groq_api_key()
-    if not api_key:
-        st.session_state["assistant_messages"].append({
-            "role": "assistant",
-            "content": "Groq API anahtarı bulunamadı. Yerelde `.env` dosyasına, Streamlit Cloud'da uygulamanın Secrets ayarına `GROQ_API_KEY` ekleyin.",
-        })
-    else:
-        try:
-            answer = ask_groq(st.session_state["assistant_messages"], module.PAGE_TITLE, api_key)
-            st.session_state["assistant_messages"].append({"role": "assistant", "content": answer})
-        except RuntimeError as error:
-            st.session_state["assistant_messages"].append({"role": "assistant", "content": f"İstek tamamlanamadı: {error}"})
-    st.rerun()
+
+def dismiss_chat() -> None:
+    st.session_state["chat_dialog_open"] = False
+
+
+@st.dialog("İlaç ve veri asistanı", width="small", on_dismiss=dismiss_chat)
+def render_chat_dialog() -> None:
+    st.caption(f"Şu anki sayfa: {module.PAGE_TITLE} · Sohbet geçmişi sayfalar arasında korunur.")
+    if not st.session_state["assistant_messages"]:
+        st.markdown("Merhaba! İlaç verileri veya açık olan sayfa hakkında sorularınızı yazabilirsiniz.")
+    for message in st.session_state["assistant_messages"][-10:]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    with st.form("dashboard_chat_form", clear_on_submit=True):
+        prompt = st.text_input("Mesajınız", placeholder="Bir soru yazın…", label_visibility="collapsed")
+        submitted = st.form_submit_button("Gönder", use_container_width=True)
+    if submitted and prompt.strip():
+        st.session_state["assistant_messages"].append({"role": "user", "content": prompt.strip()})
+        api_key = get_groq_api_key()
+        if not api_key:
+            answer = "Groq API anahtarı bulunamadı. Yerelde `.env` dosyasına, Streamlit Cloud'da uygulamanın Secrets ayarına `GROQ_API_KEY` ekleyin."
+        else:
+            try:
+                answer = ask_groq(st.session_state["assistant_messages"], module.PAGE_TITLE, api_key)
+            except RuntimeError as error:
+                answer = f"İstek tamamlanamadı: {error}"
+        st.session_state["assistant_messages"].append({"role": "assistant", "content": answer})
+        st.rerun()
+
+
+st.markdown(
+    """
+    <style>
+    .st-key-floating_chat_launcher {
+        position: fixed !important;
+        right: 1.4rem;
+        bottom: 1.4rem;
+        z-index: 1000000;
+        width: 3.7rem;
+    }
+    .st-key-floating_chat_launcher button {
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: 50%;
+        box-shadow: 0 4px 18px rgba(0,0,0,.22);
+        font-size: 1.35rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+with st.container(key="floating_chat_launcher"):
+    if st.button("💬", key="open_floating_chat", help="İlaç ve veri asistanını aç"):
+        st.session_state["chat_dialog_open"] = True
+if st.session_state.get("chat_dialog_open", False):
+    render_chat_dialog()

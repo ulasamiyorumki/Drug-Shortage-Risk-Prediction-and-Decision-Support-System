@@ -12,10 +12,12 @@ PAGE_ICON = "⚖️"
 def render(st, context):
     services = context["data_services"]
     root = str(context["datasets_dir"])
+    store = context.get("data_store")
+    use_sqlite = store is not None and store.ready()
     st.title("⚖️ İlaç Karşılaştırma")
     st.write("Ürün kimliğini, tedarik sıkıntılarını, Medicare Part D ölçülerini ve VA tedarik bilgilerini yan yana karşılaştırın.")
     compare_sources = ["FDA Drugs", "Drug Shortages", "VA Contracts", "NDC Products", "NDC Packages"]
-    source_names = {"FDA Drugs": "FDA İlaç Kayıtları", "Drug Shortages": "FDA Tedarik Sıkıntıları", "VA Contracts": "VA Sözleşmeleri", "NDC Products": "NDC Ürünleri", "NDC Packages": "NDC Paketleri"}
+    source_names = {"FDA Drugs": "FDA İlaç Kayıtları", "Drug Shortages": "FDA Tedarik Sıkıntıları", "VA Contracts": "VA Sözleşmeleri", "NDC Products": "NDC Ürünleri", "NDC Packages": "NDC Paketleri", "CMS Medicare Part D": "CMS Medicare Part D", "Medicare Part D": "CMS Medicare Part D"}
     source_name = st.selectbox("İlaçları hangi kaynaktan bulalım?", compare_sources, format_func=lambda value: source_names[value], key="compare_source")
     source_loaders = {
         "FDA Drugs": services.load_fda_entities,
@@ -24,12 +26,12 @@ def render(st, context):
         "NDC Products": services.load_ndc_entities,
         "NDC Packages": services.load_ndc_package_entities,
     }
-    catalog = source_loaders[source_name](root)
     query = st.text_input("Jenerik ad, marka, NDC veya başvuru numarası ara", key="compare_query")
     if not query.strip():
         st.info("Karşılaştırma listesini daraltmak için önce arama yapın. Ardından iki veya daha fazla kayıt seçebilirsiniz.")
         return
-    results = services.search_entities(catalog, query, limit=200)
+    catalog = None if use_sqlite else source_loaders[source_name](root)
+    results = store.search(source_name, query, limit=200) if use_sqlite else services.search_entities(catalog, query, limit=200)
     if results.empty:
         st.warning("Aramayla eşleşen kayıt bulunamadı.")
         return
@@ -45,7 +47,7 @@ def render(st, context):
         st.info("Karşılaştırma için en az iki kayıt seçin.")
         return
 
-    other_sources = {
+    other_sources = None if use_sqlite else {
         "FDA Drugs": services.load_fda_entities(root),
         "Drug Shortages": services.load_shortage_entities(root),
         "VA Contracts": services.load_va_entities(root),
@@ -56,7 +58,10 @@ def render(st, context):
     entities = []
     for index in chosen:
         anchor = results.iloc[index]
-        linked = {name: services.link_matches(frame, anchor) for name, frame in other_sources.items() if name != source_name}
+        if use_sqlite:
+            linked = {name: store.related(name, anchor) for name in ["FDA Drugs", "Drug Shortages", "VA Contracts", "NDC Products", "NDC Packages", "CMS Medicare Part D"] if name != source_name}
+        else:
+            linked = {name: services.link_matches(frame, anchor) for name, frame in other_sources.items() if name != source_name}
         if source_name == "Drug Shortages":
             linked[source_name] = results.iloc[[index]]
         entities.append((anchor, linked))
@@ -79,7 +84,7 @@ def render(st, context):
     for anchor, linked in entities:
         name = anchor.get("Drug / product", "Drug")
         shortage = linked.get("Drug Shortages", pd.DataFrame())
-        cms = linked.get("Medicare Part D", pd.DataFrame())
+        cms = linked.get("CMS Medicare Part D", linked.get("Medicare Part D", pd.DataFrame()))
         va = linked.get("VA Contracts", pd.DataFrame())
         current = int(shortage.get("Status", pd.Series(dtype=str)).astype(str).str.lower().eq("current").sum()) if not shortage.empty else 0
         latest = cms.sort_values("Report year").tail(1) if not cms.empty else pd.DataFrame()
@@ -89,7 +94,7 @@ def render(st, context):
             "Current shortage records": current,
             "Shortage reasons": "; ".join(shortage.get("Shortage reason", pd.Series(dtype=str)).dropna().astype(str).unique()[:4]),
             "CMS latest report year": latest.iloc[0].get("Report year", "Mevcut değil") if not latest.empty else "Eşleşen kayıt yok",
-            "CMS spending": latest.iloc[0].get("Spending (latest year in report)", "Eşleşen kayıt yok") if not latest.empty else "Eşleşen kayıt yok",
+            "CMS spending": latest.iloc[0].get("Spending (latest year in report)", latest.iloc[0].get("Total Spending", "Mevcut değil")) if not latest.empty else "Eşleşen kayıt yok",
             "CMS claims": latest.iloc[0].get("Total Claims", "Mevcut değil") if not latest.empty else "Eşleşen kayıt yok",
             "VA vendors": va.get("Vendor", pd.Series(dtype=str)).replace("", pd.NA).dropna().nunique() if not va.empty else 0,
             "VA contract records": len(va),

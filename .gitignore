@@ -3,3 +3,9 @@
 .DS_Store
 __pycache__/
 .ipynb_checkpoints/
+Datasets/drug_data.sqlite3
+Datasets/drug_data.building.sqlite3
+Datasets/DrugsFDA/*.json
+Datasets/National Drug Code Directory/*.txt
+Datasets/VA National Pharma Contracts/*.csv
+Datasets/Medicare Part D Spending by Drug-Excel Reports including Historical Data RY26/**/*.xlsx

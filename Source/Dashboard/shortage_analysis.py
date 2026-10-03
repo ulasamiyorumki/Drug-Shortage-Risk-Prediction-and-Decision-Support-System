@@ -13,7 +13,8 @@ def render(st, context):
     services = context["data_services"]
     st.title("🚨 Tedarik Sıkıntısı Analizi")
     st.write("FDA tedarik sıkıntısı kayıtlarında arama yapın, süzün ve güncelleme geçmişini inceleyin.")
-    frame = services.load_shortage_entities(str(context["datasets_dir"]))
+    store = context.get("data_store")
+    frame = store.search("Drug Shortages", "", limit=100_000) if store is not None and store.ready() else services.load_shortage_entities(str(context["datasets_dir"]))
     if frame.empty:
         st.warning("FDA tedarik sıkıntısı kaydı bulunamadı.")
         return

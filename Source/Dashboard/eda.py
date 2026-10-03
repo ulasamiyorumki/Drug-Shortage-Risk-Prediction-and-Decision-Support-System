@@ -223,7 +223,6 @@ def load_ndc(datasets_dir: str, filename: str) -> pd.DataFrame:
     return pd.read_csv(path, sep="\t", encoding="latin1", low_memory=False, dtype=str)
 
 
-@st.cache_data(show_spinner="Reading Medicare Part D reports…")
 def load_medicare(path_string: str) -> tuple[pd.DataFrame, dict]:
     path = Path(path_string)
     sheets = list_xlsx_sheets(path)
@@ -245,6 +244,26 @@ def load_medicare(path_string: str) -> tuple[pd.DataFrame, dict]:
     df = read_xlsx_sheet(path, main_sheet, header=header_idx)
     df.columns = [str(col).replace("\n", " ").strip() for col in df.columns]
     return df.dropna(how="all").copy(), {"sheets": sheets, "main_sheet": main_sheet}
+
+
+@st.cache_data(show_spinner="CMS raporlarının yıllık özetleri hazırlanıyor…")
+def load_medicare_summary(path_string: str) -> dict:
+    """Read one workbook at a time and cache only its compact annual summary."""
+    path = Path(path_string)
+    match = re.search(r"DYT(\d{4})", path.parent.name)
+    year = int(match.group(1)) if match else None
+    frame, _ = load_medicare(path_string)
+    spending_columns = [column for column in frame.columns if column.lower().startswith("total spending")]
+    latest_column = spending_columns[0] if spending_columns else None
+    spending = pd.to_numeric(frame[latest_column], errors="coerce") if latest_column else pd.Series(dtype=float)
+    return {
+        "year": year,
+        "path": path_string,
+        "spending_total": float(spending.sum()),
+        "spending_median": float(spending.median()) if spending.notna().any() else float("nan"),
+        "spending_records": int(spending.notna().sum()),
+        "rows": int(len(frame)),
+    }
 
 
 def _column_index(cell_ref: str) -> int:
@@ -391,6 +410,10 @@ def show_bar(df: pd.DataFrame, columns: list[str], title: str, key: str) -> None
 
 def render(st, context):
     datasets_dir = resolve_datasets_dir(context)
+    store = context.get("data_store")
+    if store is not None and store.ready():
+        _render_sqlite_eda(st, store)
+        return
     fda_drugs, drug_records = load_fda(str(datasets_dir), "drugs.json")
     shortages, _ = load_fda(str(datasets_dir), "drug-shortages.json")
     va = load_va(str(datasets_dir))
@@ -401,16 +424,11 @@ def render(st, context):
     medicare_files = sorted(medicare_dir.glob("Medicare Part D Spending by Drug DYT*/*.xlsx"))
     reports = []
     for path in medicare_files:
-        match = re.search(r"DYT(\d{4})", path.parent.name)
-        year = int(match.group(1)) if match else None
         try:
-            frame, info = load_medicare(str(path))
-            spend_columns = [c for c in frame.columns if c.lower().startswith("total spending")]
-            latest_column = spend_columns[-1] if spend_columns else None
-            spend = pd.to_numeric(frame[latest_column], errors="coerce") if latest_column else pd.Series(dtype=float)
-            reports.append({"year": year, "path": path, "data": frame, "info": info, "spend": spend})
+            reports.append(load_medicare_summary(str(path)))
         except Exception as exc:
-            reports.append({"year": year, "path": path, "error": str(exc)})
+            match = re.search(r"DYT(\d{4})", path.parent.name)
+            reports.append({"year": int(match.group(1)) if match else None, "path": str(path), "error": str(exc)})
 
     st.title("İlaç Tedarik Verileri")
     st.caption("FDA, VA, NDC ve Medicare Part D kaynaklarının keşifsel analizi")
@@ -521,7 +539,7 @@ def render(st, context):
             {"Source": "VA Ulusal İlaç Sözleşmeleri", "File": "va_national_phamara_contracts.csv", "Records": len(va), "Status": "Loaded" if not va.empty else "Unavailable"},
             {"Source": "FDA NDC Ürün Dizini", "File": "product.txt", "Records": len(ndc_products), "Status": "Loaded" if not ndc_products.empty else "Unavailable"},
             {"Source": "FDA NDC Paket Dizini", "File": "package.txt", "Records": len(ndc_packages), "Status": "Loaded" if not ndc_packages.empty else "Unavailable"},
-            {"Source": "CMS Medicare Part D", "File": "9 yıllık Excel raporu", "Records": sum(len(r.get("data", [])) for r in reports if "data" in r), "Status": f"{len(reports)} rapor" if reports else "Unavailable"},
+            {"Source": "CMS Medicare Part D", "File": "9 yıllık Excel raporu", "Records": sum(r.get("rows", 0) for r in reports if "error" not in r), "Status": f"{len(reports)} rapor" if reports else "Unavailable"},
         ]
         overview = pd.DataFrame(overview_rows).rename(columns={"Source": "Kaynak", "File": "Dosya", "Records": "Kayıt sayısı", "Status": "Durum"})
         overview["Durum"] = overview["Durum"].replace({"Loaded": "Yüklendi", "Unavailable": "Mevcut değil"})
@@ -617,16 +635,15 @@ def render(st, context):
         st.subheader("Medicare Part D yıllık raporları · 2016–2024")
         st.caption("Analiz defteri: `Notebooks/medicare_part_d_2016_2024_consolidated_eda.ipynb`")
         annual_rows = []
-        valid_reports = [report for report in reports if "data" in report and not report["data"].empty]
+        valid_reports = [report for report in reports if "error" not in report and report["rows"] > 0]
         for report in valid_reports:
-            spend = report["spend"]
             annual_rows.append(
                 {
                     "Yıl": report["year"],
-                    "Toplam harcama": spend.sum(),
-                    "İlaç başına medyan harcama": spend.median(),
-                    "Harcaması raporlanan ilaç kayıtları": int(spend.notna().sum()),
-                    "Satır sayısı": len(report["data"]),
+                    "Toplam harcama": report["spending_total"],
+                    "İlaç başına medyan harcama": report["spending_median"],
+                    "Harcaması raporlanan ilaç kayıtları": report["spending_records"],
+                    "Satır sayısı": report["rows"],
                 }
             )
         if annual_rows:
@@ -636,34 +653,39 @@ def render(st, context):
                 annual.style.format({"Toplam harcama": "${:,.0f}", "İlaç başına medyan harcama": "${:,.0f}"}),
                 use_container_width=True,
             )
-            with st.expander("Yıllık raporları ve en yüksek harcamalı ilaçları inceleyin"):
-                report_tabs = st.tabs([str(report["year"]) for report in valid_reports])
-                for tab, report in zip(report_tabs, valid_reports):
-                    with tab:
-                        frame = report["data"]
-                        info = report["info"]
-                        spending = report["spend"]
-                        left, right = st.columns([1, 2])
-                        left.metric("Rapor yılındaki harcama", f"${spending.sum():,.0f}")
-                        left.metric("İlaç kayıtları", f"{len(frame):,}")
-                        brand = next((col for col in frame.columns if "brand name" in col.lower()), None)
-                        if brand:
-                            top = pd.DataFrame({"Marka adı": frame[brand], "Harcama": spending}).nlargest(10, "Harcama")
-                            right.dataframe(_display_safe_frame(top).style.format({"Harcama": "${:,.0f}"}), use_container_width=True, hide_index=True)
-                        with st.expander("Çalışma sayfaları ve örnek satırlar"):
-                            st.write("Çalışma sayfaları:", ", ".join(info["sheets"]))
-                            for sheet in info["sheets"]:
-                                if sheet == info["main_sheet"]:
-                                    continue
-                                sample = read_xlsx_sheet(report["path"], sheet, nrows=5)
-                                st.markdown(f"**{sheet}**")
-                                st.dataframe(_display_safe_frame(sample), use_container_width=True, hide_index=True)
-                        with st.expander("CMS raporundaki sütunlar ne anlama geliyor?"):
-                            st.dataframe(
-                                pd.DataFrame({"Kaynak sütunun özgün adı": frame.columns, "Türkçe açıklama": [column_meaning(column) for column in frame.columns]}),
-                                use_container_width=True,
-                                hide_index=True,
-                            )
+            with st.expander("Bir yıllık raporun ayrıntılarını açın"):
+                selected_report = st.selectbox(
+                    "Rapor yılı",
+                    valid_reports,
+                    format_func=lambda report: str(report["year"]),
+                    key="cms_detail_year",
+                )
+                if st.button("Seçili CMS raporunu yükle", key="load_cms_detail"):
+                    frame, info = load_medicare(selected_report["path"])
+                    spend_columns = [column for column in frame.columns if column.lower().startswith("total spending")]
+                    latest_column = spend_columns[0] if spend_columns else None
+                    spending = pd.to_numeric(frame[latest_column], errors="coerce") if latest_column else pd.Series(dtype=float)
+                    left, right = st.columns([1, 2])
+                    left.metric("Rapor yılındaki harcama", f"${spending.sum():,.0f}")
+                    left.metric("İlaç kayıtları", f"{len(frame):,}")
+                    brand = next((column for column in frame.columns if "brand name" in column.lower()), None)
+                    if brand:
+                        top = pd.DataFrame({"Marka adı": frame[brand], "Harcama": spending}).nlargest(10, "Harcama")
+                        right.dataframe(_display_safe_frame(top).style.format({"Harcama": "${:,.0f}"}), use_container_width=True, hide_index=True)
+                    with st.expander("Çalışma sayfaları ve örnek satırlar"):
+                        st.write("Çalışma sayfaları:", ", ".join(info["sheets"]))
+                        for sheet in info["sheets"]:
+                            if sheet == info["main_sheet"]:
+                                continue
+                            sample = read_xlsx_sheet(Path(selected_report["path"]), sheet, nrows=5)
+                            st.markdown(f"**{sheet}**")
+                            st.dataframe(_display_safe_frame(sample), use_container_width=True, hide_index=True)
+                    with st.expander("CMS raporundaki sütunlar ne anlama geliyor?"):
+                        st.dataframe(
+                            pd.DataFrame({"Kaynak sütunun özgün adı": frame.columns, "Türkçe açıklama": [column_meaning(column) for column in frame.columns]}),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
         else:
             if failed_reports:
                 st.error("Medicare çalışma kitapları bulundu ancak hiçbiri okunamadı. Hataların ayrıntıları için Genel Bakış sekmesini açın.")
@@ -672,3 +694,49 @@ def render(st, context):
 
     st.divider()
     st.caption("Keşifsel analiz sonuçları betimleyicidir; operasyonel kararlarda kullanmadan önce doğrulanmalıdır.")
+
+
+def _render_sqlite_eda(st, store) -> None:
+    st.title("📊 Keşifsel Veri Analizi")
+    st.caption("Kaynaklar SQLite üzerinden parça parça incelenir; tam veri tabloları başlangıçta belleğe alınmaz.")
+    st.write("FDA, NDC, CMS ve VA kaynaklarının kapsamını ve temel terimlerini buradan öğrenin. Her kayıt kendi kaynağı ve özgün alanlarıyla saklanır.")
+    counts = store.counts()
+    cards = st.columns(6)
+    for card, source in zip(cards, ["FDA Drugs", "Drug Shortages", "NDC Products", "NDC Packages", "CMS Medicare Part D", "VA Contracts"]):
+        card.metric(SOURCE_LABELS_TR.get(source, source), f"{counts.get(source, 0):,}")
+
+    with st.expander("NDC, CMS, Route ve sütun adları ne anlama gelir?", expanded=True):
+        guide = pd.DataFrame([
+            {"Terim": "NDC", "Açıklama": "Ulusal İlaç Kodu. Baştaki sıfırları koruyun; kaynakta ürün veya paket düzeyinde olabilir."},
+            {"Terim": "Product NDC", "Açıklama": "Etiket sahibi ve ürün kaydını tanımlar; tek başına ambalaj boyutunu belirtmez."},
+            {"Terim": "Package NDC", "Açıklama": "Ürün koduna paket bölümünü ekleyerek belirli ambalajı tanımlar."},
+            {"Terim": "Route", "Açıklama": "İlacın uygulanma yolu; ör. oral, intravenöz veya topikal."},
+            {"Terim": "Dosage form", "Açıklama": "İlacın farmasötik biçimi; ör. tablet, kapsül veya enjeksiyon."},
+            {"Terim": "CMS Medicare Part D", "Açıklama": "Medicare Part D kapsamındaki kullanım ve harcama ölçüleri; tüm ABD talebini temsil etmez."},
+            {"Terim": "VA fiyatı", "Açıklama": "VA satın alma/sözleşme fiyatıdır; genel eczane veya piyasa fiyatı değildir."},
+        ])
+        st.dataframe(guide, use_container_width=True, hide_index=True)
+
+    source_options = ["FDA Drugs", "Drug Shortages", "NDC Products", "NDC Packages", "CMS Medicare Part D", "VA Contracts"]
+    source = st.selectbox("Örnek kayıtlarını incele", source_options, format_func=lambda item: SOURCE_LABELS_TR.get(item, item), key="sqlite_eda_source")
+    query = st.text_input("Seçili kaynakta ara", key="sqlite_eda_query")
+    fields = store.fields(source)
+    dictionary = pd.DataFrame({"Kaynak alanı": fields, "Türkçe açıklama": [column_meaning(field) for field in fields]})
+    with st.expander("Seçili kaynağın alan sözlüğü"):
+        st.dataframe(dictionary, use_container_width=True, hide_index=True)
+    total = store.count(source, query=query)
+    st.metric("Eşleşen kayıt", f"{total:,}")
+    preview = store.search(source, query, limit=100)
+    columns = [column for column in preview.columns if not column.startswith("_")]
+    if not preview.empty:
+        st.dataframe(_display_safe_frame(preview[columns]), use_container_width=True, hide_index=True)
+    else:
+        st.info("Bu kaynakta eşleşen kayıt bulunamadı.")
+    st.caption("Ayrıntılı arama, filtreleme, sayfalama ve dışa aktarma için Veri Kümesi İnceleyici sayfasını kullanın.")
+
+
+SOURCE_LABELS_TR = {
+    "FDA Drugs": "FDA İlaç Kayıtları", "Drug Shortages": "FDA Tedarik Sıkıntıları",
+    "NDC Products": "NDC Ürünleri", "NDC Packages": "NDC Paketleri",
+    "CMS Medicare Part D": "CMS Medicare Part D", "VA Contracts": "VA Sözleşmeleri",
+}

@@ -14,6 +14,12 @@ streamlit run Source/Dashboard/app.py
 
 Mevcut sayfalar farklı işleri üstlenir: Keşifsel Veri Analizi, İlaç İnceleyici, Veri Kümesi İnceleyici, İlaç Karşılaştırma, Tedarik Sıkıntısı Analizi, Talep ve Maliyet, Tedarikçi Analizi.
 
+## SQLite veri kataloğu
+
+Uygulama, proje kökündeki `Datasets/drug_data.sqlite3` kataloğu varsa kaynak kayıtlarını SQLite'tan sayfalı okur. GitHub/Streamlit dağıtımı için sıkıştırılmış `Datasets/drug_data.sqlite3.gz` dosyası kullanılır; uygulama bunu ilk açılışta geçici diske çıkarır. Kaynak tabloları her sayfada RAM'e yüklenmez. Yerelde ham dosyalar mevcutsa kataloğu yeniden üretmek için proje kökünden `python Source/Dashboard/build_sqlite.py` çalıştırın. Bu işlem SQLite kataloğunu ve dağıtım kopyasını oluşturur.
+
+Katalog kaynak kayıtlarının özgün alanlarını korur. Yeni kaynak verisi geldiğinde kataloğu yeniden üretip `.gz` dosyasını dağıtım deposuna ekleyin. Yerel, sıkıştırılmamış SQLite dosyası `.gitignore` içindedir.
+
 İlaç İnceleyici; FDA ilaç ve tedarik sıkıntısı kayıtlarını, VA sözleşmelerini, NDC ürün/paket kayıtlarını ve CMS Medicare Part D verilerini arar. Kimlik bilgisiyle bulunan eşleşmeler ile ada göre sunulan olası eşleşmeleri ayrı etiketler.
 
 ## Groq destekli sayfa asistanı
@@ -32,7 +38,7 @@ Bu secret Streamlit tarafından uygulamaya sağlanır; GitHub deposuna gönderil
 
 ## Büyük veri dosyalarını Streamlit Cloud'a dağıtma
 
-`Datasets/` içindeki dosyalar Git LFS ile izlenir. Streamlit Community Cloud, GitHub deposundaki LFS dosyalarını uygulama ortamına alabilir. LFS kurulumu yapılmadan dosyaları commit etmeyin; aksi hâlde `drugs.json` normal Git dosya sınırını aşar.
+Uygulama dağıtımında ham JSON, CSV, TXT ve Excel kaynaklarını Git'e göndermeyin. Bunlar `.gitignore` ile yerelde korunur; uygulamanın ihtiyacı olan kaynak kayıtları `Datasets/drug_data.sqlite3.gz` içindedir. Böylece Streamlit Cloud yüzlerce megabaytlık ayrı kaynak dosyalarını çekmez. Sıkıştırılmış katalog Git LFS ile izlenir.
 
 Mac'te Git LFS'i bir kez kurup etkinleştirin:
 
@@ -41,13 +47,15 @@ brew install git-lfs
 git lfs install
 ```
 
-Sonra proje kökünde LFS ayarlarını ve verileri Git'e ekleyip commit ederek GitHub'a gönderin:
+Sonra proje kökünde yalnızca sıkıştırılmış SQLite kataloğunu Git LFS'e ekleyip GitHub'a gönderin:
 
 ```bash
 git add .gitattributes .gitignore
-git add Datasets
-git commit -m "Track dashboard datasets with Git LFS"
+git add Datasets/drug_data.sqlite3.gz
+git add -u Datasets
+git add Source/Dashboard requirements.txt
+git commit -m "Move dashboard records to compressed SQLite catalog"
 git push
 ```
 
-Streamlit Community Cloud uygulamasını yeniden dağıtın veya yeniden başlatın. Git LFS kullanım kotası GitHub hesabına bağlıdır; çok sayıda uygulama indirmesi aylık bant genişliği kotasını tüketebilir.
+`git add -u Datasets`, repoda daha önce izlenen ham kaynak dosyalarını Git'ten kaldırır; yerel dosyaları silmez. Yeniden katalog üretmek için ham kaynakları bu bilgisayarda tutun ve `python Source/Dashboard/build_sqlite.py` çalıştırın. Streamlit Community Cloud'u yeniden dağıtınca yalnızca SQLite kataloğu indirilecektir. Git LFS kullanım kotası GitHub hesabına bağlıdır.

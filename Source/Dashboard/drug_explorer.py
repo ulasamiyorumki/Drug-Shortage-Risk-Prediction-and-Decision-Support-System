@@ -344,10 +344,12 @@ def display_matches(frame: pd.DataFrame, max_rows: int = 50, key: str = "matches
         st.info("Bu seçimle ilişkili kaynak kaydı bulunamadı.")
         return
     hidden = {"_names", "_name_norm", "_tokens", "_ndcs", "_applications", "_search", "Source"}
-    visible = [column for column in frame.columns if column not in hidden]
+    visible = [column for column in frame.columns if column not in hidden and not column.startswith("_")]
     st.caption(f"{len(frame):,} olası bağlantılı kayıt. Ad benzerliğine dayalı sonuçlar öneridir; kimlik bilgilerini ve ürün ayrıntılarını kontrol edin.")
     output = frame[visible].head(max_rows).copy()
     output = output.replace({None: "Mevcut değil", "": "Mevcut değil", "Not available": "Mevcut değil", "No matching record": "Eşleşen kayıt yok"}).fillna("Mevcut değil")
+    for column in output.columns:
+        output[column] = output[column].map(str).astype("string")
     output = translated_frame(output)
     st.dataframe(output, use_container_width=True, hide_index=True)
     st.download_button(
@@ -450,19 +452,28 @@ def render(st, context):
     st.title("🔎 İlaç İnceleyici")
     st.write("Bir kaynaktaki ilacı arayın ve FDA, tedarik sıkıntısı, VA, NDC ve Medicare Part D kayıtlarındaki olası bağlantıları izleyin.")
 
-    source_frames = {
-        "FDA Drugs": load_fda_entities(str(datasets_dir)),
-        "Drug Shortages": load_shortage_entities(str(datasets_dir)),
-        "VA Contracts": load_va_entities(str(datasets_dir)),
-        "NDC Products": load_ndc_entities(str(datasets_dir)),
-        "NDC Packages": load_ndc_package_entities(str(datasets_dir)),
-    }
-    source_options = [*source_frames, "Medicare Part D"]
+    store = context.get("data_store")
+    use_sqlite = store is not None and store.ready()
+    if use_sqlite:
+        source_frames = {}
+        source_options = ["FDA Drugs", "Drug Shortages", "VA Contracts", "NDC Products", "NDC Packages", "CMS Medicare Part D"]
+        source_counts = store.counts()
+    else:
+        source_frames = {
+            "FDA Drugs": load_fda_entities(str(datasets_dir)),
+            "Drug Shortages": load_shortage_entities(str(datasets_dir)),
+            "VA Contracts": load_va_entities(str(datasets_dir)),
+            "NDC Products": load_ndc_entities(str(datasets_dir)),
+            "NDC Packages": load_ndc_package_entities(str(datasets_dir)),
+        }
+        source_options = [*source_frames, "Medicare Part D"]
+        source_counts = {name: len(frame) for name, frame in source_frames.items()}
+        source_counts["CMS Medicare Part D"] = 0
     with st.expander("CMS Medicare Part D içinde ara", expanded=False):
         medicare_query = st.text_input("İlaç adı", key="medicare_direct_query", placeholder="Marka veya jenerik ad yazın")
         if medicare_query.strip():
-            medicare_frame = load_medicare_entities(str(datasets_dir))
-            display_matches(search_entities(medicare_frame, medicare_query), max_rows=100, key="cms_direct_search")
+            medicare_frame = store.search("CMS Medicare Part D", medicare_query, limit=100) if use_sqlite else search_entities(load_medicare_entities(str(datasets_dir)), medicare_query, limit=100)
+            display_matches(medicare_frame, max_rows=100, key="cms_direct_search")
 
     col_a, col_b = st.columns([1, 2])
     with col_a:
@@ -472,14 +483,17 @@ def render(st, context):
 
     if not query.strip():
         st.info("Kayıt bulmak için arama terimi girin. FDA ilaç kayıtlarından, tedarik sıkıntılarından, VA sözleşmelerinden veya NDC ürün/paket kayıtlarından başlayabilirsiniz.")
-        summary_cols = st.columns(len(source_frames))
-        for col, (name, frame) in zip(summary_cols, source_frames.items()):
-            col.metric(SOURCE_NAMES_TR.get(name, name), f"{len(frame):,}")
+        summary_cols = st.columns(len(source_options))
+        for col, name in zip(summary_cols, source_options):
+            col.metric(SOURCE_NAMES_TR.get(name, name), f"{source_counts.get(name, 0):,}")
         return
 
-    if start_source == "Medicare Part D":
-        source_frames[start_source] = load_medicare_entities(str(datasets_dir))
-    matches = search_entities(source_frames[start_source], query)
+    if use_sqlite:
+        matches = store.search(start_source, query, limit=200)
+    else:
+        if start_source == "Medicare Part D":
+            source_frames[start_source] = load_medicare_entities(str(datasets_dir))
+        matches = search_entities(source_frames[start_source], query)
     if matches.empty:
         st.warning(f"**{query}** için {SOURCE_NAMES_TR.get(start_source, start_source)} kaydı eşleşmedi. Jenerik adı, marka adını, NDC'yi veya başvuru numarasını deneyin.")
         return
@@ -499,14 +513,18 @@ def render(st, context):
     )
     anchor = matches.iloc[selection]
     related = {}
-    medicare_frame = source_frames.get("Medicare Part D")
-    if medicare_frame is None:
-        medicare_frame = load_medicare_entities(str(datasets_dir))
-        source_frames["Medicare Part D"] = medicare_frame
-    for source_name, frame in source_frames.items():
-        if source_name == start_source:
-            continue
-        related[source_name] = link_matches(frame, anchor)
+    if use_sqlite:
+        for source_name in source_options:
+            if source_name != start_source:
+                related[source_name] = store.related(source_name, anchor)
+    else:
+        medicare_frame = source_frames.get("Medicare Part D")
+        if medicare_frame is None:
+            medicare_frame = load_medicare_entities(str(datasets_dir))
+            source_frames["Medicare Part D"] = medicare_frame
+        for source_name, frame in source_frames.items():
+            if source_name != start_source:
+                related[source_name] = link_matches(frame, anchor)
 
     st.markdown("### Birleşik ilaç profili")
     overview_fields = [
@@ -527,14 +545,14 @@ def render(st, context):
         hide_index=True,
     )
 
-    shortage_catalog = source_frames["Drug Shortages"]
-    shortage_matches = link_matches(shortage_catalog, anchor)
+    shortage_catalog = source_frames.get("Drug Shortages", pd.DataFrame())
+    shortage_matches = store.related("Drug Shortages", anchor) if use_sqlite and start_source != "Drug Shortages" else link_matches(shortage_catalog, anchor) if not use_sqlite else pd.DataFrame()
     if shortage_matches.empty and start_source == "Drug Shortages":
         shortage_matches = matches.iloc[[selection]].copy()
     if start_source == "Drug Shortages":
         related["Drug Shortages"] = shortage_matches
     current_shortages = shortage_matches[shortage_matches.get("Status", pd.Series(dtype=str)).astype(str).str.lower().eq("current")] if not shortage_matches.empty else pd.DataFrame()
-    cms_matches = related.get("Medicare Part D", pd.DataFrame())
+    cms_matches = related.get("CMS Medicare Part D", related.get("Medicare Part D", pd.DataFrame()))
     va_matches = related.get("VA Contracts", pd.DataFrame())
     latest_cms = cms_matches.sort_values("Report year").tail(1) if not cms_matches.empty and "Report year" in cms_matches else pd.DataFrame()
     price_values = []
@@ -562,10 +580,10 @@ def render(st, context):
     for source_name, frame in related.items():
         if frame.empty:
             status = "Eşleşme yok"
-        elif "Match basis" in frame and frame["Match basis"].astype(str).str.contains("Identifier").any():
+        elif "Match basis" in frame and frame["Match basis"].astype(str).str.contains("Identifier", case=False).any():
             status = "Kimlik bilgisiyle eşleşti"
         else:
-            status = "Olası ad eşleşmesi"
+            status = "Olası bağlantı · NDC / başvuru / ad"
         match_status.append({"Veri kümesi": SOURCE_NAMES_TR.get(source_name, source_name), "Eşleşme durumu": status, "Kayıt sayısı": len(frame)})
     st.markdown("#### Veri kümeleri arası eşleşme durumu")
     st.dataframe(pd.DataFrame(match_status), use_container_width=True, hide_index=True)
