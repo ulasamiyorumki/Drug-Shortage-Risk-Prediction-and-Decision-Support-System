@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import streamlit as st
 
@@ -42,58 +46,9 @@ labels = [f"{module.PAGE_ICON} {module.PAGE_TITLE}" for module, _ in pages]
 page_by_title = {module.PAGE_TITLE: module for module, _ in pages}
 drug_page = page_by_title.get("İlaç İnceleyici")
 
-with st.sidebar.expander("🔍 Genel ilaç arama", expanded=False):
-    global_query = st.text_input(
-        "İlaç adı, NDC, başvuru no, üretici, tedarikçi, RxCUI veya SPL ID ara",
-        key="global_drug_search",
-        placeholder="İlaç adı veya kimlik bilgisi yazın",
-    )
-    if global_query.strip() and drug_page is not None:
-        datasets_dir = PROJECT_ROOT / "Datasets"
-        search_sources = {
-            "FDA Drugs": drug_page.load_fda_entities(str(datasets_dir)),
-            "Drug Shortages": drug_page.load_shortage_entities(str(datasets_dir)),
-            "VA Contracts": drug_page.load_va_entities(str(datasets_dir)),
-            "NDC Products": drug_page.load_ndc_entities(str(datasets_dir)),
-            "NDC Packages": drug_page.load_ndc_package_entities(str(datasets_dir)),
-            "CMS Medicare Part D": drug_page.load_medicare_entities(str(datasets_dir)),
-        }
-        source_labels = {
-            "FDA Drugs": "FDA İlaç Kayıtları", "Drug Shortages": "FDA Tedarik Sıkıntıları",
-            "VA Contracts": "VA Sözleşmeleri", "NDC Products": "NDC Ürünleri",
-            "NDC Packages": "NDC Paketleri", "CMS Medicare Part D": "CMS Medicare Part D",
-        }
-        suggestions = []
-        for source_name, source_frame in search_sources.items():
-            found = drug_page.search_entities(source_frame, global_query, limit=8)
-            for _, row in found.iterrows():
-                identity = next(
-                    (
-                        row.get(col) for col in ["Application", "NDC", "Package NDC", "Product NDC", "Report year"]
-                        if row.get(col) is not None and str(row.get(col)).strip() not in {"", "nan", "<NA>"}
-                    ),
-                    "",
-                )
-                drug_name = row.get("Drug / product")
-                if drug_name is None or str(drug_name).strip() in {"", "nan", "<NA>"}:
-                    drug_name = row.get("Generic name")
-                if drug_name is None or str(drug_name).strip() in {"", "nan", "<NA>"}:
-                    drug_name = "İlaç kaydı"
-                label = f"{source_labels[source_name]} · {drug_name}" + (f" · {identity}" if identity else "")
-                suggestions.append((label, source_name, str(drug_name)))
-        if suggestions:
-            labels_by_suggestion = [item[0] for item in suggestions]
-            picked = st.selectbox("Eşleşen kayıtlar", labels_by_suggestion, key="global_drug_suggestion")
-            if st.button("İlaç İnceleyici'de aç", use_container_width=True):
-                _, source_name, drug_name = suggestions[labels_by_suggestion.index(picked)]
-                st.session_state["drug_explorer_query"] = drug_name
-                st.session_state["drug_explorer_source"] = source_name
-                st.session_state["page_navigation"] = next(
-                    label for label, (candidate, _) in zip(labels, pages) if candidate.PAGE_TITLE == "İlaç İnceleyici"
-                )
-                st.rerun()
-        else:
-            st.caption("Eşleşen kayıt bulunamadı.")
+st.sidebar.markdown("## 💊 Drug Shortage Risk Analysis & Decision Support System")
+st.sidebar.caption("Developed by Ulaş, Cemre, Begüm, Melisa")
+st.sidebar.divider()
 
 default_index = next((i for i, (module, _) in enumerate(pages) if module.PAGE_TITLE == "Keşifsel Veri Analizi"), 0)
 if st.session_state.get("page_navigation") not in labels:
@@ -106,3 +61,78 @@ module.render(st, {
     "datasets_dir": PROJECT_ROOT / "Datasets",
     "data_services": drug_page,
 })
+
+
+def get_groq_api_key() -> str:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
+    key = os.getenv("GROQ_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        return str(st.secrets["GROQ_API_KEY"]).strip()
+    except (KeyError, FileNotFoundError):
+        return ""
+
+
+def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> str:
+    conversation = [{
+        "role": "system",
+        "content": (
+            "You are a helpful assistant for an industrial engineering drug supply and shortage dashboard. "
+            "Answer in Turkish unless the user writes in another language. Be clear that FDA, NDC, CMS Medicare Part D, "
+            "and VA records have different meanings. Do not invent facts or claim to have read records that were not supplied. "
+            f"The user is currently on the dashboard page: {page_title}."
+        ),
+    }, *messages[-12:]]
+    payload = json.dumps({
+        "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "messages": conversation,
+        "temperature": 0.3,
+        "max_tokens": 1200,
+    }).encode("utf-8")
+    request = Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return result["choices"][0]["message"]["content"].strip()
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"Groq API isteği başarısız oldu ({error.code}): {detail}") from error
+    except (URLError, TimeoutError) as error:
+        raise RuntimeError(f"Groq API'ye bağlanılamadı: {error}") from error
+
+
+st.divider()
+st.subheader("🤖 İlaç ve veri asistanı")
+if "assistant_messages" not in st.session_state:
+    st.session_state["assistant_messages"] = []
+for message in st.session_state["assistant_messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+prompt = st.chat_input("Bu sayfa veya ilaç verileri hakkında soru sorun…", key="dashboard_chat_input")
+if prompt:
+    st.session_state["assistant_messages"].append({"role": "user", "content": prompt})
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.session_state["assistant_messages"].append({
+            "role": "assistant",
+            "content": "Groq API anahtarı bulunamadı. Yerelde `.env` dosyasına, Streamlit Cloud'da uygulamanın Secrets ayarına `GROQ_API_KEY` ekleyin.",
+        })
+    else:
+        try:
+            answer = ask_groq(st.session_state["assistant_messages"], module.PAGE_TITLE, api_key)
+            st.session_state["assistant_messages"].append({"role": "assistant", "content": answer})
+        except RuntimeError as error:
+            st.session_state["assistant_messages"].append({"role": "assistant", "content": f"İstek tamamlanamadı: {error}"})
+    st.rerun()

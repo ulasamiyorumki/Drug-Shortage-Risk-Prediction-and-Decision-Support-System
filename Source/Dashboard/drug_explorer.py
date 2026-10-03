@@ -56,6 +56,8 @@ def normalize(value) -> str:
 
 def translated_frame(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.rename(columns=lambda column: FIELD_NAMES_TR.get(column, column)).copy()
+    for column in result.select_dtypes(include=["object"]).columns:
+        result[column] = result[column].map(lambda value: pd.NA if pd.isna(value) else str(value)).astype("string")
     for column in ["Durum", "Eşleşme dayanağı"]:
         if column in result:
             mapping = {"Current": "Güncel", "Resolved": "Çözüldü", "Identifier": "Kimlik bilgisi", "Identifier + name": "Kimlik bilgisi + ad", "Name token": "Ad benzerliği"}

@@ -103,7 +103,8 @@ def render(st, context):
         "VA vendors": "VA tedarikçileri", "VA contract records": "VA sözleşme kayıtları", "VA FSS prices": "VA FSS fiyatları",
     })
     comparison = comparison.rename(columns={col: f"İlaç {index}" for index, col in enumerate(comparison.columns[1:], start=1)})
-    st.dataframe(comparison, use_container_width=True, hide_index=True)
+    # Transposing mixed numeric/text measurements creates object columns that Arrow cannot infer reliably.
+    st.dataframe(comparison.astype("string"), use_container_width=True, hide_index=True)
 
     with st.expander("Temel kaynak kayıtları"):
         record_tabs = st.tabs([str(entity[0].get("Drug / product", f"Drug {i+1}")) for i, entity in enumerate(entities)])

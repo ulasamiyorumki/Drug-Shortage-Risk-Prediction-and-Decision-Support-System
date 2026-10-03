@@ -16,6 +16,20 @@ Mevcut sayfalar farklı işleri üstlenir: Keşifsel Veri Analizi, İlaç İncel
 
 İlaç İnceleyici; FDA ilaç ve tedarik sıkıntısı kayıtlarını, VA sözleşmelerini, NDC ürün/paket kayıtlarını ve CMS Medicare Part D verilerini arar. Kimlik bilgisiyle bulunan eşleşmeler ile ada göre sunulan olası eşleşmeleri ayrı etiketler.
 
+## Groq destekli sayfa asistanı
+
+Asistanın konuşma geçmişi aynı oturumda sayfalar arasında korunur. API anahtarını kaynak koda veya GitHub'a koymayın.
+
+Yerelde, proje kökünde `.env.example` dosyasını `.env` adıyla kopyalayın ve `GROQ_API_KEY` değerini kendi anahtarınızla doldurun. `.env` `.gitignore` içindedir; Git'e eklenmez.
+
+Streamlit Community Cloud'da uygulamanın **Settings → Secrets** alanına şunu ekleyin:
+
+```toml
+GROQ_API_KEY = "Groq anahtarınızı buraya yapıştırın"
+```
+
+Bu secret Streamlit tarafından uygulamaya sağlanır; GitHub deposuna gönderilmez. İsteğe bağlı olarak `GROQ_MODEL` ortam değişkeniyle model değiştirilebilir. Varsayılan model `llama-3.3-70b-versatile`'dır.
+
 ## Büyük veri dosyalarını Streamlit Cloud'a dağıtma
 
 `Datasets/` içindeki dosyalar Git LFS ile izlenir. Streamlit Community Cloud, GitHub deposundaki LFS dosyalarını uygulama ortamına alabilir. LFS kurulumu yapılmadan dosyaları commit etmeyin; aksi hâlde `drugs.json` normal Git dosya sınırını aşar.
