@@ -93,9 +93,12 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         ),
     }, *messages[-12:]]
     payload = json.dumps({
-        "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "model": "qwen/qwen3.8-27b",
         "messages": conversation,
-        "temperature": 0.3,
+        "reasoning_effort": "none",
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "presence_penalty": 1.5,
         "max_tokens": 1200,
     }).encode("utf-8")
     request = Request(
@@ -110,6 +113,12 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         return result["choices"][0]["message"]["content"].strip()
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:500]
+        if error.code in (401, 403):
+            raise RuntimeError(
+                "Groq anahtarı doğrulanmadı veya bu anahtarın model erişimi yok. Streamlit Cloud → App settings → Secrets içinde "
+                'GROQ_API_KEY = "gsk_gercek_api_anahtari" biçiminde, Groq Console’dan oluşturduğunuz etkin anahtarı kullanın. '
+                "Anahtarı kaydettikten sonra uygulamayı yeniden başlatın."
+            ) from error
         raise RuntimeError(f"Groq API isteği başarısız oldu ({error.code}): {detail}") from error
     except (URLError, TimeoutError) as error:
         raise RuntimeError(f"Groq API'ye bağlanılamadı: {error}") from error
@@ -117,35 +126,8 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
 
 if "assistant_messages" not in st.session_state:
     st.session_state["assistant_messages"] = []
-
-
-def dismiss_chat() -> None:
-    st.session_state["chat_dialog_open"] = False
-
-
-@st.dialog("İlaç ve veri asistanı", width="small", on_dismiss=dismiss_chat)
-def render_chat_dialog() -> None:
-    st.caption(f"Şu anki sayfa: {module.PAGE_TITLE} · Sohbet geçmişi sayfalar arasında korunur.")
-    if not st.session_state["assistant_messages"]:
-        st.markdown("Merhaba! İlaç verileri veya açık olan sayfa hakkında sorularınızı yazabilirsiniz.")
-    for message in st.session_state["assistant_messages"][-10:]:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    with st.form("dashboard_chat_form", clear_on_submit=True):
-        prompt = st.text_input("Mesajınız", placeholder="Bir soru yazın…", label_visibility="collapsed")
-        submitted = st.form_submit_button("Gönder", use_container_width=True)
-    if submitted and prompt.strip():
-        st.session_state["assistant_messages"].append({"role": "user", "content": prompt.strip()})
-        api_key = get_groq_api_key()
-        if not api_key:
-            answer = "Groq API anahtarı bulunamadı. Yerelde `.env` dosyasına, Streamlit Cloud'da uygulamanın Secrets ayarına `GROQ_API_KEY` ekleyin."
-        else:
-            try:
-                answer = ask_groq(st.session_state["assistant_messages"], module.PAGE_TITLE, api_key)
-            except RuntimeError as error:
-                answer = f"İstek tamamlanamadı: {error}"
-        st.session_state["assistant_messages"].append({"role": "assistant", "content": answer})
-        st.rerun()
+if "floating_chat_open" not in st.session_state:
+    st.session_state["floating_chat_open"] = False
 
 
 st.markdown(
@@ -153,7 +135,7 @@ st.markdown(
     <style>
     .st-key-floating_chat_launcher {
         position: fixed !important;
-        right: 1.4rem;
+        left: 1.4rem;
         bottom: 1.4rem;
         z-index: 1000000;
         width: 3.7rem;
@@ -165,12 +147,53 @@ st.markdown(
         box-shadow: 0 4px 18px rgba(0,0,0,.22);
         font-size: 1.35rem;
     }
+    .st-key-floating_chat_window {
+        position: fixed !important;
+        left: 1.2rem;
+        bottom: 5.5rem;
+        z-index: 999999;
+        width: min(390px, calc(100vw - 2.4rem));
+        max-height: min(72vh, 650px);
+        overflow-y: auto;
+        padding: .5rem .9rem .8rem;
+        background: var(--background-color, white);
+        border: 1px solid rgba(128,128,128,.35);
+        border-radius: 1rem;
+        box-shadow: 0 8px 32px rgba(0,0,0,.22);
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 with st.container(key="floating_chat_launcher"):
     if st.button("💬", key="open_floating_chat", help="İlaç ve veri asistanını aç"):
-        st.session_state["chat_dialog_open"] = True
-if st.session_state.get("chat_dialog_open", False):
-    render_chat_dialog()
+        st.session_state["floating_chat_open"] = not st.session_state["floating_chat_open"]
+
+if st.session_state["floating_chat_open"]:
+    with st.container(key="floating_chat_window", border=True):
+        heading, close = st.columns([5, 1])
+        heading.markdown("#### 💊 İlaç ve veri asistanı")
+        if close.button("✕", key="close_floating_chat", help="Sohbet penceresini kapat"):
+            st.session_state["floating_chat_open"] = False
+            st.rerun()
+        st.caption(f"{module.PAGE_TITLE} · Sohbet geçmişi sayfalar arasında korunur.")
+        if not st.session_state["assistant_messages"]:
+            st.markdown("Merhaba! İlaç verileri veya açık olan sayfa hakkında sorularınızı yazabilirsiniz.")
+        for message in st.session_state["assistant_messages"][-12:]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        with st.form("dashboard_chat_form", clear_on_submit=True):
+            prompt = st.text_input("Mesajınız", placeholder="Bir mesaj yazın…", label_visibility="collapsed")
+            submitted = st.form_submit_button("Gönder", use_container_width=True)
+        if submitted and prompt.strip():
+            st.session_state["assistant_messages"].append({"role": "user", "content": prompt.strip()})
+            api_key = get_groq_api_key()
+            if not api_key:
+                answer = 'Groq API anahtarı bulunamadı. Yerelde `.env` dosyasına veya Streamlit Cloud Secrets alanına `GROQ_API_KEY = "gsk_..."` ekleyin.'
+            else:
+                try:
+                    answer = ask_groq(st.session_state["assistant_messages"], module.PAGE_TITLE, api_key)
+                except RuntimeError as error:
+                    answer = f"İstek tamamlanamadı: {error}"
+            st.session_state["assistant_messages"].append({"role": "assistant", "content": answer})
+            st.rerun()

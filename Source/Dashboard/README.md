@@ -24,7 +24,7 @@ Katalog kaynak kayıtlarının özgün alanlarını korur. Yeni kaynak verisi ge
 
 ## Groq destekli sayfa asistanı
 
-Asistanın konuşma geçmişi aynı oturumda sayfalar arasında korunur. API anahtarını kaynak koda veya GitHub'a koymayın.
+Asistan, sayfanın sol altındaki sabit sohbet düğmesinden açılıp kapanır; konuşma geçmişi aynı oturumda sayfalar arasında korunur. Groq'ta `qwen/qwen3.8-27b` modeli kullanılır. API anahtarını kaynak koda veya GitHub'a koymayın.
 
 Yerelde, proje kökünde `.env.example` dosyasını `.env` adıyla kopyalayın ve `GROQ_API_KEY` değerini kendi anahtarınızla doldurun. `.env` `.gitignore` içindedir; Git'e eklenmez.
 
@@ -34,7 +34,7 @@ Streamlit Community Cloud'da uygulamanın **Settings → Secrets** alanına şun
 GROQ_API_KEY = "Groq anahtarınızı buraya yapıştırın"
 ```
 
-Bu secret Streamlit tarafından uygulamaya sağlanır; GitHub deposuna gönderilmez. İsteğe bağlı olarak `GROQ_MODEL` ortam değişkeniyle model değiştirilebilir. Varsayılan model `llama-3.3-70b-versatile`'dır.
+Bu secret Streamlit tarafından uygulamaya sağlanır; GitHub deposuna gönderilmez. Anahtarı değiştirdikten sonra Streamlit Cloud'da uygulamayı yeniden başlatın.
 
 ## Büyük veri dosyalarını Streamlit Cloud'a dağıtma
 
