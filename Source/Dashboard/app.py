@@ -112,15 +112,16 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
         ),
     }, *messages[-12:]]
     payload = json.dumps({
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
         "messages": conversation,
         "temperature": 0.7,
         "max_completion_tokens": 1200,
+        "reasoning_effort": "low",
     }).encode("utf-8")
     request = Request(
         "https://api.groq.com/openai/v1/chat/completions",
         data=payload,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
         method="POST",
     )
     try:
@@ -140,9 +141,10 @@ def ask_groq(messages: list[dict[str, str]], page_title: str, api_key: str) -> s
             ) from error
         if error.code == 403:
             reason = f" Groq yanıtı: {error_message}" if error_message else ""
+            masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "Bilinmiyor"
             raise RuntimeError(
-                "Groq 403: anahtar ulaştı ancak hesap/kurum bu modele erişemiyor. Groq Console'da "
-                "Settings → Limits/Model Permissions altında openai/gpt-oss-120b erişimini kontrol edin."
+                f"Groq 403 (Erişim Reddedildi): Kullanılan API Anahtarı ({masked_key}) bu modele erişim iznine sahip değil. "
+                "Lütfen Streamlit Cloud Secrets (veya .env) içindeki anahtarın doğruluğunu ve Groq Console'daki Limitleri kontrol edin."
                 + reason
             ) from error
         raise RuntimeError(f"Groq API isteği başarısız oldu ({error.code}): {detail}") from error
