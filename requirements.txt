@@ -59,4 +59,4 @@ tornado==6.5.10
 traitlets==5.16.1
 typing_extensions==4.16.0
 wcwidth==0.9.1
-webencodings==0.6.1 küçült bakım
+webencodings==0.6.1
