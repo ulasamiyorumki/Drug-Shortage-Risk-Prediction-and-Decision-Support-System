@@ -62,7 +62,7 @@ def load_and_prep_data(datasets_dir):
                 reasons = reasons[reasons.str.strip() != ""]
                 if not reasons.empty:
                     return reasons.mode()[0]
-            return "Tedarik Zinciri ve Talep Dengesizliği"
+            return "Bulunamadı"
             
         drug_stats['actual_reason'] = drug_stats.apply(lambda row: get_reason(row['Generic Name']) if row['is_shortage'] == 1 else "Yok", axis=1)
     else:
@@ -146,7 +146,7 @@ def render(st, shared_state=None):
             if rf_reason is not None:
                 predicted_reason = rf_reason.predict(X_input)[0]
             else:
-                predicted_reason = "Requirements for Increased Demand / Tedarik Zinciri Yetersizliği"
+                predicted_reason = "Bulunamadı"
                 
             # Gösterge (UI)
             col1, col2 = st.columns(2)
