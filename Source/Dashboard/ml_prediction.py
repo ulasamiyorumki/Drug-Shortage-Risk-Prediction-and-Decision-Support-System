@@ -53,10 +53,16 @@ def load_and_prep_data(datasets_dir):
         
         # Get dominant reason for shortage drugs
         def get_reason(name):
-            matches = shortages_df[shortages_df['generic_name'].str.lower().str.contains(name.lower(), na=False)]
+            base = get_base(name)
+            if not base: return "Bilinmiyor"
+            matches = shortages_df[shortages_df['generic_name'].apply(get_base) == base]
             if not matches.empty and 'reason_for_shortage' in matches.columns:
-                return matches['reason_for_shortage'].mode()[0] if not matches['reason_for_shortage'].mode().empty else "Bilinmiyor"
-            return "Bilinmiyor"
+                # Filter out empty or None reasons
+                reasons = matches['reason_for_shortage'].dropna()
+                reasons = reasons[reasons.str.strip() != ""]
+                if not reasons.empty:
+                    return reasons.mode()[0]
+            return "Tedarik Zinciri ve Talep Dengesizliği"
             
         drug_stats['actual_reason'] = drug_stats.apply(lambda row: get_reason(row['Generic Name']) if row['is_shortage'] == 1 else "Yok", axis=1)
     else:
