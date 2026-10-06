@@ -10,23 +10,21 @@ PAGE_TITLE = "Yapay Zeka Risk Motoru"
 PAGE_ICON = "🤖"
 
 @st.cache_data
-def load_and_prep_data():
-    base_path = os.path.join(os.path.dirname(__file__), "../../Datasets")
-    
+def load_and_prep_data(datasets_dir):
     # 1. Load VA Data (The "Universe" of drugs)
-    va_path = os.path.join(base_path, "VA National Pharma Contracts/va_national_phamara_contracts.csv")
+    va_path = os.path.join(datasets_dir, "VA National Pharma Contracts/va_national_phamara_contracts.csv")
     try:
         va_df = pd.read_csv(va_path)
-    except:
+    except Exception as e:
         return None, None
         
     # 2. Load FDA Shortages
-    shortages_path = os.path.join(base_path, "DrugsFDA/drug-shortages.json")
+    shortages_path = os.path.join(datasets_dir, "DrugsFDA/drug-shortages.json")
     try:
         with open(shortages_path, 'r', encoding='utf-8') as f:
             shortages_data = json.load(f)
         shortages_df = pd.json_normalize(shortages_data.get('results', shortages_data))
-    except:
+    except Exception as e:
         shortages_df = pd.DataFrame()
 
     # Data Cleaning & Aggregation
@@ -41,7 +39,7 @@ def load_and_prep_data():
         Avg_Price=('FSS Price', 'mean')
     ).reset_index()
     
-    drug_stats['Avg_Price'].fillna(drug_stats['Avg_Price'].median(), inplace=True)
+    drug_stats['Avg_Price'] = drug_stats['Avg_Price'].fillna(drug_stats['Avg_Price'].median())
     
     # Target Variable Extraction (Did it go into shortage?)
     if not shortages_df.empty and 'generic_name' in shortages_df.columns:
@@ -102,7 +100,9 @@ def render(st, shared_state=None):
     gelecekte kıtlığa girme olasılığını ve en olası kök nedenini tahmin eder.
     """)
     
-    df, shortages_df = load_and_prep_data()
+    
+    datasets_dir = shared_state.get("datasets_dir") if shared_state else "../../Datasets"
+    df, shortages_df = load_and_prep_data(datasets_dir)
     
     if df is None:
         st.error("Veri setleri yüklenemedi. Lütfen VA Contracts veri setini kontrol edin.")
