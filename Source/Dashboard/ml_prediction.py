@@ -95,7 +95,7 @@ def train_models(df):
             
     return rf_risk, rf_reason, scaler
 
-def render():
+def render(st, shared_state=None):
     st.title(f"{PAGE_ICON} {PAGE_TITLE}")
     st.markdown("""
     Bu sayfa, **Makine Öğrenmesi (Machine Learning - Random Forest)** algoritmalarını kullanarak ilaçların 
@@ -164,10 +164,3 @@ def render():
                 """)
                 
             st.divider()
-            st.subheader("IE Karar Destek Çıktısı (DSS Action)")
-            if risk_prob >= 66:
-                st.error("⚠️ **Acil Aksiyon:** Model bu ilaç için yüksek risk öngörmektedir. Fiyat odaklı satın alma (En ucuz FSS) yerine derhal Big 4 anlaşmalı en güvenilir firmadan en az 3 aylık tampon stok oluşturulmalıdır.")
-            elif risk_prob >= 33:
-                st.warning("⚠️ **İzleme:** İlaç risk altındadır. Tedarik zincirindeki dalgalanmalara karşı 2. bir tedarikçi (Backup Vendor) ile alternatif sözleşme hazırda tutulmalıdır.")
-            else:
-                st.success("✅ **Güvenli:** Risk düşüktür. Tampon stok maliyetine girmeden JIT (Just-In-Time) stratejisiyle en uygun fiyatlı firmadan alım yapılabilir.")
