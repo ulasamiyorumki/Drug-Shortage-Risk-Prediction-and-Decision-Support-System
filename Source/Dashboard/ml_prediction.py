@@ -56,9 +56,9 @@ def load_and_prep_data(datasets_dir):
             base = get_base(name)
             if not base: return "Bilinmiyor"
             matches = shortages_df[shortages_df['generic_name'].apply(get_base) == base]
-            if not matches.empty and 'reason_for_shortage' in matches.columns:
+            if not matches.empty and 'shortage_reason' in matches.columns:
                 # Filter out empty or None reasons
-                reasons = matches['reason_for_shortage'].dropna()
+                reasons = matches['shortage_reason'].dropna()
                 reasons = reasons[reasons.str.strip() != ""]
                 if not reasons.empty:
                     return reasons.mode()[0]
