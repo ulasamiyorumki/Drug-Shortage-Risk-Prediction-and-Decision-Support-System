@@ -43,10 +43,13 @@ def load_and_prep_data(datasets_dir):
     
     # Target Variable Extraction (Did it go into shortage?)
     if not shortages_df.empty and 'generic_name' in shortages_df.columns:
-        shortage_names = shortages_df['generic_name'].str.lower().dropna().unique()
-        drug_stats['is_shortage'] = drug_stats['Generic Name'].str.lower().apply(
-            lambda x: 1 if any(sn in x or x in sn for sn in shortage_names) else 0
-        )
+        import re
+        def get_base(name):
+            words = re.findall(r'[a-zA-Z]{4,}', str(name))
+            return words[0].lower() if words else None
+            
+        shortage_bases = set(shortages_df['generic_name'].apply(get_base).dropna().unique())
+        drug_stats['is_shortage'] = drug_stats['Generic Name'].apply(get_base).isin(shortage_bases).astype(int)
         
         # Get dominant reason for shortage drugs
         def get_reason(name):
