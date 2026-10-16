@@ -1138,5 +1138,31 @@ th:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
+/* SUT Kalkanı Yeşil Reçeteli İlaç Simgesi / Rozeti */
+.green-rx-symbol {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #10b981;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    vertical-align: middle;
+    margin-left: 6px;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.2);
+    cursor: default;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.green-rx-symbol:hover {
+    transform: scale(1.04);
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+}
+
 
 
