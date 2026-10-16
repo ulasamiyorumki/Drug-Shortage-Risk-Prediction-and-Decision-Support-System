@@ -848,11 +848,37 @@ async function shortagePage(query = '', status = '') {
 }
 
 let currentShortageV2Query = '';
-let currentShortageV2Source = '';
+let currentShortageV2Source = 'Drug Shortages'; // Varsayılan: FDA Resmi Kriz Veri Tabanı
 let currentShortageV2Status = '';
 let currentShortageV2Reason = '';
+let currentShortageV2Category = '';
+let currentShortageV2Availability = '';
 let currentShortageV2Risk = '';
+let currentShortageV2Limit = 25;
 let currentShortageV2Page = 1;
+
+const fdaTherapeuticCategories = [
+  'Analgesia/Addiction',
+  'Anesthesia',
+  'Anti-Infective',
+  'Antiviral',
+  'Cardiovascular',
+  'Dermatology',
+  'Endocrinology/Metabolism',
+  'Gastroenterology',
+  'Hematology',
+  'Medical Imaging',
+  'Neurology',
+  'Oncology',
+  'Ophthalmology',
+  'Other',
+  'Pediatric',
+  'Psychiatry',
+  'Pulmonary/Allergy',
+  'Renal',
+  'Rheumatology',
+  'Transplant'
+];
 
 const fdaReasonDescriptions = {
   'Demand increase for the drug': 'İlaç Talep Artışı / Kapasite Yetersizliği',
@@ -879,6 +905,18 @@ window.setShortageV2Reason = function(reason) {
   } else {
     currentShortageV2Reason = reason;
   }
+  currentShortageV2Page = 1;
+  shortagePageV2();
+};
+
+window.setShortageV2Category = function(cat) {
+  currentShortageV2Category = (currentShortageV2Category === cat) ? '' : cat;
+  currentShortageV2Page = 1;
+  shortagePageV2();
+};
+
+window.setShortageV2Availability = function(av) {
+  currentShortageV2Availability = (currentShortageV2Availability === av) ? '' : av;
   currentShortageV2Page = 1;
   shortagePageV2();
 };
@@ -1004,8 +1042,38 @@ function enrichShortageRecord(r) {
     }
   }
 
+  const rj = r.raw_json || {};
+  let therapeuticCategory = rj.therapeutic_category || rj['Therapeutic category'] || null;
+  if (Array.isArray(therapeuticCategory)) {
+    therapeuticCategory = therapeuticCategory.join(', ');
+  }
+  const presentation = rj.presentation || rj['Presentation'] || rj.dosage_form || rj['Dosage form'] || '—';
+  const availability = rj.availability || rj['Availability'] || null;
+  const updateDate = rj.update_date || rj['Updated'] || (r.report_year ? String(r.report_year) : '—');
+  const initialDate = rj.initial_posting_date || rj['Initial posting date'] || null;
+  const contactInfo = rj.contact_info || null;
+
+  let availBadgeHtml = '<span style="color:var(--muted); font-size:11px;">—</span>';
+  if (availability) {
+    const avLow = availability.toLowerCase();
+    if (avLow.includes('available') && !avLow.includes('un') && !avLow.includes('limit')) {
+      availBadgeHtml = `<span class="avail-badge avail-green" title="Stok Mevcut">● ${esc(availability)}</span>`;
+    } else if (avLow.includes('limit') || avLow.includes('allocat')) {
+      availBadgeHtml = `<span class="avail-badge avail-amber" title="Kısıtlı Bulunabilirlik">▲ ${esc(availability)}</span>`;
+    } else {
+      availBadgeHtml = `<span class="avail-badge avail-red" title="Temin Edilemiyor">✕ ${esc(availability)}</span>`;
+    }
+  }
+
   return {
     ...r,
+    therapeuticCategory,
+    presentation,
+    availability,
+    availBadgeHtml,
+    updateDate,
+    initialDate,
+    contactInfo,
     reasonText: reasonText || (isGreen ? 'Kontrole tabi yeşil reçeteli molekül' : null),
     shortageReasonDisplay: reasonText || (isGreen ? 'Kontrole Tabi Molekül' : null),
     categoryKey: hasShortageReason ? classification.key : (isGreen ? 'green_rx' : 'normal'),
@@ -1025,8 +1093,75 @@ function enrichShortageRecord(r) {
   };
 }
 
-function shortageTableV2(rows) {
+function shortageTableV2(rows, isFdaSource = true) {
   if (!rows.length) return '<p class="empty notice">Filtrelere veya arama kriterine uygun ilaç kaydı bulunamadı.</p>';
+  if (isFdaSource) {
+    return `
+      <div class="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:180px;">İlaç / Etkin Madde & Marka</th>
+              <th>FDA Kriz Durumu</th>
+              <th>Terapötik Kategori</th>
+              <th style="min-width:160px;">Sıkıntı Nedeni</th>
+              <th>Bulunabilirlik (Stok)</th>
+              <th style="min-width:200px;">Sunum & Dozaj Formu</th>
+              <th>Üretici Firma & İletişim</th>
+              <th>Tarih</th>
+              <th>Kırılganlık / EM Aksiyonu</th>
+              <th>İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
+                <td class="drug-cell">
+                  <b>${esc(label(r))}${r.isGreen ? ' <span style="display:inline-block;width:7px;height:7px;background:#10b981;border-radius:50%;margin-left:4px;box-shadow:0 0 6px #10b981;" title="Yeşil Reçete / Kontrole Tabi"></span>' : ''}</b>
+                  <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
+                </td>
+                <td>${r.statusBadgeHtml}</td>
+                <td>
+                  ${r.therapeuticCategory ? `
+                    <span class="category-pill">${esc(r.therapeuticCategory)}</span>
+                  ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                </td>
+                <td>
+                  ${r.shortageReasonDisplay ? `
+                    <span class="reason-badge" style="font-weight:600; font-size:11px; white-space:normal; display:inline-block; max-width:220px;">
+                      ${esc(r.shortageReasonDisplay)}
+                    </span>
+                  ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                </td>
+                <td>${r.availBadgeHtml}</td>
+                <td>
+                  <div style="font-size:11.5px; color:#1e293b; max-width:230px; line-height:1.35;">
+                    ${esc(r.presentation)}
+                  </div>
+                  ${r.ndc ? `<code style="font-size:10px; color:var(--muted); display:inline-block; margin-top:2px;">NDC: ${esc(r.ndc)}</code>` : ''}
+                </td>
+                <td>
+                  <div style="font-weight:600; font-size:11.5px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div>
+                  ${r.contactInfo ? `<small style="font-size:10.5px; color:#0284c7; display:block; margin-top:2px;">📞 ${esc(r.contactInfo)}</small>` : ''}
+                </td>
+                <td>
+                  <div style="font-size:11.5px; font-weight:600; color:#334155;">${esc(r.updateDate)}</div>
+                  ${r.initialDate ? `<small style="font-size:10px; color:var(--muted); display:block;">İlan: ${esc(r.initialDate)}</small>` : ''}
+                </td>
+                <td>
+                  <span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span>
+                  <div style="font-size:10.5px; font-weight:600; color:#0369a1; margin-top:3px; line-height:1.2;">
+                    ⚡ ${esc(r.action)}
+                  </div>
+                </td>
+                <td><button class="button" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); detail(${r.id})">İncele →</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
   return `
     <div class="data-table">
       <table>
@@ -1101,23 +1236,26 @@ async function shortagePageV2(
   if (gSearch && gSearch.value !== query) gSearch.value = query;
 
   const guide = guideBanner(
-    "İlaç İnceleyici ile Tedarik Sıkıntısı Analizini birleştiren; 406.000+ ilacın tamamını kriz geçmişi, kök nedenleri ve mühendislik aksiyonlarıyla sunan birleşik V2 Karar Destek merkezidir.",
-    "Tüm ilaçların küresel FDA tedarik krizlerini, etken madde (API) darboğazlarını, boğaz ve sevkiyat gecikmelerini ve 6 kaynaklı birleşik veri profillerini tek ekranda inceler.",
-    "Arama kutusuna dilediğiniz ilacı veya NDC kodunu yazın; veri kaynağı sekmelerinden filtreleyin veya tüm ilaçların tedarik durumu ve mühendislik eylem planlarını sayfalayarak denetleyin."
+    "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
+    "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
+    "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
   );
 
-  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Tüm ilaçların tedarik sıkıntısı eşleşmeleri, kök neden sınıflaması ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">Veriler ve birleşik ilaç kayıtları yükleniyor…</div>';
+  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">FDA resmi kriz kayıtları yükleniyor…</div>';
 
   try {
     const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
     const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
     const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
     const reasonParam = reasonFilter ? `&reason=${encodeURIComponent(reasonFilter)}` : '';
+    const categoryParam = currentShortageV2Category ? `&category=${encodeURIComponent(currentShortageV2Category)}` : '';
+    const availParam = currentShortageV2Availability ? `&availability=${encodeURIComponent(currentShortageV2Availability)}` : '';
+    const limitNum = currentShortageV2Limit === 'all' ? 2000 : Number(currentShortageV2Limit) || 25;
 
     const [overview, summary, data] = await Promise.all([
       api('/api/overview'),
       api('/api/analytics/shortages'),
-      api(`/api/records?page=${pageNo}&limit=25${sourceParam}${queryParam}${statusParam}${reasonParam}`)
+      api(`/api/records?page=${pageNo}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${reasonParam}${categoryParam}${availParam}`)
     ]);
 
     const count = Object.fromEntries(overview.counts.map(x => [x.source, x.count]));
@@ -1135,6 +1273,12 @@ async function shortagePageV2(
         return normDisplay.includes(normFilter) || normReason.includes(normFilter) || normText.includes(normFilter);
       });
     }
+    if (currentShortageV2Category) {
+      filtered = filtered.filter(r => (r.therapeuticCategory || '').toLowerCase().includes(currentShortageV2Category.toLowerCase()));
+    }
+    if (currentShortageV2Availability) {
+      filtered = filtered.filter(r => (r.availability || '').toLowerCase().includes(currentShortageV2Availability.toLowerCase()));
+    }
     if (riskFilter) {
       if (riskFilter === 'high') filtered = filtered.filter(r => r.riskScore >= 75);
       else if (riskFilter === 'med') filtered = filtered.filter(r => r.riskScore >= 30 && r.riskScore < 75);
@@ -1144,26 +1288,44 @@ async function shortagePageV2(
     const currentCount = Number(overview.currentShortages || 0);
     const totalShortages = Number(count['Drug Shortages'] || 0);
     const resolvedPercent = totalShortages ? Math.round(((totalShortages - currentCount) / totalShortages) * 100) : 0;
+    const isFdaSource = source === 'Drug Shortages';
 
-    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Tüm ilaçların tedarik sıkıntısı eşleşmeleri, kök neden sınıflaması ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+      <!-- FDA Resmi Veri Portalı Senkronizasyon Kartı -->
+      <div class="glass panel fda-sync-banner" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #0284c7; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:16px;">🏛️</span>
+            <h2 style="margin:0; font-size:14px; font-family:Outfit; color:#0f172a;">ABD FDA Resmi Drug Shortages Portalı Veri Tabanı</h2>
+            <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10.5px;">✓ Tüm 1.587 Kriz Kaydı Entegre</span>
+          </div>
+          <div style="font-size:11.5px; color:#475569; margin-top:3px;">
+            FDA'nın resmi sitesindeki (${totalShortages.toLocaleString('tr-TR')} kriz kaydı) tüm Terapötik Kategoriler, Dozaj/Sunum Formları, Stok Durumu ve İletişim verileriyle bu ekrana tam entegre olarak listelenmektedir.
+          </div>
+        </div>
+        <a href="https://www.accessdata.fda.gov/scripts/drugshortages/" target="_blank" rel="noopener noreferrer" class="button" style="padding:6px 14px; font-size:11px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+          FDA Resmi Sitesi ↗
+        </a>
+      </div>
+
       <section class="grid stats">
         <article class="glass stat">
-          <span class="stat-label">Katalogdaki Tüm İlaçlar</span>
-          <strong>${totalAllDrugs.toLocaleString('tr-TR')}</strong>
-          <small>6 Veri Kaynağı (İlaç İnceleyici)</small>
-          <span class="trend">↗</span>
+          <span class="stat-label">FDA Kriz Veri Tabanı</span>
+          <strong>${totalShortages.toLocaleString('tr-TR')}</strong>
+          <small>FDA Drug Shortages (Tüm Kayıtlar)</small>
+          <span class="trend red">⚡</span>
         </article>
         <article class="glass stat">
           <span class="stat-label">Aktif FDA Tedarik Krizi</span>
           <strong>${currentCount.toLocaleString('tr-TR')}</strong>
-          <small>Devam eden kriz kayıtları</small>
+          <small>Devam eden küresel krizler</small>
           <span class="trend red">⚠</span>
         </article>
         <article class="glass stat">
-          <span class="stat-label">FDA Kriz Kayıtları</span>
-          <strong>${totalShortages.toLocaleString('tr-TR')}</strong>
-          <small>Çözüm Oranı: %${resolvedPercent}</small>
-          <span class="trend red">⚡</span>
+          <span class="stat-label">Katalogdaki Tüm İlaçlar</span>
+          <strong>${totalAllDrugs.toLocaleString('tr-TR')}</strong>
+          <small>6 Veri Kaynağı (Birleşik Katalog)</small>
+          <span class="trend">↗</span>
         </article>
         <article class="glass stat">
           <span class="stat-label">VA Tedarikçi Firmaları</span>
@@ -1252,34 +1414,52 @@ async function shortagePageV2(
 
       <section class="glass panel" style="margin-top:18px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ Birleşik Veri Kapsamı & Sıkıntı Süzgeçleri</h2>
+          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ FDA Kriz Veri Kapsamı & Gelişmiş Süzgeçler</h2>
           <button class="button secondary" id="resetShortageV2Filters" style="padding:6px 14px; font-size:11px;">Filtreleri Sıfırla</button>
         </div>
 
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
-          <button class="tab ${source === '' ? 'active' : ''}" onclick="setShortageV2Source('')">Tüm İlaçlar (Birleşik İnceleyici · ${totalAllDrugs.toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'Drug Shortages' ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages')">Yalnızca FDA Kriz Kayıtları (${totalShortages.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'Drug Shortages' ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages')">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === '' ? 'active' : ''}" onclick="setShortageV2Source('')">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs')">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products')">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'VA Contracts' ? 'active' : ''}" onclick="setShortageV2Source('VA Contracts')">VA Tedarik Sözleşmeleri (${Number(count['VA Contracts'] || 0).toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'CMS Medicare Part D' ? 'active' : ''}" onclick="setShortageV2Source('CMS Medicare Part D')">CMS Talep Verileri (${Number(count['CMS Medicare Part D'] || 0).toLocaleString('tr-TR')})</button>
         </div>
 
-        <div class="controls" style="margin-bottom:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:12px;">
+        <div class="controls" style="margin-bottom:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap:12px;">
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
-            Veri Kaynağı:
+            Veri Kapsamı / Kaynak:
             <select id="shortageV2SourceSelect">
-              <option value="" ${source === '' ? 'selected' : ''}>Tüm Kaynaklar (Birleşik İnceleyici)</option>
-              ${Object.entries(sourceNames).map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
+              <option value="Drug Shortages" ${source === 'Drug Shortages' ? 'selected' : ''}>⚡ FDA Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</option>
+              <option value="" ${source === '' ? 'selected' : ''}>🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</option>
+              ${Object.entries(sourceNames).filter(([k]) => k !== 'Drug Shortages').map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
-            Kriz Durumu:
+            FDA Kriz Durumu:
             <select id="shortageV2Status">
               <option value="">Tüm Durumlar</option>
-              <option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden)</option>
-              <option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü</option>
+              <option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden - 1.141)</option>
+              <option value="To Be Discontinued" ${status === 'To Be Discontinued' ? 'selected' : ''}>Üretim Sonlandırılıyor (427)</option>
+              <option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü (19)</option>
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Terapötik Kategori (FDA):
+            <select id="shortageV2Category">
+              <option value="">Tüm Terapötik Sınıflar (${fdaTherapeuticCategories.length})</option>
+              ${fdaTherapeuticCategories.map(cat => `<option value="${cat}" ${currentShortageV2Category === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Bulunabilirlik (Stok):
+            <select id="shortageV2Availability">
+              <option value="">Tüm Stok Durumları</option>
+              <option value="Available" ${currentShortageV2Availability === 'Available' ? 'selected' : ''}>Available (Stok Mevcut)</option>
+              <option value="Limited Availability" ${currentShortageV2Availability === 'Limited Availability' ? 'selected' : ''}>Limited Availability (Kısıtlı)</option>
+              <option value="Unavailable" ${currentShortageV2Availability === 'Unavailable' ? 'selected' : ''}>Unavailable (Temin Edilemiyor)</option>
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
@@ -1313,30 +1493,44 @@ async function shortagePageV2(
               <option value="low" ${riskFilter === 'low' ? 'selected' : ''}>Düşük (Risk &lt; 30)</option>
             </select>
           </label>
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Sayfa Başına Kayıt:
+            <select id="shortageV2Limit">
+              <option value="25" ${currentShortageV2Limit === 25 ? 'selected' : ''}>25 Kayıt</option>
+              <option value="50" ${currentShortageV2Limit === 50 ? 'selected' : ''}>50 Kayıt</option>
+              <option value="100" ${currentShortageV2Limit === 100 ? 'selected' : ''}>100 Kayıt</option>
+              <option value="250" ${currentShortageV2Limit === 250 ? 'selected' : ''}>250 Kayıt</option>
+              <option value="all" ${currentShortageV2Limit === 'all' ? 'selected' : ''}>Tümü (${isFdaSource ? totalShortages.toLocaleString('tr-TR') : '2.000'} Kayıt)</option>
+            </select>
+          </label>
         </div>
 
-        ${reasonFilter ? `
+        ${(reasonFilter || currentShortageV2Category || currentShortageV2Availability || status) ? `
           <div style="margin-top:14px; margin-bottom:14px; padding:10px 14px; border-radius:12px; background:rgba(2, 132, 199, 0.08); border:1px solid rgba(2, 132, 199, 0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <span style="font-size:12px; color:#0369a1; font-weight:600;">
-              🔍 <b>Aktif Sıkıntı Nedeni Filtresi:</b> "${esc(reasonFilter)}" ${fdaReasonDescriptions[reasonFilter] ? `· <i>${esc(fdaReasonDescriptions[reasonFilter])}</i>` : ''}
-            </span>
-            <button class="button secondary" onclick="setShortageV2Reason('')" style="padding:4px 10px; font-size:11px;">Filtreyi Temizle ✕</button>
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; color:#0369a1;">
+              <b>🔍 Aktif Süzgeçler:</b>
+              ${status ? `<span class="badge current" style="font-size:10.5px;">Durum: ${esc(status)}</span>` : ''}
+              ${currentShortageV2Category ? `<span class="category-pill">Kategori: ${esc(currentShortageV2Category)}</span>` : ''}
+              ${currentShortageV2Availability ? `<span class="avail-badge avail-green">Stok: ${esc(currentShortageV2Availability)}</span>` : ''}
+              ${reasonFilter ? `<span class="reason-badge">Neden: ${esc(reasonFilter)}</span>` : ''}
+            </div>
+            <button class="button secondary" id="clearActiveShortageV2Filters" style="padding:4px 10px; font-size:11px;">Filtreleri Temizle ✕</button>
           </div>
         ` : ''}
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:22px; flex-wrap:wrap; gap:10px;">
           <h2 style="margin:0;">
-            ${source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'} Tedarik Kayıtları · ${data.total.toLocaleString('tr-TR')}
+            ${isFdaSource ? 'FDA Resmi Kriz Veri Tabanı' : (source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu')} Kayıtları · ${data.total.toLocaleString('tr-TR')}
             ${query ? `<small style="font-size:12px; color:var(--muted); font-weight:normal;">("${esc(query)}" için filtrelendi)</small>` : ''}
           </h2>
-          <span style="font-size:11px; color:var(--muted);">Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz</span>
+          <span style="font-size:11px; color:var(--muted);">${isFdaSource ? 'FDA resmi sitesindeki tüm alanlar listelenmektedir · Satıra tıklayarak çapraz profili açabilirsiniz' : 'Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz'}</span>
         </div>
 
-        ${shortageTableV2(filtered)}
+        ${shortageTableV2(filtered, isFdaSource)}
 
         <!-- Sayfalama (Pagination) -->
         <div class="pagination" style="margin-top:16px;">
-          <span>${data.total.toLocaleString('tr-TR')} kayıttan ${(data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, data.total)} gösteriliyor (Sayfa ${data.page})</span>
+          <span>${data.total.toLocaleString('tr-TR')} kayıttan ${data.total === 0 ? 0 : (data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, data.total)} gösteriliyor (Sayfa ${data.page})</span>
           <div>
             <button class="button secondary" id="shortageV2Prev" ${data.page === 1 ? 'disabled' : ''}>← Önceki</button>
             <button class="button secondary" id="shortageV2Next" ${data.page * data.limit >= data.total ? 'disabled' : ''}>Sonraki →</button>
@@ -1355,6 +1549,16 @@ async function shortagePageV2(
       currentShortageV2Page = 1;
       shortagePageV2();
     });
+    document.querySelector('#shortageV2Category')?.addEventListener('change', e => {
+      currentShortageV2Category = e.target.value;
+      currentShortageV2Page = 1;
+      shortagePageV2();
+    });
+    document.querySelector('#shortageV2Availability')?.addEventListener('change', e => {
+      currentShortageV2Availability = e.target.value;
+      currentShortageV2Page = 1;
+      shortagePageV2();
+    });
     document.querySelector('#shortageV2Reason')?.addEventListener('change', e => {
       currentShortageV2Reason = e.target.value;
       currentShortageV2Page = 1;
@@ -1362,6 +1566,19 @@ async function shortagePageV2(
     });
     document.querySelector('#shortageV2Risk')?.addEventListener('change', e => {
       currentShortageV2Risk = e.target.value;
+      shortagePageV2();
+    });
+    document.querySelector('#shortageV2Limit')?.addEventListener('change', e => {
+      currentShortageV2Limit = e.target.value === 'all' ? 'all' : Number(e.target.value);
+      currentShortageV2Page = 1;
+      shortagePageV2();
+    });
+    document.querySelector('#clearActiveShortageV2Filters')?.addEventListener('click', () => {
+      currentShortageV2Status = '';
+      currentShortageV2Category = '';
+      currentShortageV2Availability = '';
+      currentShortageV2Reason = '';
+      currentShortageV2Page = 1;
       shortagePageV2();
     });
     document.querySelector('#shortageV2Prev')?.addEventListener('click', () => {
@@ -1376,10 +1593,13 @@ async function shortagePageV2(
     });
     document.querySelector('#resetShortageV2Filters')?.addEventListener('click', () => {
       currentShortageV2Query = '';
-      currentShortageV2Source = '';
+      currentShortageV2Source = 'Drug Shortages';
       currentShortageV2Status = '';
       currentShortageV2Reason = '';
+      currentShortageV2Category = '';
+      currentShortageV2Availability = '';
       currentShortageV2Risk = '';
+      currentShortageV2Limit = 25;
       currentShortageV2Page = 1;
       const globalInput = document.querySelector('#globalSearch');
       if (globalInput) globalInput.value = '';

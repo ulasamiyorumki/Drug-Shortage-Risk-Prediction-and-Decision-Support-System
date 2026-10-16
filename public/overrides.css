@@ -1069,4 +1069,49 @@ th:hover {
     border-color: #0284c7;
 }
 
+/* FDA Terapötik Kategori & Bulunabilirlik Rozetleri */
+.category-pill {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: normal;
+    border: 1px solid rgba(14, 165, 233, 0.28);
+    line-height: 1.3;
+}
+.avail-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.avail-green {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+.avail-amber {
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+.avail-red {
+    background: #fff1f2;
+    color: #e11d48;
+    border: 1px solid #fecdd3;
+}
+.fda-sync-banner {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.85)) !important;
+    border-left: 4px solid #0284c7 !important;
+    box-shadow: 0 4px 18px rgba(2, 132, 199, 0.08) !important;
+}
+
+
 

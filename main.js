@@ -37,11 +37,20 @@ app.get('/api/overview', async (_req, res, next) => {
 app.get('/api/records', async (req, res, next) => {
   try {
     const source = safeSource(req.query.source);
-    const page = Math.max(Number(req.query.page) || 1, 1); const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+    const page = Math.max(Number(req.query.page) || 1, 1); const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 2000);
     const q = String(req.query.q || '').trim(); const filters = []; const params = [];
     if (source) { filters.push('source = ?'); params.push(source); }
     if (q) { filters.push('(search_text LIKE ? OR ndc LIKE ? OR product_ndc LIKE ? OR package_ndc LIKE ? OR application_no LIKE ?)'); params.push(...Array(5).fill(`%${q}%`)); }
     if (req.query.status) { filters.push('shortage_status = ?'); params.push(req.query.status); }
+    if (req.query.category) {
+      filters.push('raw_json LIKE ?');
+      params.push(`%${String(req.query.category).trim()}%`);
+    }
+    if (req.query.availability) {
+      const av = String(req.query.availability).trim();
+      filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
+      params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
+    }
     if (req.query.reason) {
       const r = String(req.query.reason).trim();
       if (r === 'api') {
