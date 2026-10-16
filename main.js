@@ -78,7 +78,18 @@ app.get('/api/records', async (req, res, next) => {
       'midazolam|dormicum|versed|' +
       'tianeptine|tianeptin|stablon|coaxil|' +
       'thiopental|tiyopental|ekipental|pentothal|' +
-      'zopiclone|zopiklon|imovane';
+      'zopiclone|zopiklon|imovane|' +
+      'alfentanil|rapifen|alfenta|' +
+      'bromazepam|lexotanil|lexotan|' +
+      'chlordiazepoxide|klordiazepoksit|librax|librium|' +
+      'clobazam|klobazam|frisium|onfi|' +
+      'clorazepate|klorazepat|tranxene|tranxilium|' +
+      'flunitrazepam|rohypnol|' +
+      'flurazepam|dalmane|' +
+      'ketazolam|solatran|ansietan|' +
+      'lormetazepam|noctamid|loramet|' +
+      'nitrazepam|mogadon|alodorm|' +
+      'oxazepam|oksazepam|serax|sobril|alopam';
     if (req.query.green || req.query.is_green) {
       filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
       params.push(greenRegex, greenRegex, greenRegex);
