@@ -39,12 +39,16 @@ jobs:
             **/*.pdf
             **/*.rtf
       - name: Sync Subdomain and Trigger Restart
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           python3 -c "
           import ftplib, os, io
 
-          ftp = ftplib.FTP('${{ secrets.FTP_SERVER }}')
-          ftp.login('${{ secrets.FTP_USERNAME }}', '${{ secrets.FTP_PASSWORD }}')
+          ftp = ftplib.FTP(os.environ['FTP_SERVER'])
+          ftp.login(os.environ['FTP_USERNAME'], os.environ['FTP_PASSWORD'])
           print('Current FTP dir:', ftp.pwd())
           root_list = ftp.nlst()
           print('Root directory contents:', root_list)
