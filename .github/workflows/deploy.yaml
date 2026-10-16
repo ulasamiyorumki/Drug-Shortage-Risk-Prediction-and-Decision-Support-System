@@ -23,7 +23,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftp
-          port: ${{ secrets.FTP_PORT }}
+          port: ${{ secrets.FTP_PORT || 21 }}
           local-dir: ./
           server-dir: ./
           exclude: |
@@ -32,3 +32,9 @@ jobs:
             **/.github/**
             **/node_modules/**
             **/.DS_Store
+            **/.venv/**
+            **/Datasets/**
+            **/.devcontainer/**
+            **/*.docx
+            **/*.pdf
+            **/*.rtf
