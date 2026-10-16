@@ -38,3 +38,54 @@ jobs:
             **/*.docx
             **/*.pdf
             **/*.rtf
+      - name: Sync Subdomain and Trigger Restart
+        run: |
+          python3 -c "
+          import ftplib, os, io
+
+          ftp = ftplib.FTP('${{ secrets.FTP_SERVER }}')
+          ftp.login('${{ secrets.FTP_USERNAME }}', '${{ secrets.FTP_PASSWORD }}')
+          print('Current FTP dir:', ftp.pwd())
+          root_list = ftp.nlst()
+          print('Root directory contents:', root_list)
+
+          targets = []
+          for item in root_list:
+              lower = item.lower()
+              if 'shortage' in lower or 'analyzer' in lower:
+                  targets.append(item)
+
+          if 'public_html' in root_list:
+              try:
+                  sub_list = ftp.nlst('public_html')
+                  print('public_html contents:', sub_list)
+                  for sub in sub_list:
+                      lower = sub.lower()
+                      if 'shortage' in lower or 'analyzer' in lower:
+                          targets.append(f'public_html/{sub}')
+              except Exception as e:
+                  print('Could not list public_html:', e)
+
+          print('Target subdomain directories:', targets)
+
+          files_to_sync = ['public/index.html', 'public/app.js', 'public/style.css', 'public/overrides.css', 'main.js']
+          for t in targets:
+              for fpath in files_to_sync:
+                  if os.path.exists(fpath):
+                      dest = f'{t}/{fpath}'
+                      try:
+                          with open(fpath, 'rb') as f:
+                              ftp.storbinary(f'STOR {dest}', f)
+                          print(f'Uploaded {fpath} to {dest}')
+                      except Exception as err:
+                          print(f'Failed {dest}: {err}')
+
+          for p in ['.'] + targets:
+              try:
+                  ftp.storbinary(f'STOR {p}/tmp/restart.txt'.replace('.//', ''), io.BytesIO(b'restart\n'))
+                  print(f'Triggered restart in {p}')
+              except Exception as e:
+                  pass
+
+          ftp.quit()
+          "
