@@ -51,6 +51,19 @@ app.get('/api/records', async (req, res, next) => {
       filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
       params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
     }
+    const greenRegex = 'alprazolam|biperiden|diazepam|phenobarbital|fenobarbital|ketamine|ketamin|clonazepam|klonazepam|lorazepam|midazolam|pregabalin|tianeptine|tianeptin|thiopental|tiyopental|tramadol|zopiclone|zopiklon|xanax|akineton|diazem|nervium|valium|diastat|luminaletten|luminal|ketalar|ketanest|rivotril|klonopin|ativan|dormicum|versed|lyrica|galara|alyse|neogaba|regapen|symra|stablon|coaxil|ekipental|pentothal|contramal|ultracet|tramal|zaldiar|imovane';
+    if (req.query.green || req.query.is_green) {
+      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
+      params.push(greenRegex, greenRegex, greenRegex);
+    } else if (req.query.non_green) {
+      filters.push('(generic_name NOT REGEXP ? AND brand_name NOT REGEXP ? AND (search_text IS NULL OR search_text NOT REGEXP ?))');
+      params.push(greenRegex, greenRegex, greenRegex);
+    }
+    if (req.query.green_substance) {
+      const gs = String(req.query.green_substance).trim();
+      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
+      params.push(gs, gs, gs);
+    }
     if (req.query.reason) {
       const r = String(req.query.reason).trim();
       if (r === 'api') {
@@ -68,9 +81,9 @@ app.get('/api/records', async (req, res, next) => {
       } else if (r === 'discontinued') {
         filters.push('shortage_reason LIKE ?');
         params.push('%discontinu%');
-      } else if (r === 'green_rx') {
-        filters.push('(generic_name REGEXP ? OR brand_name REGEXP ?)');
-        params.push('pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam|diazepam|thiopental|ketamine|phenobarbital|zopiclone|tianeptine|clonazepam|clorazepate|biperiden|clidinium|etomidate|mefenamic acid', 'pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam|diazepam|thiopental|ketamine|phenobarbital|zopiclone|tianeptine|clonazepam|clorazepate|biperiden|clidinium|etomidate|mefenamic acid');
+      } else if (r === 'green_rx' || r === 'green_cases') {
+        filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
+        params.push(greenRegex, greenRegex, greenRegex);
       } else if (r === 'normal') {
         filters.push('(shortage_status IS NULL OR shortage_status = ?) AND (shortage_reason IS NULL OR shortage_reason = ?)');
         params.push('', '');

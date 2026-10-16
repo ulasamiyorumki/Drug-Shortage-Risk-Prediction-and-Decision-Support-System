@@ -1082,6 +1082,46 @@ let currentShortageV2Manufacturer = '';
 let currentShortageV2Risk = '';
 let currentShortageV2Limit = 25;
 let currentShortageV2Page = 1;
+let currentShortageV2GreenFilter = ''; // '', 'green_only', 'non_green', 'import_zero', 'green_active', 'local_prod', or molecule name
+
+function setShortageV2GreenFilter(val) {
+  currentShortageV2GreenFilter = val || '';
+  currentShortageV2Page = 1;
+  shortagePageV2();
+}
+
+function toggleShortageV2GreenOnly() {
+  currentShortageV2GreenFilter = currentShortageV2GreenFilter === 'green_only' ? '' : 'green_only';
+  currentShortageV2Page = 1;
+  shortagePageV2();
+}
+
+function getGreenSubstancePatterns(key) {
+  if (!key) return [];
+  const keyUpper = key.toUpperCase();
+  const canonical = greenAliases[keyUpper] || keyUpper;
+  const m = turkeyGreenMeds.find(x => x.name.toUpperCase() === canonical || x.name.toUpperCase() === keyUpper);
+  if (m && m.patterns) return m.patterns;
+  return [key.toLowerCase()];
+}
+
+function getGreenSubstanceQueryPattern(key) {
+  const pats = getGreenSubstancePatterns(key);
+  return pats.join('|');
+}
+
+function getGreenFilterLabel(key) {
+  if (!key) return '';
+  if (key === 'green_only') return 'Sadece Yeşil Reçeteliler (13 Madde & İçerenler)';
+  if (key === 'non_green') return 'Standart (Yeşil Olmayan) İlaçlar';
+  if (key === 'import_zero') return 'İthal Bağımlısı Yeşil Reçeteler (0 Muadil)';
+  if (key === 'green_active') return 'Aktif Krizdeki Yeşil Reçeteler (FDA)';
+  if (key === 'local_prod') return 'Yerli İmalat Olan Yeşil Reçeteler';
+  const keyUpper = key.toUpperCase();
+  const canonical = greenAliases[keyUpper] || keyUpper;
+  const m = turkeyGreenMeds.find(x => x.name.toUpperCase() === canonical || x.name.toUpperCase() === keyUpper);
+  return m ? `No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})` : key;
+}
 
 const fdaTherapeuticCategories = [
   'Analgesia/Addiction',
@@ -1281,8 +1321,34 @@ function classifyShortageReason(reasonStr) {
 
 function enrichShortageRecord(r) {
   let reasonText = getShortageReason(r) || r.shortage_reason || '';
-  const greenMatch = getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '') || getTurkeyGreenMed(r.search_text || '');
-  const isGreen = Boolean(greenMatch) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+  const rj = typeof r.raw_json === 'object' && r.raw_json ? r.raw_json : {};
+  const searchPool = [
+    r.generic_name,
+    r.brand_name,
+    r.search_text,
+    r.presentation,
+    label(r),
+    rj['Drug / product'],
+    rj['Presentation'],
+    rj.presentation,
+    rj.active_ingredient,
+    rj.ingredients,
+    rj.substance_name,
+    rj.generic_name,
+    rj.brand_name,
+    rj.dosage_form
+  ].filter(Boolean);
+
+  let greenMatch = null;
+  for (const text of searchPool) {
+    greenMatch = getTurkeyGreenMed(text);
+    if (greenMatch) break;
+  }
+  const combinedText = searchPool.join(' ');
+  const isGreen = Boolean(greenMatch) || greenMeds.test(combinedText);
+  if (!greenMatch && isGreen) {
+    greenMatch = getTurkeyGreenMed(combinedText);
+  }
   const isDirectShortage = r.source === 'Drug Shortages';
   const isCurrent = String(r.shortage_status || '').toLowerCase() === 'current';
   const isResolved = String(r.shortage_status || '').toLowerCase() === 'resolved';
@@ -1404,7 +1470,6 @@ function enrichShortageRecord(r) {
     categoryLabel = hasShortageReason ? classification.label : (isGreen ? 'Kontrole Tabi Molekül' : 'Rutin Tedarik');
   }
 
-  const rj = r.raw_json || {};
   let therapeuticCategory = rj.therapeutic_category || rj['Therapeutic category'] || (greenMatch ? 'Psikotrop & Narkotik (Yeşil Reçete)' : null);
   if (Array.isArray(therapeuticCategory)) {
     therapeuticCategory = therapeuticCategory.join(', ');
@@ -1485,12 +1550,12 @@ function shortageTableV2(rows, isFdaSource = true) {
                   ${r.greenData ? `
                     <div class="green-rx-meta">
                       <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)})
+                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
                       </span>
                       <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                         ${r.greenData.localEquivCount > 0 
-                          ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil</span>` 
-                          : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (Kritik Monopol)</span>`}
+                          ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
+                          : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
                         <span style="color:var(--muted);">· SGK: ${esc(r.greenData.equivGroup)}</span>
                       </div>
                       ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
@@ -1569,12 +1634,12 @@ function shortageTableV2(rows, isFdaSource = true) {
                 ${r.greenData ? `
                   <div class="green-rx-meta">
                     <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)})
+                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
                     </span>
                     <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                       ${r.greenData.localEquivCount > 0 
-                        ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil</span>` 
-                        : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (Kritik Monopol)</span>`}
+                        ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
+                        : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
                       <span style="color:var(--muted);">· SGK: ${esc(r.greenData.equivGroup)}</span>
                     </div>
                     ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
@@ -1623,6 +1688,7 @@ async function shortagePageV2(
   status = currentShortageV2Status,
   reasonFilter = currentShortageV2Reason,
   riskFilter = currentShortageV2Risk,
+  greenFilter = currentShortageV2GreenFilter,
   pageNo = currentShortageV2Page
 ) {
   currentShortageV2Query = query;
@@ -1630,6 +1696,7 @@ async function shortagePageV2(
   currentShortageV2Status = status;
   currentShortageV2Reason = reasonFilter;
   currentShortageV2Risk = riskFilter;
+  currentShortageV2GreenFilter = greenFilter || '';
   currentShortageV2Page = pageNo;
 
   const gSearch = document.querySelector('#globalSearch');
@@ -1709,12 +1776,18 @@ async function shortagePageV2(
       const reasonParam = reasonFilter ? `&reason=${encodeURIComponent(reasonFilter)}` : '';
       const categoryParam = currentShortageV2Category ? `&category=${encodeURIComponent(currentShortageV2Category)}` : '';
       const availParam = currentShortageV2Availability ? `&availability=${encodeURIComponent(currentShortageV2Availability)}` : '';
+      const greenParam = (currentShortageV2GreenFilter === 'green_only' || (currentShortageV2GreenFilter && !['non_green'].includes(currentShortageV2GreenFilter)))
+        ? '&green=1'
+        : (currentShortageV2GreenFilter === 'non_green' ? '&non_green=1' : '');
+      const greenSubstanceParam = (currentShortageV2GreenFilter && !['green_only', 'non_green', 'import_zero', 'green_active', 'local_prod'].includes(currentShortageV2GreenFilter))
+        ? `&green_substance=${encodeURIComponent(getGreenSubstanceQueryPattern(currentShortageV2GreenFilter))}`
+        : '';
       const limitNum = currentShortageV2Limit === 'all' ? 2000 : Number(currentShortageV2Limit) || 25;
 
       const [ov, sm, dt] = await Promise.all([
         api('/api/overview'),
         api('/api/analytics/shortages'),
-        api(`/api/records?page=${pageNo}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${reasonParam}${categoryParam}${availParam}`)
+        api(`/api/records?page=${pageNo}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${reasonParam}${categoryParam}${availParam}${greenParam}${greenSubstanceParam}`)
       ]);
       overview = ov;
       summary = sm;
@@ -1794,13 +1867,36 @@ async function shortagePageV2(
       else if (riskFilter === 'med') filtered = filtered.filter(r => r.riskScore >= 30 && r.riskScore < 75);
       else if (riskFilter === 'low') filtered = filtered.filter(r => r.riskScore < 30);
     }
+    if (currentShortageV2GreenFilter) {
+      if (currentShortageV2GreenFilter === 'green_only') {
+        filtered = filtered.filter(r => r.isGreen);
+      } else if (currentShortageV2GreenFilter === 'non_green') {
+        filtered = filtered.filter(r => !r.isGreen);
+      } else if (currentShortageV2GreenFilter === 'import_zero') {
+        filtered = filtered.filter(r => r.isGreen && (r.greenData?.origin || '').includes('İTHAL') && r.greenData?.localEquivCount === 0);
+      } else if (currentShortageV2GreenFilter === 'green_active') {
+        filtered = filtered.filter(r => r.isGreen && (r.greenData?.fdaShortage || '').includes('Active'));
+      } else if (currentShortageV2GreenFilter === 'local_prod') {
+        filtered = filtered.filter(r => r.isGreen && (r.greenData?.origin || '').includes('İMAL'));
+      } else {
+        const pats = getGreenSubstancePatterns(currentShortageV2GreenFilter);
+        filtered = filtered.filter(r => {
+          if (!r.isGreen || !r.greenData) return false;
+          const mName = (r.greenData.name || '').toUpperCase();
+          const targetCanon = (greenAliases[currentShortageV2GreenFilter.toUpperCase()] || currentShortageV2GreenFilter).toUpperCase();
+          if (mName === targetCanon) return true;
+          if (r.greenData.patterns && r.greenData.patterns.some(p => pats.includes(p.toLowerCase()))) return true;
+          return false;
+        });
+      }
+    }
 
     // Prioritization: Yeşil Reçete active ingredients prioritized at the top, sorted by risk score
     filtered.sort((a, b) => {
       if (source === 'green_cases') {
         return (b.riskScore || 0) - (a.riskScore || 0);
       }
-      if (query || reasonFilter === 'green_cases' || reasonFilter === 'green_rx') {
+      if (query || reasonFilter === 'green_cases' || reasonFilter === 'green_rx' || currentShortageV2GreenFilter) {
         if (a.isGreen !== b.isGreen) return a.isGreen ? -1 : 1;
       }
       return (b.riskScore || 0) - (a.riskScore || 0);
@@ -1925,7 +2021,7 @@ async function shortagePageV2(
                 <span style="font-size:16px;">🇹🇷</span>
                 <b style="font-size:13px; color:#065f46; font-family:Outfit;">Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı (${turkeyGreenMeds.length} Ulusal Molekül)</b>
               </div>
-              <button class="button" style="padding:4px 12px; font-size:11px;" onclick="setShortageV2Source('green_cases')">
+              <button class="button" style="padding:4px 12px; font-size:11px;" onclick="setShortageV2GreenFilter('green_only')">
                 🟢 ${turkeyGreenMeds.length} Yeşil Reçeteli İlacı Listele →
               </button>
             </div>
@@ -1933,17 +2029,17 @@ async function shortagePageV2(
               T.C. Sağlık Bakanlığı TİTCK ve SGK Ek-4/A resmi yeşil reçete listesiyle: Türkiye'de yerli alternatifi olmayan (%100 ithal) yeşil reçete ilaçları, FDA krizinde olmasalar dahi ulusal seviyede <b>kritik tedarik kırılganlığına (0 Muadil)</b> sahiptir.
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
-              <div class="green-stat-card" style="border-left:3px solid #e11d48;" onclick="setShortageV2Source('green_cases')">
+              <div class="green-stat-card" style="border-left:3px solid #e11d48;" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: İthal bağımlısı (0 muadil) yeşil reçeteleri filtrele">
                 <div style="font-size:11px; font-weight:700; color:#991b1b;">🔴 İthal Bağımlısı (0 Muadil)</div>
                 <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenImportZeroCount} İlaç</div>
                 <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Alprazolam (Xanax), Klonazepam, Tianeptin, vb.</div>
               </div>
-              <div class="green-stat-card" style="border-left:3px solid #f59e0b;" onclick="setShortageV2Source('green_cases')">
+              <div class="green-stat-card" style="border-left:3px solid #f59e0b;" onclick="setShortageV2GreenFilter('green_active')" title="Tıkla: Aktif FDA krizindeki yeşil reçeteleri filtrele">
                 <div style="font-size:11px; font-weight:700; color:#b45309;">⚡ Aktif Küresel Kriz (FDA)</div>
                 <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenActiveCount} İlaç</div>
                 <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Klonazepam (Rivotril), Lorazepam (Ativan), Midazolam, vb.</div>
               </div>
-              <div class="green-stat-card" style="border-left:3px solid #10b981;" onclick="setShortageV2Source('green_cases')">
+              <div class="green-stat-card" style="border-left:3px solid #10b981;" onclick="setShortageV2GreenFilter('local_prod')" title="Tıkla: Yerli imalat güvencesindeki yeşil reçeteleri filtrele">
                 <div style="font-size:11px; font-weight:700; color:#047857;">🟢 Yerli İmalat Güvencesi</div>
                 <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenLocalCount} İlaç</div>
                 <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Diazepam, Tramadol, Pregabalin, Biperiden vb.</div>
@@ -2060,16 +2156,37 @@ async function shortagePageV2(
 
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
-          <button class="tab ${source === 'Drug Shortages' ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages')">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases')">🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</button>
-          <button class="tab ${source === '' ? 'active' : ''}" onclick="setShortageV2Source('')">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs')">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products')">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'VA Contracts' ? 'active' : ''}" onclick="setShortageV2Source('VA Contracts')">VA Tedarik Sözleşmeleri (${Number(count['VA Contracts'] || 0).toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'CMS Medicare Part D' ? 'active' : ''}" onclick="setShortageV2Source('CMS Medicare Part D')">CMS Talep Verileri (${Number(count['CMS Medicare Part D'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'Drug Shortages' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages'); setShortageV2GreenFilter('');">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
+          <button class="tab ${currentShortageV2GreenFilter === 'green_only' ? 'active' : ''}" onclick="setShortageV2GreenFilter('green_only')">🟢 Sadece Yeşil Reçeteli İlaçlar (13 Madde & İçerenler)</button>
+          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases'); setShortageV2GreenFilter('');">🇹🇷 Türkiye 13 Ulusal Yeşil Molekül Portföyü</button>
+          <button class="tab ${source === '' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source(''); setShortageV2GreenFilter('');">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs'); setShortageV2GreenFilter('');">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products'); setShortageV2GreenFilter('');">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'VA Contracts' ? 'active' : ''}" onclick="setShortageV2Source('VA Contracts'); setShortageV2GreenFilter('');">VA Tedarik Sözleşmeleri (${Number(count['VA Contracts'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'CMS Medicare Part D' ? 'active' : ''}" onclick="setShortageV2Source('CMS Medicare Part D'); setShortageV2GreenFilter('');">CMS Talep Verileri (${Number(count['CMS Medicare Part D'] || 0).toLocaleString('tr-TR')})</button>
         </div>
 
         <div class="controls" style="margin-bottom:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap:12px;">
+          <label style="font-size:12px; font-weight:700; color:#047857; display:flex; flex-direction:column; gap:4px;">
+            🟢 Yeşil Reçete Filtresi:
+            <select id="shortageV2GreenFilter" style="border:1.5px solid #10b981; background:#f0fdf4; font-weight:600; color:#065f46;">
+              <option value="">Tüm İlaçlar (Standart + Yeşil Reçete)</option>
+              <option value="green_only" ${currentShortageV2GreenFilter === 'green_only' ? 'selected' : ''}>🟢 Sadece Yeşil Reçeteliler (13 Madde & İçerenler)</option>
+              <option value="non_green" ${currentShortageV2GreenFilter === 'non_green' ? 'selected' : ''}>⚪ Standart İlaçlar (Yeşil Olmayanlar)</option>
+              <optgroup label="📋 13 Resmi Etkin Madde (İçeren Kombinasyonlar Dahil)">
+                ${turkeyGreenMeds.map(m => `
+                  <option value="${m.name}" ${currentShortageV2GreenFilter.toUpperCase() === m.name ? 'selected' : ''}>
+                    No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})
+                  </option>
+                `).join('')}
+              </optgroup>
+              <optgroup label="⚡ Tedarik Kırılganlığı (Yeşil Reçete)">
+                <option value="import_zero" ${currentShortageV2GreenFilter === 'import_zero' ? 'selected' : ''}>🔴 İthal Bağımlısı (0 Muadil - SGK Ek-1)</option>
+                <option value="green_active" ${currentShortageV2GreenFilter === 'green_active' ? 'selected' : ''}>⚡ Aktif FDA Krizindeki Yeşil Reçeteler</option>
+                <option value="local_prod" ${currentShortageV2GreenFilter === 'local_prod' ? 'selected' : ''}>🟢 Yerli İmalat (Güvenceli)</option>
+              </optgroup>
+            </select>
+          </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
             Veri Kapsamı / Kaynak:
             <select id="shortageV2SourceSelect">
@@ -2155,10 +2272,11 @@ async function shortagePageV2(
           </label>
         </div>
 
-        ${(reasonFilter || currentShortageV2Category || currentShortageV2Availability || status || currentShortageV2Manufacturer) ? `
+        ${(reasonFilter || currentShortageV2Category || currentShortageV2Availability || status || currentShortageV2Manufacturer || currentShortageV2GreenFilter) ? `
           <div style="margin-top:14px; margin-bottom:14px; padding:10px 14px; border-radius:12px; background:rgba(2, 132, 199, 0.08); border:1px solid rgba(2, 132, 199, 0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; color:#0369a1;">
               <b>🔍 Aktif Süzgeçler:</b>
+              ${currentShortageV2GreenFilter ? `<span class="badge" style="font-size:10.5px; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; cursor:pointer;" onclick="setShortageV2GreenFilter('')" title="Tıkla: Yeşil reçete filtresini kaldır">🟢 Yeşil Reçete: ${esc(getGreenFilterLabel(currentShortageV2GreenFilter))} ✕</span>` : ''}
               ${status ? `<span class="badge current" style="font-size:10.5px;">Durum: ${esc(status)}</span>` : ''}
               ${currentShortageV2Manufacturer ? `<span class="badge" style="font-size:10.5px; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">Üretici: ${esc(currentShortageV2Manufacturer)}</span>` : ''}
               ${currentShortageV2Category ? `<span class="category-pill">Kategori: ${esc(currentShortageV2Category)}</span>` : ''}
@@ -2196,6 +2314,9 @@ async function shortagePageV2(
       </section>
     `;
 
+    document.querySelector('#shortageV2GreenFilter')?.addEventListener('change', e => {
+      setShortageV2GreenFilter(e.target.value);
+    });
     document.querySelector('#shortageV2SourceSelect')?.addEventListener('change', e => {
       currentShortageV2Source = e.target.value;
       currentShortageV2Page = 1;
@@ -2241,6 +2362,7 @@ async function shortagePageV2(
       currentShortageV2Category = '';
       currentShortageV2Availability = '';
       currentShortageV2Reason = '';
+      currentShortageV2GreenFilter = '';
       currentShortageV2Page = 1;
       shortagePageV2();
     });
@@ -2263,6 +2385,7 @@ async function shortagePageV2(
       currentShortageV2Category = '';
       currentShortageV2Availability = '';
       currentShortageV2Risk = '';
+      currentShortageV2GreenFilter = '';
       currentShortageV2Limit = 25;
       currentShortageV2Page = 1;
       const globalInput = document.querySelector('#globalSearch');
