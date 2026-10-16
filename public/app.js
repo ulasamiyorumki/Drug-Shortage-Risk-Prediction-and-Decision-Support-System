@@ -739,7 +739,7 @@ function simulatorPage() {
           <tbody>
             ${simResults.map(r => `
               <tr class="selectable" onclick="goToDrug('${r.name}')" style="cursor:pointer">
-                <td><b>${esc(r.name)}</b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
+                <td><b>${esc(r.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
                 <td><span class="badge ${r.origin === 'İMAL' ? 'resolved' : 'current'}">${esc(r.origin)}</span></td>
                 <td><b>${r.baseRisk} / 100</b></td>
                 <td><b style="color:${r.simRisk >= 85 ? 'var(--red)' : r.simRisk >= 65 ? '#b45309' : 'var(--green)'}; font-size:14px;">${r.simRisk} / 100</b></td>
@@ -949,7 +949,9 @@ async function detail(id) {
     const r = data.record;
     const greenMatch = getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '');
     const groups = Object.groupBy(data.related, x => x.source);
-    page.innerHTML = header(label(r), 'FDA, NDC, tedarik sıkıntısı, CMS ve VA kaynaklarındaki mevcut kayıtlar.') + `
+    const isGreen = Boolean(greenMatch) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+    const greenBadge = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    page.innerHTML = header(`${label(r)}${greenBadge}`, 'FDA, NDC, tedarik sıkıntısı, CMS ve VA kaynaklarındaki mevcut kayıtlar.') + `
       ${greenMatch ? `
         <div class="glass panel" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #10b981; background:linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(240, 249, 255, 0.8));">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -1006,12 +1008,20 @@ async function detail(id) {
 // ==========================================================================
 function shortageTable(rows) {
   if (!rows.length) return '<p class="empty notice">Eşleşen tedarik sıkıntısı kaydı bulunamadı.</p>';
-  return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici</th><th>NDC</th><th>Durum</th><th>Sıkıntı Nedeni</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici</th><th>NDC</th><th>Durum</th><th>Sıkıntı Nedeni</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
+    const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
 }
 
 function scopedTable(rows, emptyText) {
   if (!rows.length) return `<p class="empty notice">${emptyText}</p>`;
-  return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici / Tedarikçi</th><th>NDC</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${esc(r.report_year || '—')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici / Tedarikçi</th><th>NDC</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
+    const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${esc(r.report_year || '—')}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
 }
 
 let currentShortageQuery = '', currentShortageStatus = '';
@@ -1028,7 +1038,46 @@ async function shortagePage(query = '', status = '') {
 
   page.innerHTML = header('Tedarik Sıkıntısı Analizi', 'FDA Drug Shortages kayıtlarını durum, neden, ilaç, NDC ve şirket bilgileriyle inceleyin.') + guide + '<div class="empty glass">Kayıtlar yükleniyor…</div>';
   try {
-    const [summary, data] = await Promise.all([api('/api/analytics/shortages'), api(`/api/records?source=Drug%20Shortages&limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`)]);
+    const [summary, data] = await Promise.all([
+      api('/api/analytics/shortages'),
+      api(`/api/records?source=Drug%20Shortages&limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`)
+    ]);
+
+    // Smart green fallback: if user searched alprazolam, xanax, concerta, etc. and 0 rows found in FDA
+    if (query && data.rows.length === 0) {
+      const qLow = query.toLowerCase();
+      const matchedGreen = turkeyGreenMeds.filter(m => 
+        m.name.toLowerCase().includes(qLow) || m.brand.toLowerCase().includes(qLow)
+      );
+      if (matchedGreen.length > 0) {
+        data.rows = matchedGreen.map(m => ({
+          id: `green-${m.name.toLowerCase()}`,
+          source: 'Yeşil Reçete (TR)',
+          generic_name: m.name,
+          brand_name: m.brand,
+          manufacturer: m.manufacturer,
+          vendor: m.manufacturer,
+          ndc: m.barcode,
+          product_ndc: m.barcode,
+          package_ndc: m.barcode,
+          shortage_status: m.fdaShortage.includes('Active') ? 'Current' : (m.origin.includes('İTHAL') && m.localEquivCount === 0 ? 'İthal Bağımlısı' : 'Yerli İmalat'),
+          shortage_reason: m.origin.includes('İTHAL') && m.localEquivCount === 0 
+            ? 'Tek İthal Tedarikçi Bağımlılığı & Yerli Muadil Yokluğu (SGK Ek-1 Dönemsel İthalat)' 
+            : (m.fdaShortage.includes('Active') ? m.fdaReason : (m.fdaReason || 'Kontrole Tabi / Ulusal Kota Takibi')),
+          report_year: 2026
+        }));
+        data.total = data.rows.length;
+      }
+    }
+
+    // Prioritize green prescription drugs at the top
+    data.rows.sort((a, b) => {
+      const aGreen = Boolean(getTurkeyGreenMed(a.generic_name || '') || getTurkeyGreenMed(a.brand_name || '')) || greenMeds.test(a.generic_name || '') || greenMeds.test(a.brand_name || '');
+      const bGreen = Boolean(getTurkeyGreenMed(b.generic_name || '') || getTurkeyGreenMed(b.brand_name || '')) || greenMeds.test(b.generic_name || '') || greenMeds.test(b.brand_name || '');
+      if (aGreen !== bGreen) return aGreen ? -1 : 1;
+      return 0;
+    });
+
     page.innerHTML = header('Tedarik Sıkıntısı Analizi', 'FDA Drug Shortages kayıtlarını durum, neden, ilaç, NDC ve şirket bilgileriyle inceleyin.') + guide + `
       <section class="glass panel">
         <div class="controls" style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--muted)">Durum Süzgeci: <select id="shortageStatus"><option value="">Tüm durumlar</option><option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden)</option><option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü</option></select></label></div>
