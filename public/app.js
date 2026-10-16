@@ -842,6 +842,324 @@ async function shortagePage(query = '', status = '') {
   } catch (error) { page.innerHTML = header('Tedarik Sıkıntısı Analizi', '') + guide + dbMessage(error); }
 }
 
+let currentShortageV2Query = '';
+let currentShortageV2Status = '';
+let currentShortageV2Reason = '';
+let currentShortageV2Risk = '';
+
+function classifyShortageReason(reasonStr) {
+  const r = (reasonStr || '').toLowerCase();
+  if (r.includes('active ingredient') || r.includes('ingredient')) {
+    return {
+      key: 'api',
+      label: 'Hammadde / API Sıkıntısı',
+      action: 'Dual-Sourcing: İkincil API Üreticisi & Emniyet Stoğu Katsayısı (Z=2.33) Artırımı',
+      actionDetail: 'İkincil API tedarikçisi sertifikasyonu hızlandırılmalı; emniyet stoğu %99 servis düzeyine çıkarılmalı.',
+      weight: 30
+    };
+  }
+  if (r.includes('shipping') || r.includes('delay') || r.includes('transit')) {
+    return {
+      key: 'logistics',
+      label: 'Lojistik & Boğaz Gecikmesi',
+      action: 'Lead Time Tamponu (+21 Gün) & Sipariş Noktası (ROP) Güncellemesi',
+      actionDetail: 'Süveyş/Ümit Burnu sapması kaynaklı gecikme için ROP = d·L + SS formülünde teslim süresi 21 gün öne çekilmeli.',
+      weight: 22
+    };
+  }
+  if (r.includes('good manufacturing') || r.includes('gmp') || r.includes('complying') || r.includes('practices')) {
+    return {
+      key: 'gmp',
+      label: 'GMP & Kalite Uyumsuzluğu',
+      action: 'Eşdeğer Fason Tesis İkamesi & Hızlı Validasyon',
+      actionDetail: 'TİTCK / FDA onaylı alternatif fason üretim tesisine lisans transferi ve parti serbest bırakma önceliği.',
+      weight: 26
+    };
+  }
+  if (r.includes('demand')) {
+    return {
+      key: 'demand',
+      label: 'Talep Sıçraması & Kapasite',
+      action: 'Dinamik Tayınlama (Rationing) & Kota Tahsisi',
+      actionDetail: 'Hastane ve serbest eczanelere geçmiş tüketim katsayılı kota tahsisi yapılarak spekülatif stoklama engellenmeli.',
+      weight: 18
+    };
+  }
+  if (r.includes('discontinu')) {
+    return {
+      key: 'discontinued',
+      label: 'Piyasadan Çekilme / Ruhsat',
+      action: 'Ek-1 Yurt Dışı İlaç & SGK Muadil Geçişi',
+      actionDetail: 'SGK eşdeğer grubundaki yerli alternatiflere reçete yönlendirmesi; muadil yoksa TEB acil ithalat protokolü.',
+      weight: 28
+    };
+  }
+  return {
+    key: 'other',
+    label: 'Diğer / Operasyonel Neden',
+    action: 'Tedarikçi İstihbaratı & Yakın İzleme',
+    actionDetail: 'Pazar yoğunlaşması ve tedarikçi stok hareketleri düzenli SCOR metrikleriyle takip edilmeli.',
+    weight: 12
+  };
+}
+
+function enrichShortageRecord(r) {
+  const reasonText = getShortageReason(r) || r.shortage_reason || '';
+  const classification = classifyShortageReason(reasonText);
+  const isCurrent = String(r.shortage_status || '').toLowerCase() === 'current';
+  const isGreen = greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+
+  let score = (isCurrent ? 45 : 15) + classification.weight + (isGreen ? 25 : 0);
+  score = Math.min(100, Math.max(15, score));
+
+  let tier = 'low';
+  let tierLabel = 'DÜŞÜK';
+  if (score >= 75) {
+    tier = 'high';
+    tierLabel = 'KRİTİK';
+  } else if (score >= 50) {
+    tier = 'med';
+    tierLabel = 'YÜKSEK';
+  } else if (score >= 30) {
+    tier = 'med';
+    tierLabel = 'ORTA';
+  }
+
+  return {
+    ...r,
+    reasonText: reasonText || 'Belirtilmemiş',
+    categoryKey: classification.key,
+    categoryLabel: classification.label,
+    action: classification.action,
+    actionDetail: classification.actionDetail,
+    isCurrent,
+    isGreen,
+    riskScore: score,
+    riskTier: tier,
+    riskTierLabel: tierLabel
+  };
+}
+
+function shortageTableV2(rows) {
+  if (!rows.length) return '<p class="empty notice">Filtrelere uygun tedarik sıkıntısı kaydı bulunamadı.</p>';
+  return `
+    <div class="data-table">
+      <table>
+        <thead>
+          <tr>
+            <th>İlaç / Etkin Madde & Marka</th>
+            <th>Üretici Firma</th>
+            <th>NDC / Kod</th>
+            <th>Kriz Durumu</th>
+            <th>Kök Neden</th>
+            <th>Kritiklik Riski</th>
+            <th>Önerilen Mühendislik Aksiyonu</th>
+            <th>İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
+              <td class="drug-cell">
+                <b>${esc(label(r))}${r.isGreen ? ' <span style="display:inline-block;width:7px;height:7px;background:#10b981;border-radius:50%;margin-left:4px;box-shadow:0 0 6px #10b981;" title="Yeşil Reçete / Kontrole Tabi"></span>' : ''}</b>
+                <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
+              </td>
+              <td>${esc(r.manufacturer || r.vendor || '—')}</td>
+              <td><code>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
+              <td>${badge(r.shortage_status)}</td>
+              <td>
+                <span class="reason-badge">${esc(r.categoryLabel)}</span>
+                <br><small style="color:var(--muted); font-size:10px;">${esc(r.reasonText)}</small>
+              </td>
+              <td><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></td>
+              <td>
+                <div style="font-size:11.5px; font-weight:600; color:#0369a1; line-height:1.3;">
+                  ⚡ ${esc(r.action)}
+                </div>
+                <small style="color:var(--muted); font-size:10px; display:block; margin-top:2px;">${esc(r.actionDetail)}</small>
+              </td>
+              <td><button class="button" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); detail(${r.id})">İncele →</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function shortagePageV2(query = currentShortageV2Query, status = currentShortageV2Status, reasonFilter = currentShortageV2Reason, riskFilter = currentShortageV2Risk) {
+  currentShortageV2Query = query;
+  currentShortageV2Status = status;
+  currentShortageV2Reason = reasonFilter;
+  currentShortageV2Risk = riskFilter;
+
+  const guide = guideBanner(
+    "FDA Drug Shortages ve küresel tedarik zinciri kriz verilerini Endüstri Mühendisliği kök neden analizi, risk matrisi ve proaktif müdahale stratejileriyle birleştiren gelişmiş V2 Karar Destek ekranıdır.",
+    "Krizin kök nedenine (Hammadde/API, Lojistik, GMP/Kalite, Talep Sıçraması, Piyasadan Çekilme) göre kriz kritiklik seviyesini ve önerilen mühendislik müdahalesini (Emniyet Stoku Arttırma, Dual-Sourcing, Boğaz Lead Time Tamponu, Muadil Formülasyon) dinamik olarak modeller.",
+    "Durum, kök neden ve risk seviyesi süzgeçleriyle hedef odaklı analiz yapın; kritiklik skoru yüksek ilaçlar için doğrudan önerilen eylem planlarını denetleyin."
+  );
+
+  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Çok kriterli kriz kök neden sınıflaması, risk önceliklendirme ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">Veriler ve analiz modelleri yükleniyor…</div>';
+
+  try {
+    const [summary, data] = await Promise.all([
+      api('/api/analytics/shortages'),
+      api(`/api/records?source=Drug%20Shortages&limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`)
+    ]);
+
+    const enriched = data.rows.map(enrichShortageRecord);
+
+    let filtered = enriched;
+    if (reasonFilter) {
+      filtered = filtered.filter(r => r.categoryKey === reasonFilter);
+    }
+    if (riskFilter) {
+      if (riskFilter === 'high') filtered = filtered.filter(r => r.riskScore >= 75);
+      else if (riskFilter === 'med') filtered = filtered.filter(r => r.riskScore >= 30 && r.riskScore < 75);
+      else if (riskFilter === 'low') filtered = filtered.filter(r => r.riskScore < 30);
+    }
+
+    const currentCount = summary.status.find(s => String(s.label).toLowerCase() === 'current')?.value || '—';
+    const highRiskCount = enriched.filter(r => r.riskScore >= 75).length;
+    const greenRxShortageCount = enriched.filter(r => r.isGreen).length;
+
+    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Çok kriterli kriz kök neden sınıflaması, risk önceliklendirme ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+      <section class="grid stats">
+        <article class="glass stat">
+          <span class="stat-label">Toplam Kriz Kaydı</span>
+          <strong>${data.total.toLocaleString('tr-TR')}</strong>
+          <small>FDA Drug Shortages</small>
+          <span class="trend">↗</span>
+        </article>
+        <article class="glass stat">
+          <span class="stat-label">Aktif Tedarik Krizi</span>
+          <strong>${Number(currentCount).toLocaleString('tr-TR')}</strong>
+          <small>Devam eden krizler</small>
+          <span class="trend red">⚠</span>
+        </article>
+        <article class="glass stat">
+          <span class="stat-label">Kritik Riskli İlaçlar</span>
+          <strong>${highRiskCount}</strong>
+          <small>Risk Skoru ≥ 75 (Bu grupta)</small>
+          <span class="trend red">⚡</span>
+        </article>
+        <article class="glass stat">
+          <span class="stat-label">Kontrole Tabi / Yeşil Reçete</span>
+          <strong>${greenRxShortageCount}</strong>
+          <small>Yüksek öncelikli moleküller</small>
+          <span class="trend">⚚</span>
+        </article>
+      </section>
+
+      <section class="grid main-grid">
+        <article class="glass panel">
+          <div class="panel-head">
+            <h2>Kök Neden & Kriz Dinamiği Dağılımı</h2>
+            <span class="source-tag">FDA Kök Neden Dağılımı</span>
+          </div>
+          ${chart(summary.reasons)}
+          <div class="notice" style="margin-top:14px;">
+            💡 <b>Analiz Notu:</b> Krizlerin büyük kısmı tekil üretici arızaları ve küresel API (etkin madde) tedarik zincirindeki aksamalardan kaynaklanmaktadır.
+          </div>
+        </article>
+
+        <article class="glass panel">
+          <div class="panel-head">
+            <h2>Endüstri Mühendisliği Müdahale Matrisi</h2>
+            <span class="source-tag">Karar Destek Çerçevesi</span>
+          </div>
+          <div class="ie-matrix-grid">
+            <div class="ie-matrix-card">
+              <b>🚨 Hammadde / API Krizi</b>
+              <small>Dual-Sourcing & Güvenlik Stoğu Artırımı (SS = Z · σ_L · D)</small>
+            </div>
+            <div class="ie-matrix-card">
+              <b>🚢 Lojistik & Boğaz Gecikmesi</b>
+              <small>Lead Time Tamponu (+21 Gün) & Sipariş Noktası (ROP) Revizyonu</small>
+            </div>
+            <div class="ie-matrix-card">
+              <b>⚙ GMP & Kalite Kesintisi</b>
+              <small>Eşdeğer Fason Tesis Lisans Transferi & Validasyon Hızlandırma</small>
+            </div>
+            <div class="ie-matrix-card">
+              <b>📈 Talep Sıçraması</b>
+              <small>Dinamik Tayınlama (Rationing) & Spekülatif Stok Blokajı</small>
+            </div>
+            <div class="ie-matrix-card">
+              <b>🛑 Piyasadan Çekilme</b>
+              <small>SGK Eşdeğer Grubu Muadil Yönlendirmesi & TEB Ek-1 İthalat</small>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="glass panel" style="margin-top:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ Çok Kriterli Süzgeç & Karar Parametreleri</h2>
+          <button class="button secondary" id="resetShortageV2Filters" style="padding:6px 14px; font-size:11px;">Filtreleri Sıfırla</button>
+        </div>
+        <div class="controls" style="margin-bottom:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:12px;">
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Kriz Durumu:
+            <select id="shortageV2Status">
+              <option value="">Tüm Durumlar</option>
+              <option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden)</option>
+              <option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü</option>
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Kök Neden Sınıfı:
+            <select id="shortageV2Reason">
+              <option value="">Tüm Kök Nedenler</option>
+              <option value="api" ${reasonFilter === 'api' ? 'selected' : ''}>Hammadde / API Sıkıntısı</option>
+              <option value="logistics" ${reasonFilter === 'logistics' ? 'selected' : ''}>Lojistik & Boğaz Gecikmesi</option>
+              <option value="gmp" ${reasonFilter === 'gmp' ? 'selected' : ''}>GMP & Kalite Uyumsuzluğu</option>
+              <option value="demand" ${reasonFilter === 'demand' ? 'selected' : ''}>Talep Sıçraması & Kapasite</option>
+              <option value="discontinued" ${reasonFilter === 'discontinued' ? 'selected' : ''}>Piyasadan Çekilme / Ruhsat</option>
+              <option value="other" ${reasonFilter === 'other' ? 'selected' : ''}>Diğer / Operasyonel</option>
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Kritiklik Seviyesi:
+            <select id="shortageV2Risk">
+              <option value="">Tüm Risk Seviyeleri</option>
+              <option value="high" ${riskFilter === 'high' ? 'selected' : ''}>Kritik (Risk ≥ 75)</option>
+              <option value="med" ${riskFilter === 'med' ? 'selected' : ''}>Yüksek / Orta (Risk 30-74)</option>
+              <option value="low" ${riskFilter === 'low' ? 'selected' : ''}>Düşük (Risk &lt; 30)</option>
+            </select>
+          </label>
+        </div>
+
+        <h2 style="margin-top:22px;">Eşleşen Tedarik Sıkıntısı Kayıtları & Karar Matrisi · ${filtered.length.toLocaleString('tr-TR')} / ${data.total.toLocaleString('tr-TR')}</h2>
+        ${shortageTableV2(filtered)}
+      </section>
+    `;
+
+    document.querySelector('#shortageV2Status')?.addEventListener('change', e => {
+      shortagePageV2(currentShortageV2Query, e.target.value, currentShortageV2Reason, currentShortageV2Risk);
+    });
+    document.querySelector('#shortageV2Reason')?.addEventListener('change', e => {
+      shortagePageV2(currentShortageV2Query, currentShortageV2Status, e.target.value, currentShortageV2Risk);
+    });
+    document.querySelector('#shortageV2Risk')?.addEventListener('change', e => {
+      shortagePageV2(currentShortageV2Query, currentShortageV2Status, currentShortageV2Reason, e.target.value);
+    });
+    document.querySelector('#resetShortageV2Filters')?.addEventListener('click', () => {
+      currentShortageV2Query = '';
+      currentShortageV2Status = '';
+      currentShortageV2Reason = '';
+      currentShortageV2Risk = '';
+      const globalInput = document.querySelector('#globalSearch');
+      if (globalInput) globalInput.value = '';
+      shortagePageV2('', '', '', '');
+    });
+
+    bindDetails();
+  } catch (error) {
+    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', '') + guide + dbMessage(error);
+  }
+}
+
 async function supplierPage(query = '') {
   currentSupplierQuery = query;
   const guide = guideBanner(
@@ -992,6 +1310,7 @@ const routes = {
   dashboard,
   explorer,
   shortages: shortagePage,
+  shortagesv2: shortagePageV2,
   demand: demandPage,
   suppliers: supplierPage,
   comparison,
@@ -1087,6 +1406,9 @@ function setupGlobalSearch() {
       state.query = q; state.page = 1; recordsPage('datasets');
     } else if (hash === 'shortages') {
       shortagePage(q, document.querySelector('#shortageStatus')?.value || '');
+    } else if (hash === 'shortagesv2') {
+      currentShortageV2Query = q;
+      shortagePageV2(q, currentShortageV2Status, currentShortageV2Reason, currentShortageV2Risk);
     } else if (hash === 'suppliers') {
       supplierPage(q);
     } else if (hash === 'demand') {
@@ -1104,7 +1426,7 @@ function syncSearchPlaceholder() {
   const input = document.querySelector('#globalSearch');
   if (!input) return;
   const hash = (location.hash.slice(1) || 'dashboard');
-  if (hash === 'shortages') input.placeholder = 'FDA Tedarik Sıkıntılarında ara (İlaç, marka, NDC…)';
+  if (hash === 'shortages' || hash === 'shortagesv2') input.placeholder = 'FDA Tedarik Sıkıntılarında ara (İlaç, marka, NDC…)';
   else if (hash === 'suppliers') input.placeholder = 'Sözleşmelerde tedarikçi veya ilaç ara…';
   else if (hash === 'demand') input.placeholder = 'Talep ve fiyat verilerinde ara…';
   else if (hash === 'cases') input.placeholder = 'Yeşil reçeteli ilaç veya etken madde ara…';
