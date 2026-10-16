@@ -92,7 +92,7 @@ const greenMeds = /pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam
 function recordRows(rows, selectable = false, isExplorer = false) {
   return rows.map(r => {
     const isGreen = greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
     const reason = getShortageReason(r);
     const reasonBadge = reason ? `<span class="reason-badge">${esc(reason)}</span>` : '<span style="color:var(--muted)">—</span>';
     if (isExplorer) {
@@ -327,7 +327,7 @@ function casesPage() {
           <tbody>
             ${filtered.map(item => `
               <tr class="selectable" onclick="goToDrug('${item.name}')" style="cursor:pointer">
-                <td><b>${esc(item.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b></td>
+                <td><b>${esc(item.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b></td>
                 <td><b>${esc(item.brand)}</b><br><small style="color:var(--muted)">${esc(item.manufacturer)}</small></td>
                 <td><code>${esc(item.barcode)}</code></td>
                 <td><span class="source-tag">${esc(item.atc)}</span></td>
@@ -739,7 +739,7 @@ function simulatorPage() {
           <tbody>
             ${simResults.map(r => `
               <tr class="selectable" onclick="goToDrug('${r.name}')" style="cursor:pointer">
-                <td><b>${esc(r.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
+                <td><b>${esc(r.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
                 <td><span class="badge ${r.origin === 'İMAL' ? 'resolved' : 'current'}">${esc(r.origin)}</span></td>
                 <td><b>${r.baseRisk} / 100</b></td>
                 <td><b style="color:${r.simRisk >= 85 ? 'var(--red)' : r.simRisk >= 65 ? '#b45309' : 'var(--green)'}; font-size:14px;">${r.simRisk} / 100</b></td>
@@ -950,7 +950,7 @@ async function detail(id) {
     const greenMatch = getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '');
     const groups = Object.groupBy(data.related, x => x.source);
     const isGreen = Boolean(greenMatch) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const greenBadge = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const greenBadge = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
     page.innerHTML = header(`${label(r)}${greenBadge}`, 'FDA, NDC, tedarik sıkıntısı, CMS ve VA kaynaklarındaki mevcut kayıtlar.') + `
       ${greenMatch ? `
         <div class="glass panel" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #10b981; background:linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(240, 249, 255, 0.8));">
@@ -1010,7 +1010,7 @@ function shortageTable(rows) {
   if (!rows.length) return '<p class="empty notice">Eşleşen tedarik sıkıntısı kaydı bulunamadı.</p>';
   return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici</th><th>NDC</th><th>Durum</th><th>Sıkıntı Nedeni</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
     const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
     return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -1019,8 +1019,8 @@ function scopedTable(rows, emptyText) {
   if (!rows.length) return `<p class="empty notice">${emptyText}</p>`;
   return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici / Tedarikçi</th><th>NDC</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
     const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
-    return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${esc(r.report_year || '—')}</td></tr>`;
+    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -1430,12 +1430,12 @@ function shortageTableV2(rows, isFdaSource = true) {
             ${rows.map(r => `
               <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
                 <td class="drug-cell">
-                  <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
+                  <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
                   <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
                   ${r.greenData ? `
                     <div class="green-rx-meta">
                       <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                        🟢 SUT Kalkanı Yeşil Reçete (${esc(r.greenData.origin)})
+                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)})
                       </span>
                       <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                         ${r.greenData.localEquivCount > 0 
@@ -1513,12 +1513,12 @@ function shortageTableV2(rows, isFdaSource = true) {
           ${rows.map(r => `
             <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
               <td class="drug-cell">
-                <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK / SUT Kalkanı Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
+                <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
                 <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
                 ${r.greenData ? `
                   <div class="green-rx-meta">
                     <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                      🟢 SUT Kalkanı Yeşil Reçete (${esc(r.greenData.origin)})
+                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)})
                     </span>
                     <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                       ${r.greenData.localEquivCount > 0 
@@ -1737,7 +1737,7 @@ async function shortagePageV2(
       else if (riskFilter === 'low') filtered = filtered.filter(r => r.riskScore < 30);
     }
 
-    // Prioritization: SUT Kalkanı Yeşil Reçete active ingredients prioritized at the top, sorted by risk score
+    // Prioritization: Yeşil Reçete active ingredients prioritized at the top, sorted by risk score
     filtered.sort((a, b) => {
       if (source === 'green_cases') {
         return (b.riskScore || 0) - (a.riskScore || 0);
@@ -1843,19 +1843,19 @@ async function shortagePageV2(
             </div>
           </div>
 
-          <!-- 🇹🇷 Türkiye Yeşil Reçete & SUT Kalkanı Ulusal Tedarik Kriz Dağılımı Paneli -->
+          <!-- 🇹🇷 Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı Paneli -->
           <div style="margin-top:16px; padding:14px; border-radius:12px; background:linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.08)); border:1px solid rgba(16, 185, 129, 0.25);">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
               <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:16px;">🇹🇷</span>
-                <b style="font-size:13px; color:#065f46; font-family:Outfit;">Türkiye Yeşil Reçete & SUT Kalkanı Tedarik Kriz Dağılımı (${turkeyGreenMeds.length} Ulusal Molekül)</b>
+                <b style="font-size:13px; color:#065f46; font-family:Outfit;">Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı (${turkeyGreenMeds.length} Ulusal Molekül)</b>
               </div>
               <button class="button" style="padding:4px 12px; font-size:11px;" onclick="setShortageV2Source('green_cases')">
-                🟢 ${turkeyGreenMeds.length} SUT Kalkanı Yeşil Reçete İlacını Listele →
+                🟢 ${turkeyGreenMeds.length} Yeşil Reçeteli İlacı Listele →
               </button>
             </div>
             <div style="font-size:11.5px; color:#475569; margin-bottom:10px;">
-              T.C. Sağlık Bakanlığı TİTCK ve SUT Kalkanı resmi yeşil reçete listesiyle: Türkiye'de yerli alternatifi olmayan (%100 ithal) yeşil reçete ilaçları, FDA krizinde olmasalar dahi ulusal seviyede <b>kritik tedarik kırılganlığına (0 Muadil)</b> sahiptir.
+              T.C. Sağlık Bakanlığı TİTCK ve SGK Ek-4/A resmi yeşil reçete listesiyle: Türkiye'de yerli alternatifi olmayan (%100 ithal) yeşil reçete ilaçları, FDA krizinde olmasalar dahi ulusal seviyede <b>kritik tedarik kırılganlığına (0 Muadil)</b> sahiptir.
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
               <div class="green-stat-card" style="border-left:3px solid #e11d48;" onclick="setShortageV2Source('green_cases')">
@@ -1920,7 +1920,7 @@ async function shortagePageV2(
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
           <button class="tab ${source === 'Drug Shortages' ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages')">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
-          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases')">🟢 SUT Kalkanı Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</button>
+          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases')">🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</button>
           <button class="tab ${source === '' ? 'active' : ''}" onclick="setShortageV2Source('')">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs')">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products')">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
@@ -1933,7 +1933,7 @@ async function shortagePageV2(
             Veri Kapsamı / Kaynak:
             <select id="shortageV2SourceSelect">
               <option value="Drug Shortages" ${source === 'Drug Shortages' ? 'selected' : ''}>⚡ FDA Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</option>
-              <option value="green_cases" ${source === 'green_cases' ? 'selected' : ''}>🟢 SUT Kalkanı Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</option>
+              <option value="green_cases" ${source === 'green_cases' ? 'selected' : ''}>🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</option>
               <option value="" ${source === '' ? 'selected' : ''}>🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</option>
               ${Object.entries(sourceNames).filter(([k]) => k !== 'Drug Shortages').map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
             </select>
@@ -1975,7 +1975,7 @@ async function shortagePageV2(
                 `).join('')}
               </optgroup>
               <optgroup label="⚙️ Endüstri Mühendisliği Kök Neden Sınıfları">
-                <option value="green_cases" ${reasonFilter === 'green_cases' ? 'selected' : ''}>🟢 SUT Kalkanı Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Molekül)</option>
+                <option value="green_cases" ${reasonFilter === 'green_cases' ? 'selected' : ''}>🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Molekül)</option>
                 <option value="import_zero" ${reasonFilter === 'import_zero' ? 'selected' : ''}>İthal Bağımlılığı (0 Muadil - SGK Ek-1)</option>
                 <option value="green_active" ${reasonFilter === 'green_active' ? 'selected' : ''}>Aktif Kriz (Yeşil Reçete)</option>
                 <option value="local_prod" ${reasonFilter === 'local_prod' ? 'selected' : ''}>Yerli İmalat (Güvenceli)</option>
@@ -2025,10 +2025,10 @@ async function shortagePageV2(
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:22px; flex-wrap:wrap; gap:10px;">
           <h2 style="margin:0;">
-            ${source === 'green_cases' ? `🟢 SUT Kalkanı Yeşil Reçete & Ulusal Tedarik Kriz Portföyü (${turkeyGreenMeds.length} Molekül)` : (isFdaSource ? 'FDA Resmi Kriz Veri Tabanı' : (source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'))} Kayıtları · ${data.total.toLocaleString('tr-TR')}
+            ${source === 'green_cases' ? `🟢 Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Portföyü (${turkeyGreenMeds.length} Molekül)` : (isFdaSource ? 'FDA Resmi Kriz Veri Tabanı' : (source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'))} Kayıtları · ${data.total.toLocaleString('tr-TR')}
             ${query ? `<small style="font-size:12px; color:var(--muted); font-weight:normal;">("${esc(query)}" için filtrelendi)</small>` : ''}
           </h2>
-          <span style="font-size:11px; color:var(--muted);">${source === 'green_cases' ? `T.C. Sağlık Bakanlığı TİTCK ve SUT Kalkanı kapsamındaki ${turkeyGreenMeds.length} ulusal psikotrop ilaç ve kriz durumları listelenmektedir` : (isFdaSource ? 'FDA resmi sitesindeki tüm alanlar listelenmektedir · Satıra tıklayarak çapraz profili açabilirsiniz' : 'Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz')}</span>
+          <span style="font-size:11px; color:var(--muted);">${source === 'green_cases' ? `T.C. Sağlık Bakanlığı TİTCK ve SGK Ek-4/A kapsamındaki ${turkeyGreenMeds.length} ulusal psikotrop ilaç ve kriz durumları listelenmektedir` : (isFdaSource ? 'FDA resmi sitesindeki tüm alanlar listelenmektedir · Satıra tıklayarak çapraz profili açabilirsiniz' : 'Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz')}</span>
         </div>
 
         ${shortageTableV2(filtered, isFdaSource)}
