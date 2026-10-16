@@ -1113,5 +1113,30 @@ th:hover {
     box-shadow: 0 4px 18px rgba(2, 132, 199, 0.08) !important;
 }
 
+/* Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Rozetleri */
+.green-rx-meta {
+    margin-top: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.green-rx-meta .badge {
+    font-size: 10px;
+    font-weight: 700;
+    width: fit-content;
+}
+.green-stat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+}
+.green-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
 
 
