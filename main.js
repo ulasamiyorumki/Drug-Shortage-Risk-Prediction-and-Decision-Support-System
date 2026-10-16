@@ -42,11 +42,42 @@ app.get('/api/records', async (req, res, next) => {
     if (source) { filters.push('source = ?'); params.push(source); }
     if (q) { filters.push('(search_text LIKE ? OR ndc LIKE ? OR product_ndc LIKE ? OR package_ndc LIKE ? OR application_no LIKE ?)'); params.push(...Array(5).fill(`%${q}%`)); }
     if (req.query.status) { filters.push('shortage_status = ?'); params.push(req.query.status); }
+    if (req.query.reason) {
+      const r = String(req.query.reason).trim();
+      if (r === 'api') {
+        filters.push('(shortage_reason LIKE ? OR shortage_reason LIKE ?)');
+        params.push('%ingredient%', '%active ingredient%');
+      } else if (r === 'logistics') {
+        filters.push('(shortage_reason LIKE ? OR shortage_reason LIKE ? OR shortage_reason LIKE ?)');
+        params.push('%shipping%', '%delay%', '%transit%');
+      } else if (r === 'gmp') {
+        filters.push('(shortage_reason LIKE ? OR shortage_reason LIKE ? OR shortage_reason LIKE ?)');
+        params.push('%manufacturing%', '%gmp%', '%complying%');
+      } else if (r === 'demand') {
+        filters.push('shortage_reason LIKE ?');
+        params.push('%demand%');
+      } else if (r === 'discontinued') {
+        filters.push('shortage_reason LIKE ?');
+        params.push('%discontinu%');
+      } else if (r === 'green_rx') {
+        filters.push('(generic_name REGEXP ? OR brand_name REGEXP ?)');
+        params.push('pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam|diazepam|thiopental|ketamine|phenobarbital|zopiclone|tianeptine|clonazepam|clorazepate|biperiden|clidinium|etomidate|mefenamic acid', 'pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam|diazepam|thiopental|ketamine|phenobarbital|zopiclone|tianeptine|clonazepam|clorazepate|biperiden|clidinium|etomidate|mefenamic acid');
+      } else if (r === 'normal') {
+        filters.push('(shortage_status IS NULL OR shortage_status = ?) AND (shortage_reason IS NULL OR shortage_reason = ?)');
+        params.push('', '');
+      } else if (r === 'Belirtilmemiş' || r === 'Not available') {
+        filters.push('(shortage_reason IS NULL OR TRIM(shortage_reason) = ? OR shortage_reason = ?)');
+        params.push('', 'Not available');
+      } else {
+        filters.push('(shortage_reason LIKE ? OR search_text LIKE ?)');
+        params.push(`%${r}%`, `%${r}%`);
+      }
+    }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const [[total]] = await pool.query(`SELECT COUNT(*) count FROM drug_records ${where}`, params);
     const orderBy = source ? 'ORDER BY id DESC' : `ORDER BY CASE 
-      WHEN source = 'FDA Drugs' THEN 1 
-      WHEN source = 'Drug Shortages' THEN 2 
+      WHEN source = 'Drug Shortages' THEN 1 
+      WHEN source = 'FDA Drugs' THEN 2 
       WHEN source = 'NDC Products' THEN 3 
       WHEN source = 'VA Contracts' THEN 4 
       ELSE 5 
@@ -105,7 +136,16 @@ app.get('/api/analytics/:view', async (req, res, next) => {
     const view = req.params.view;
     if (view === 'shortages') {
       const [status] = await pool.query("SELECT COALESCE(shortage_status, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'Drug Shortages' GROUP BY shortage_status ORDER BY value DESC");
-      const [reasons] = await pool.query("SELECT COALESCE(shortage_reason, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'Drug Shortages' GROUP BY shortage_reason ORDER BY value DESC LIMIT 10");
+      const [reasons] = await pool.query(`
+        SELECT 
+          CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END label, 
+          COUNT(*) value 
+        FROM drug_records 
+        WHERE source = 'Drug Shortages' 
+        GROUP BY CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END 
+        ORDER BY value DESC 
+        LIMIT 15
+      `);
       return res.json({ status, reasons });
     }
     if (view === 'suppliers') {

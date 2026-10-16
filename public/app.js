@@ -854,8 +854,31 @@ let currentShortageV2Reason = '';
 let currentShortageV2Risk = '';
 let currentShortageV2Page = 1;
 
+const fdaReasonDescriptions = {
+  'Demand increase for the drug': 'İlaç Talep Artışı / Kapasite Yetersizliği',
+  'Shortage of an active ingredient': 'Aktif Etken Madde (API) Tedarik Darboğazı',
+  'Discontinuation of the manufacture of the drug': 'Üretimin Durdurulması / Piyasadan Çekilme',
+  'Delay in shipping of the drug': 'Sevkiyat ve Lojistik Gecikmesi',
+  'Requirements related to complying with good manufacturing practices': 'GMP ve Fabrika Kalite Standartları Uyumsuzluğu',
+  'Shortage of an inactive ingredient component': 'Yardımcı Madde / Flakon Eksikliği',
+  'Regulatory delay': 'Mevzuat ve Ruhsatlandırma Gecikmesi',
+  'Other': 'Diğer Operasyonel Nedenler',
+  'Belirtilmemiş': 'Belirtilmemiş (Veri Bekleniyor)',
+  'Not available': 'Kayıtlarda Belirtilmemiş'
+};
+
 window.setShortageV2Source = function(src) {
   currentShortageV2Source = src;
+  currentShortageV2Page = 1;
+  shortagePageV2();
+};
+
+window.setShortageV2Reason = function(reason) {
+  if (currentShortageV2Reason === reason) {
+    currentShortageV2Reason = '';
+  } else {
+    currentShortageV2Reason = reason;
+  }
   currentShortageV2Page = 1;
   shortagePageV2();
 };
@@ -1089,11 +1112,12 @@ async function shortagePageV2(
     const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
     const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
     const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
+    const reasonParam = reasonFilter ? `&reason=${encodeURIComponent(reasonFilter)}` : '';
 
     const [overview, summary, data] = await Promise.all([
       api('/api/overview'),
       api('/api/analytics/shortages'),
-      api(`/api/records?page=${pageNo}&limit=25${sourceParam}${queryParam}${statusParam}`)
+      api(`/api/records?page=${pageNo}&limit=25${sourceParam}${queryParam}${statusParam}${reasonParam}`)
     ]);
 
     const count = Object.fromEntries(overview.counts.map(x => [x.source, x.count]));
@@ -1102,7 +1126,14 @@ async function shortagePageV2(
 
     let filtered = enriched;
     if (reasonFilter) {
-      filtered = filtered.filter(r => r.categoryKey === reasonFilter);
+      filtered = filtered.filter(r => {
+        if (r.categoryKey === reasonFilter) return true;
+        const normFilter = reasonFilter.toLowerCase();
+        const normDisplay = (r.shortageReasonDisplay || '').toLowerCase();
+        const normReason = (r.shortage_reason || '').toLowerCase();
+        const normText = (r.reasonText || '').toLowerCase();
+        return normDisplay.includes(normFilter) || normReason.includes(normFilter) || normText.includes(normFilter);
+      });
     }
     if (riskFilter) {
       if (riskFilter === 'high') filtered = filtered.filter(r => r.riskScore >= 75);
@@ -1145,12 +1176,47 @@ async function shortagePageV2(
       <section class="grid main-grid">
         <article class="glass panel">
           <div class="panel-head">
-            <h2>Öne Çıkan Sıkıntı Nedenleri</h2>
-            <span class="source-tag">FDA Sıkıntı Nedenleri</span>
+            <h2>Öne Çıkan Sıkıntı Nedenleri & FDA Sonuçları</h2>
+            <span class="source-tag">FDA Kriz Kayıtları (${summary.reasons.length} Kök Neden)</span>
           </div>
           ${chart(summary.reasons)}
-          <div class="notice" style="margin-top:14px;">
-            💡 <b>Sıkıntı Nedeni Analizi:</b> Sistem, aradığınız veya incelediğiniz her ilacın FDA ve küresel tedarik sıkıntısı nedenini (etkin madde eksikliği, talep artışı, lojistik gecikme, GMP uyumsuzluğu) doğrudan eşleştirerek listelemektedir.
+
+          <div style="margin-top:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:12px; font-weight:700; color:var(--ink); font-family:Outfit;">
+                📋 FDA Veri Tabanı Kriz Nedenleri Sonuç Dağılımı (Filtrelemek İçin Tıklayın)
+              </span>
+              ${reasonFilter ? `
+                <button class="button secondary" onclick="setShortageV2Reason('')" style="padding:2px 8px; font-size:11px; color:#e11d48; border-color:#fecdd3;">
+                  ✕ Filtreyi Temizle
+                </button>
+              ` : ''}
+            </div>
+
+            <div class="reason-results-list">
+              ${summary.reasons.map(r => {
+                const isSelected = reasonFilter === r.label;
+                const desc = fdaReasonDescriptions[r.label] || 'FDA Kriz Bildirimi';
+                return `
+                  <div class="reason-result-item ${isSelected ? 'active' : ''}" onclick="setShortageV2Reason('${esc(r.label)}')" title="Tıkla: Bu nedene ait ilaçları listele">
+                    <div class="reason-result-info">
+                      <div class="reason-result-title">
+                        <b>${esc(r.label)}</b>
+                        <span class="reason-tr">${esc(desc)}</span>
+                      </div>
+                    </div>
+                    <div class="reason-result-stats">
+                      <span class="reason-count">${Number(r.value).toLocaleString('tr-TR')} kayıt</span>
+                      <span class="reason-badge-btn">${isSelected ? '✓ Seçili' : 'Filtrele →'}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="notice" style="margin-top:12px;">
+            💡 <b>Sıkıntı Nedeni Analizi:</b> Yukarıdaki neden sonuçlarından herhangi birine tıklayarak tablodaki ilaçları doğrudan o kök nedene göre filtreleyebilir; ilgili mühendislik aksiyonunu (ikincil API, ROP tamponu, tayınlama) denetleyebilirsiniz.
           </div>
         </article>
 
@@ -1219,14 +1285,23 @@ async function shortagePageV2(
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
             Sıkıntı Nedeni / Sınıfı:
             <select id="shortageV2Reason">
-              <option value="">Tüm Sıkıntı Nedenleri</option>
-              <option value="api" ${reasonFilter === 'api' ? 'selected' : ''}>Hammadde / API Sıkıntısı</option>
-              <option value="logistics" ${reasonFilter === 'logistics' ? 'selected' : ''}>Lojistik & Boğaz Gecikmesi</option>
-              <option value="gmp" ${reasonFilter === 'gmp' ? 'selected' : ''}>GMP & Kalite Uyumsuzluğu</option>
-              <option value="demand" ${reasonFilter === 'demand' ? 'selected' : ''}>Talep Sıçraması & Kapasite</option>
-              <option value="discontinued" ${reasonFilter === 'discontinued' ? 'selected' : ''}>Piyasadan Çekilme / Ruhsat</option>
-              <option value="green_rx" ${reasonFilter === 'green_rx' ? 'selected' : ''}>Kontrole Tabi (Yeşil Reçete)</option>
-              <option value="normal" ${reasonFilter === 'normal' ? 'selected' : ''}>Rutin Tedarik (Normal)</option>
+              <option value="">Tüm Sıkıntı Nedenleri (Tümü)</option>
+              <optgroup label="📋 FDA Veri Tabanı Kriz Nedenleri (Sonuçlar)">
+                ${summary.reasons.map(r => `
+                  <option value="${esc(r.label)}" ${reasonFilter === r.label ? 'selected' : ''}>
+                    ${esc(r.label)} (${Number(r.value).toLocaleString('tr-TR')} kayıt)
+                  </option>
+                `).join('')}
+              </optgroup>
+              <optgroup label="⚙️ Endüstri Mühendisliği Kök Neden Sınıfları">
+                <option value="api" ${reasonFilter === 'api' ? 'selected' : ''}>Hammadde / API Sıkıntısı</option>
+                <option value="logistics" ${reasonFilter === 'logistics' ? 'selected' : ''}>Lojistik & Boğaz Gecikmesi</option>
+                <option value="gmp" ${reasonFilter === 'gmp' ? 'selected' : ''}>GMP & Kalite Uyumsuzluğu</option>
+                <option value="demand" ${reasonFilter === 'demand' ? 'selected' : ''}>Talep Sıçraması & Kapasite</option>
+                <option value="discontinued" ${reasonFilter === 'discontinued' ? 'selected' : ''}>Piyasadan Çekilme / Ruhsat</option>
+                <option value="green_rx" ${reasonFilter === 'green_rx' ? 'selected' : ''}>Kontrole Tabi (Yeşil Reçete)</option>
+                <option value="normal" ${reasonFilter === 'normal' ? 'selected' : ''}>Rutin Tedarik (Normal)</option>
+              </optgroup>
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
@@ -1239,6 +1314,15 @@ async function shortagePageV2(
             </select>
           </label>
         </div>
+
+        ${reasonFilter ? `
+          <div style="margin-top:14px; margin-bottom:14px; padding:10px 14px; border-radius:12px; background:rgba(2, 132, 199, 0.08); border:1px solid rgba(2, 132, 199, 0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <span style="font-size:12px; color:#0369a1; font-weight:600;">
+              🔍 <b>Aktif Sıkıntı Nedeni Filtresi:</b> "${esc(reasonFilter)}" ${fdaReasonDescriptions[reasonFilter] ? `· <i>${esc(fdaReasonDescriptions[reasonFilter])}</i>` : ''}
+            </span>
+            <button class="button secondary" onclick="setShortageV2Reason('')" style="padding:4px 10px; font-size:11px;">Filtreyi Temizle ✕</button>
+          </div>
+        ` : ''}
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:22px; flex-wrap:wrap; gap:10px;">
           <h2 style="margin:0;">
@@ -1273,6 +1357,7 @@ async function shortagePageV2(
     });
     document.querySelector('#shortageV2Reason')?.addEventListener('change', e => {
       currentShortageV2Reason = e.target.value;
+      currentShortageV2Page = 1;
       shortagePageV2();
     });
     document.querySelector('#shortageV2Risk')?.addEventListener('change', e => {
