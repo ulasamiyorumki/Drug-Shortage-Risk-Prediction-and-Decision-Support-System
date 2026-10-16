@@ -51,7 +51,34 @@ app.get('/api/records', async (req, res, next) => {
       filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
       params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
     }
-    const greenRegex = 'alprazolam|biperiden|diazepam|phenobarbital|fenobarbital|ketamine|ketamin|clonazepam|klonazepam|lorazepam|midazolam|pregabalin|tianeptine|tianeptin|thiopental|tiyopental|tramadol|zopiclone|zopiklon|xanax|akineton|diazem|nervium|valium|diastat|luminaletten|luminal|ketalar|ketanest|rivotril|klonopin|ativan|dormicum|versed|lyrica|galara|alyse|neogaba|regapen|symra|stablon|coaxil|ekipental|pentothal|contramal|ultracet|tramal|zaldiar|imovane';
+    const greenRegex = 'fentanyl|fentanil|durogesic|sublimaze|actiq|fentora|abstral|instanyl|' +
+      'morphine|morfin|roxanol|kadian|' +
+      'oxycodone|oksikodon|oxycontin|oxynorm|percocet|roxicodone|targin|' +
+      'hydromorphone|hidromorfon|dilaudid|jurnista|exalgo|' +
+      'methadone|metadon|dolophine|methadose|physeptone|' +
+      'hydrocodone|hidrokodon|vicodin|norco|lortab|zohydro|hysingla|' +
+      'meperidine|meperidin|pethidine|petidin|demerol|aldolan|' +
+      'amphetamine|amfetamin|adderall|evekeo|dyanavel|' +
+      'lisdexamfetamine|lisdexamfetamin|lizdeksamfetamin|vyvanse|elvanse|' +
+      'methylphenidate|metilfenidat|ritalin|concerta|medikinet|daytrana|metadate|' +
+      'dexmethylphenidate|deksmetilfenidat|focalin|' +
+      'buprenorphine|buprenorfin|subutex|suboxone|butrans|belbuca|temgesic|transtec|' +
+      'ketamine|ketamin|ketalar|ketanest|spravato|' +
+      'alprazolam|xanax|niravam|' +
+      'clonazepam|klonazepam|rivotril|klonopin|' +
+      'diazepam|diazem|nervium|valium|diastat|' +
+      'lorazepam|ativan|lorabenz|' +
+      'tramadol|contramal|ultram|ultracet|tramal|zaldiar|' +
+      'zolpidem|ambien|sanval|stilnox|edluar|intermezzo|' +
+      'eszopiclone|eszopiklon|lunesta|' +
+      'temazepam|restoril|normison|' +
+      'phenobarbital|fenobarbital|luminaletten|luminal|' +
+      'pregabalin|lyrica|galara|alyse|neogaba|regapen|symra|' +
+      'biperiden|akineton|' +
+      'midazolam|dormicum|versed|' +
+      'tianeptine|tianeptin|stablon|coaxil|' +
+      'thiopental|tiyopental|ekipental|pentothal|' +
+      'zopiclone|zopiklon|imovane';
     if (req.query.green || req.query.is_green) {
       filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
       params.push(greenRegex, greenRegex, greenRegex);

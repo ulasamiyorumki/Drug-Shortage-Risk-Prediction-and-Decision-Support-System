@@ -87,7 +87,7 @@ function getShortageReason(r) {
   return null;
 }
 
-const greenMeds = /(?:^|[^a-z0-9])(alprazolam|biperiden|diazepam|phenobarbital|fenobarbital|ketamine|ketamin|clonazepam|klonazepam|lorazepam|midazolam|pregabalin|tianeptine|tianeptin|thiopental|tiyopental|tramadol|zopiclone|zopiklon|xanax|akineton|diazem|nervium|valium|diastat|luminaletten|luminal|ketalar|ketanest|rivotril|klonopin|ativan|dormicum|versed|lyrica|galara|alyse|neogaba|regapen|symra|stablon|coaxil|ekipental|pentothal|contramal|ultracet|tramal|zaldiar|imovane)(?:$|[^a-z0-9])/i;
+const greenMeds = /(?:^|[^a-z0-9])(fentanyl|fentanil|durogesic|sublimaze|actiq|fentora|abstral|instanyl|morphine|morfin|roxanol|kadian|oxycodone|oksikodon|oxycontin|oxynorm|percocet|roxicodone|targin|hydromorphone|hidromorfon|dilaudid|jurnista|exalgo|methadone|metadon|dolophine|methadose|physeptone|hydrocodone|hidrokodon|vicodin|norco|lortab|zohydro|hysingla|meperidine|meperidin|pethidine|petidin|demerol|aldolan|amphetamine|amfetamin|adderall|evekeo|dyanavel|lisdexamfetamine|lisdexamfetamin|lizdeksamfetamin|vyvanse|elvanse|methylphenidate|metilfenidat|ritalin|concerta|medikinet|daytrana|metadate|dexmethylphenidate|deksmetilfenidat|focalin|buprenorphine|buprenorfin|subutex|suboxone|butrans|belbuca|temgesic|transtec|ketamine|ketamin|ketalar|ketanest|spravato|alprazolam|xanax|niravam|clonazepam|klonazepam|rivotril|klonopin|diazepam|diazem|nervium|valium|diastat|lorazepam|ativan|lorabenz|tramadol|contramal|ultram|ultracet|tramal|zaldiar|zolpidem|ambien|sanval|stilnox|edluar|intermezzo|eszopiclone|eszopiklon|lunesta|temazepam|restoril|normison|phenobarbital|fenobarbital|luminaletten|luminal|pregabalin|lyrica|galara|alyse|neogaba|regapen|symra|biperiden|akineton|midazolam|dormicum|versed|tianeptine|tianeptin|stablon|coaxil|thiopental|tiyopental|ekipental|pentothal|zopiclone|zopiklon|imovane)(?:$|[^a-z0-9])/i;
 
 function recordRows(rows, selectable = false, isExplorer = false) {
   return rows.map(r => {
@@ -205,28 +205,68 @@ function calculateDrugScore(m, weights = state.riskWeights) {
 }
 
 const turkeyGreenMeds = [
-  { no: 1, name: 'ALPRAZOLAM', brand: 'XANAX 0.5 MG / 1 MG', barcode: '8699532011244', atc: 'N05BA12', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA12-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 63, va: 18, short: 0, fda: 179, patterns: ['alprazolam', 'xanax'] },
-  { no: 2, name: 'BIPERIDEN', brand: 'AKINETON 2 MG TAB / 5 MG AMPUL', barcode: '8699546011124', atc: 'N04AA02', origin: 'İMAL', manufacturer: 'LABORATUAR İLAÇ SAN.', equivGroup: 'N04AA02-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Yerli Üretim', cms: 12, va: 3, short: 0, fda: 35, patterns: ['biperiden', 'akineton'] },
-  { no: 3, name: 'DIAZEPAM', brand: 'DIAZEM 2 MG / 5 MG / 10 MG AMPUL', barcode: '8699525091234', atc: 'N05BA01', origin: 'İMAL', manufacturer: 'DEVA HOLDİNG A.Ş.', equivGroup: 'N05BA01-A1', localEquivCount: 4, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Yüksek', cms: 35, va: 12, short: 0, fda: 210, patterns: ['diazepam', 'diazem', 'nervium', 'valium', 'diastat'] },
-  { no: 4, name: 'PHENOBARBITAL', brand: 'LUMINALETTEN / PHENOBARBITAL', barcode: '8699546010042', atc: 'N03AA02', origin: 'İTHAL', manufacturer: 'DESITIN / BAYER', equivGroup: 'N03AA02-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Active Shortage', fdaReason: 'To Be Discontinued', cms: 18, va: 1, short: 8, fda: 43, patterns: ['phenobarbital', 'fenobarbital', 'luminaletten', 'luminal'] },
-  { no: 5, name: 'KETAMINE', brand: 'KETALAR 50 MG/ML FLAKON', barcode: '8699532750013', atc: 'N01AX03', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N01AX03-A1', localEquivCount: 1, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation & API delay', cms: 6, va: 5, short: 1, fda: 65, patterns: ['ketamine', 'ketamin', 'ketalar', 'ketanest'] },
-  { no: 6, name: 'CLONAZEPAM', brand: 'RIVOTRIL 2 MG TABLET / DAMLA', barcode: '8699508010116', atc: 'N05BA09', origin: 'İTHAL', manufacturer: 'CHEPLAPHARM / DEVA DAĞITIM', equivGroup: 'N05BA09-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Regulatory & shipping delay', cms: 18, va: 5, short: 40, fda: 250, patterns: ['clonazepam', 'klonazepam', 'rivotril', 'klonopin'] },
-  { no: 7, name: 'LORAZEPAM', brand: 'ATIVAN 1 MG / 2.5 MG', barcode: '8699532010018', atc: 'N05BA06', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA06-A1', localEquivCount: 0, yurtDisiList: 'Evet (Ek-1)', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 31, va: 25, short: 11, fda: 221, patterns: ['lorazepam', 'ativan'] },
-  { no: 8, name: 'MIDAZOLAM', brand: 'DORMICUM 5 MG/5 ML AMPUL', barcode: '8699508750012', atc: 'N05CD08', origin: 'İMAL / İTHAL', manufacturer: 'DEVA HOLDİNG / ROCHE', equivGroup: 'N05CD08-A1', localEquivCount: 3, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 24, va: 16, short: 27, fda: 126, patterns: ['midazolam', 'dormicum', 'versed'] },
-  { no: 9, name: 'PREGABALIN', brand: 'LYRICA 75/150/300 MG (VE GALARA)', barcode: '8699532150028', atc: 'N03AX16', origin: 'İMAL / İTHAL', manufacturer: 'PFIZER / NOBEL / İLKO', equivGroup: 'N03AX16-A1', localEquivCount: 8, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Çoklu Yerli Üretici', cms: 26, va: 28, short: 0, fda: 597, patterns: ['pregabalin', 'lyrica', 'galara', 'alyse', 'neogaba', 'regapen', 'symra'] },
-  { no: 10, name: 'TIANEPTINE', brand: 'STABLON 12.5 MG TABLET', barcode: '8699552010210', atc: 'N06AX14', origin: 'İTHAL', manufacturer: 'SERVİER İLAÇ VE ARAŞTIRMA A.Ş.', equivGroup: 'N06AX14-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi Bağımlılığı (0 Muadil)', cms: 8, va: 2, short: 0, fda: 14, patterns: ['tianeptine', 'tianeptin', 'stablon', 'coaxil'] },
-  { no: 11, name: 'THIOPENTAL', brand: 'EKİPENTAL 0.5 G / 1 G FLAKON', barcode: '8699638790114', atc: 'N01AF03', origin: 'İMAL', manufacturer: 'TÜM EKİP İLAÇ A.Ş.', equivGroup: 'N01AF03-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Ulusal Tek Üretici', cms: 4, va: 2, short: 0, fda: 18, patterns: ['thiopental', 'tiyopental', 'ekipental', 'pentothal'] },
-  { no: 12, name: 'TRAMADOL', brand: 'CONTRAMAL 50 MG / 100 MG RETARD', barcode: '8699514092110', atc: 'N02AX02', origin: 'İMAL', manufacturer: 'ABDİ İBRAHİM İLAÇ SAN.', equivGroup: 'N02AX02-A1', localEquivCount: 5, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Kapasitesi Yüksek', cms: 52, va: 9, short: 0, fda: 198, patterns: ['tramadol', 'contramal', 'ultracet', 'tramal', 'zaldiar'] },
-  { no: 13, name: 'ZOPICLONE', brand: 'IMOVANE 7.5 MG TABLET', barcode: '8699809010029', atc: 'N05CF01', origin: 'İTHAL', manufacturer: 'SANOFI SAĞLIK ÜRÜNLERİ', equivGroup: 'N05CF01-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi', cms: 15, va: 4, short: 0, fda: 123, patterns: ['zopiclone', 'zopiklon', 'imovane'] }
+  // 🚨 DEA Schedule II (Narkotik Analjezikler & Uyarıcılar)
+  { no: 1, name: 'FENTANYL', deaSchedule: 'Schedule II', brand: 'DUROGESIC 25/50/100 MCG / ACTIQ', barcode: '8699593000010', atc: 'N01AH01', origin: 'İTHAL', manufacturer: 'JOHNSON & JOHNSON / SANDOZ', equivGroup: 'N01AH01-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase & manufacturing delay', cms: 15, va: 12, short: 18, fda: 140, patterns: ['fentanyl', 'fentanil', 'durogesic', 'sublimaze', 'actiq', 'fentora', 'abstral', 'instanyl'] },
+  { no: 2, name: 'MORPHINE', deaSchedule: 'Schedule II', brand: 'MST CONTINUS / MORFIN HCL', barcode: '8699546011999', atc: 'N02AA01', origin: 'İTHAL / İMAL', manufacturer: 'MUNDIPHARMA / DEVA', equivGroup: 'N02AA01-A1', localEquivCount: 2, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Manufacturing delay', cms: 45, va: 20, short: 22, fda: 215, patterns: ['morphine', 'morfin', 'mst continus', 'roxanol', 'kadian'] },
+  { no: 3, name: 'OXYCODONE', deaSchedule: 'Schedule II', brand: 'OXYCONTIN 10/20/40 MG (VE TARGIN)', barcode: '8699546012001', atc: 'N02AA05', origin: 'İTHAL', manufacturer: 'MUNDIPHARMA İLAÇ', equivGroup: 'N02AA05-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Regulatory review', cms: 38, va: 15, short: 9, fda: 180, patterns: ['oxycodone', 'oksikodon', 'oxycontin', 'oxynorm', 'percocet', 'roxicodone', 'targin'] },
+  { no: 4, name: 'HYDROMORPHONE', deaSchedule: 'Schedule II', brand: 'DILAUDID / JURNISTA 4/8/16 MG', barcode: '8699593010020', atc: 'N02AA03', origin: 'İTHAL', manufacturer: 'JANSSEN-CILAG', equivGroup: 'N02AA03-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Supply constraint', cms: 12, va: 8, short: 14, fda: 95, patterns: ['hydromorphone', 'hidromorfon', 'dilaudid', 'jurnista', 'exalgo'] },
+  { no: 5, name: 'METHADONE', deaSchedule: 'Schedule II', brand: 'METHADOSE / DOLOPHINE 10 MG', barcode: '8699546013000', atc: 'N07BC02', origin: 'İTHAL', manufacturer: 'MALLINCKRODT', equivGroup: 'N07BC02-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Requirement compliance', cms: 10, va: 6, short: 5, fda: 88, patterns: ['methadone', 'metadon', 'dolophine', 'methadose', 'physeptone'] },
+  { no: 6, name: 'HYDROCODONE', deaSchedule: 'Schedule II', brand: 'VICODIN / NORCO (VE ZOHYDRO)', barcode: '8699546014000', atc: 'N02AA08', origin: 'İTHAL', manufacturer: 'ABBVIE / ALLERGAN', equivGroup: 'N02AA08-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'API shortage', cms: 28, va: 14, short: 12, fda: 160, patterns: ['hydrocodone', 'hidrokodon', 'vicodin', 'norco', 'lortab', 'zohydro', 'hysingla'] },
+  { no: 7, name: 'MEPERIDINE', deaSchedule: 'Schedule II', brand: 'ALDOLAN / DEMEROL 100 MG', barcode: '8699546015000', atc: 'N02AB02', origin: 'İMAL', manufacturer: 'GEROT LANNACH / TEVA', equivGroup: 'N02AB02-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation', cms: 8, va: 4, short: 7, fda: 72, patterns: ['meperidine', 'meperidin', 'pethidine', 'petidin', 'demerol', 'aldolan'] },
+  { no: 8, name: 'AMPHETAMINE', deaSchedule: 'Schedule II', brand: 'ADDERALL XR / EVEKEO', barcode: '8699546016000', atc: 'N06BA01', origin: 'İTHAL', manufacturer: 'TAKEDA / TEVA', equivGroup: 'N06BA01-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase & quota', cms: 32, va: 18, short: 35, fda: 190, patterns: ['amphetamine', 'amfetamin', 'adderall', 'evekeo', 'dyanavel'] },
+  { no: 9, name: 'LISDEXAMFETAMINE', deaSchedule: 'Schedule II', brand: 'VYVANSE 30/50/70 MG', barcode: '8699546017000', atc: 'N06BA12', origin: 'İTHAL', manufacturer: 'TAKEDA PHARMA', equivGroup: 'N06BA12-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'DEA quota & manufacturing', cms: 24, va: 11, short: 29, fda: 110, patterns: ['lisdexamfetamine', 'lisdexamfetamin', 'lizdeksamfetamin', 'vyvanse', 'elvanse'] },
+  { no: 10, name: 'METHYLPHENIDATE', deaSchedule: 'Schedule II', brand: 'CONCERTA / RITALIN 10/18/36/54 MG', barcode: '8699593010100', atc: 'N06BA04', origin: 'İTHAL / İMAL', manufacturer: 'JANSSEN / NOVARTIS / ALİ RAİF', equivGroup: 'N06BA04-A1', localEquivCount: 3, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'High domestic & global demand', cms: 55, va: 22, short: 44, fda: 230, patterns: ['methylphenidate', 'metilfenidat', 'ritalin', 'concerta', 'medikinet', 'daytrana', 'metadate'] },
+  { no: 11, name: 'DEXMETHYLPHENIDATE', deaSchedule: 'Schedule II', brand: 'FOCALIN XR 5/10/20 MG', barcode: '8699546018000', atc: 'N06BA11', origin: 'İTHAL', manufacturer: 'NOVARTIS', equivGroup: 'N06BA11-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Manufacturing delay', cms: 14, va: 5, short: 11, fda: 60, patterns: ['dexmethylphenidate', 'deksmetilfenidat', 'focalin'] },
+
+  // ⚡ DEA Schedule III (Analjezik & Anestezikler)
+  { no: 12, name: 'BUPRENORPHINE', deaSchedule: 'Schedule III', brand: 'SUBOXONE / SUBUTEX / BUTRANS', barcode: '8699546019000', atc: 'N07BC01', origin: 'İTHAL', manufacturer: 'INDIVIOR / RECORDATI', equivGroup: 'N07BC01-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase', cms: 30, va: 21, short: 16, fda: 145, patterns: ['buprenorphine', 'buprenorfin', 'subutex', 'suboxone', 'butrans', 'belbuca', 'temgesic', 'transtec'] },
+  { no: 13, name: 'KETAMINE', deaSchedule: 'Schedule III', brand: 'KETALAR 50 MG/ML FLAKON', barcode: '8699532750013', atc: 'N01AX03', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N01AX03-A1', localEquivCount: 1, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation & API delay', cms: 6, va: 5, short: 1, fda: 65, patterns: ['ketamine', 'ketamin', 'ketalar', 'ketanest', 'spravato', 'esketamine', 'esketamin'] },
+
+  // ⚡ DEA Schedule IV (Benzodiazepinler, Sedatifler & Analjezikler)
+  { no: 14, name: 'ALPRAZOLAM', deaSchedule: 'Schedule IV', brand: 'XANAX 0.5 MG / 1 MG', barcode: '8699532011244', atc: 'N05BA12', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA12-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 63, va: 18, short: 0, fda: 179, patterns: ['alprazolam', 'xanax', 'niravam'] },
+  { no: 15, name: 'CLONAZEPAM', deaSchedule: 'Schedule IV', brand: 'RIVOTRIL 2 MG TABLET / DAMLA', barcode: '8699508010116', atc: 'N05BA09', origin: 'İTHAL', manufacturer: 'CHEPLAPHARM / DEVA DAĞITIM', equivGroup: 'N05BA09-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Regulatory & shipping delay', cms: 18, va: 5, short: 40, fda: 250, patterns: ['clonazepam', 'klonazepam', 'rivotril', 'klonopin'] },
+  { no: 16, name: 'DIAZEPAM', deaSchedule: 'Schedule IV', brand: 'DIAZEM 2 MG / 5 MG / 10 MG AMPUL', barcode: '8699525091234', atc: 'N05BA01', origin: 'İMAL', manufacturer: 'DEVA HOLDİNG A.Ş.', equivGroup: 'N05BA01-A1', localEquivCount: 4, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Yüksek', cms: 35, va: 12, short: 0, fda: 210, patterns: ['diazepam', 'diazem', 'nervium', 'valium', 'diastat'] },
+  { no: 17, name: 'LORAZEPAM', deaSchedule: 'Schedule IV', brand: 'ATIVAN 1 MG / 2.5 MG', barcode: '8699532010018', atc: 'N05BA06', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA06-A1', localEquivCount: 0, yurtDisiList: 'Evet (Ek-1)', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 31, va: 25, short: 11, fda: 221, patterns: ['lorazepam', 'ativan', 'lorabenz'] },
+  { no: 18, name: 'TRAMADOL', deaSchedule: 'Schedule IV', brand: 'CONTRAMAL 50 MG / 100 MG RETARD', barcode: '8699514092110', atc: 'N02AX02', origin: 'İMAL', manufacturer: 'ABDİ İBRAHİM İLAÇ SAN.', equivGroup: 'N02AX02-A1', localEquivCount: 5, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Kapasitesi Yüksek', cms: 52, va: 9, short: 0, fda: 198, patterns: ['tramadol', 'contramal', 'ultram', 'ultracet', 'tramal', 'zaldiar'] },
+  { no: 19, name: 'ZOLPIDEM', deaSchedule: 'Schedule IV', brand: 'SANVAL 5/10 MG / AMBIEN', barcode: '8699546020000', atc: 'N05CF02', origin: 'İMAL / İTHAL', manufacturer: 'SANDOZ / SANOFI', equivGroup: 'N05CF02-A1', localEquivCount: 2, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 22, va: 10, short: 0, fda: 135, patterns: ['zolpidem', 'ambien', 'sanval', 'stilnox', 'edluar', 'intermezzo'] },
+  { no: 20, name: 'ESZOPICLONE', deaSchedule: 'Schedule IV', brand: 'LUNESTA 1/2/3 MG', barcode: '8699546021000', atc: 'N05CF04', origin: 'İTHAL', manufacturer: 'SUNOVION / TEVA', equivGroup: 'N05CF04-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 16, va: 6, short: 0, fda: 98, patterns: ['eszopiclone', 'eszopiklon', 'lunesta'] },
+  { no: 21, name: 'TEMAZEPAM', deaSchedule: 'Schedule IV', brand: 'RESTORIL 15/30 MG', barcode: '8699546022000', atc: 'N05BA15', origin: 'İTHAL', manufacturer: 'MALLINCKRODT', equivGroup: 'N05BA15-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Manufacturing delay', cms: 12, va: 4, short: 6, fda: 82, patterns: ['temazepam', 'restoril', 'normison'] },
+  { no: 22, name: 'PHENOBARBITAL', deaSchedule: 'Schedule IV', brand: 'LUMINALETTEN / PHENOBARBITAL', barcode: '8699546010042', atc: 'N03AA02', origin: 'İTHAL', manufacturer: 'DESITIN / BAYER', equivGroup: 'N03AA02-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Active Shortage', fdaReason: 'To Be Discontinued', cms: 18, va: 1, short: 8, fda: 43, patterns: ['phenobarbital', 'fenobarbital', 'luminaletten', 'luminal'] },
+
+  // ⚡ DEA Schedule V (Antikonvülzan / Nöropatik Ağrı)
+  { no: 23, name: 'PREGABALIN', deaSchedule: 'Schedule V', brand: 'LYRICA 75/150/300 MG (VE GALARA)', barcode: '8699532150028', atc: 'N03AX16', origin: 'İMAL / İTHAL', manufacturer: 'PFIZER / NOBEL / İLKO', equivGroup: 'N03AX16-A1', localEquivCount: 8, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Çoklu Yerli Üretici', cms: 26, va: 28, short: 0, fda: 597, patterns: ['pregabalin', 'lyrica', 'galara', 'alyse', 'neogaba', 'regapen', 'symra'] },
+
+  // 🇹🇷 TİTCK / SGK Ek-4/A Kontrole Tabi İlave Moleküller
+  { no: 24, name: 'BIPERIDEN', deaSchedule: 'TİTCK / Ek-4/A', brand: 'AKINETON 2 MG TAB / 5 MG AMPUL', barcode: '8699546011124', atc: 'N04AA02', origin: 'İMAL', manufacturer: 'LABORATUAR İLAÇ SAN.', equivGroup: 'N04AA02-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Yerli Üretim', cms: 12, va: 3, short: 0, fda: 35, patterns: ['biperiden', 'akineton'] },
+  { no: 25, name: 'MIDAZOLAM', deaSchedule: 'TİTCK / Ek-4/A', brand: 'DORMICUM 5 MG/5 ML AMPUL', barcode: '8699508750012', atc: 'N05CD08', origin: 'İMAL / İTHAL', manufacturer: 'DEVA HOLDİNG / ROCHE', equivGroup: 'N05CD08-A1', localEquivCount: 3, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 24, va: 16, short: 27, fda: 126, patterns: ['midazolam', 'dormicum', 'versed'] },
+  { no: 26, name: 'TIANEPTINE', deaSchedule: 'TİTCK / Ek-4/A', brand: 'STABLON 12.5 MG TABLET', barcode: '8699552010210', atc: 'N06AX14', origin: 'İTHAL', manufacturer: 'SERVİER İLAÇ VE ARAŞTIRMA A.Ş.', equivGroup: 'N06AX14-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi Bağımlılığı (0 Muadil)', cms: 8, va: 2, short: 0, fda: 14, patterns: ['tianeptine', 'tianeptin', 'stablon', 'coaxil'] },
+  { no: 27, name: 'THIOPENTAL', deaSchedule: 'TİTCK / Ek-4/A', brand: 'EKİPENTAL 0.5 G / 1 G FLAKON', barcode: '8699638790114', atc: 'N01AF03', origin: 'İMAL', manufacturer: 'TÜM EKİP İLAÇ A.Ş.', equivGroup: 'N01AF03-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Ulusal Tek Üretici', cms: 4, va: 2, short: 0, fda: 18, patterns: ['thiopental', 'tiyopental', 'ekipental', 'pentothal'] },
+  { no: 28, name: 'ZOPICLONE', deaSchedule: 'TİTCK / Ek-4/A', brand: 'IMOVANE 7.5 MG TABLET', barcode: '8699809010029', atc: 'N05CF01', origin: 'İTHAL', manufacturer: 'SANOFI SAĞLIK ÜRÜNLERİ', equivGroup: 'N05CF01-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi', cms: 15, va: 4, short: 0, fda: 123, patterns: ['zopiclone', 'zopiklon', 'imovane'] }
 ];
 
 const greenAliases = {
-  'TIANEPTIN': 'TIANEPTINE',
+  'FENTANIL': 'FENTANYL',
+  'MORFIN': 'MORPHINE',
+  'OKSIKODON': 'OXYCODONE',
+  'HIDROMORFON': 'HYDROMORPHONE',
+  'METADON': 'METHADONE',
+  'HIDROKODON': 'HYDROCODONE',
+  'MEPERIDIN': 'MEPERIDINE',
+  'PETIDIN': 'MEPERIDINE',
+  'PETHIDINE': 'MEPERIDINE',
+  'AMFETAMIN': 'AMPHETAMINE',
+  'LIZDEKSAMFETAMIN': 'LISDEXAMFETAMINE',
+  'LISDEXAMFETAMIN': 'LISDEXAMFETAMINE',
+  'METILFENIDAT': 'METHYLPHENIDATE',
+  'DEKSMETILFENIDAT': 'DEXMETHYLPHENIDATE',
+  'BUPRENORFIN': 'BUPRENORPHINE',
+  'KETAMIN': 'KETAMINE',
   'KLONAZEPAM': 'CLONAZEPAM',
   'FENOBARBITAL': 'PHENOBARBITAL',
+  'ESZOPIKLON': 'ESZOPICLONE',
+  'TIANEPTIN': 'TIANEPTINE',
   'TIYOPENTAL': 'THIOPENTAL',
-  'ZOPIKLON': 'ZOPICLONE',
-  'KETAMIN': 'KETAMINE'
+  'ZOPIKLON': 'ZOPICLONE'
 };
 
 function normalizeMedText(str) {
@@ -1112,7 +1152,7 @@ function getGreenSubstanceQueryPattern(key) {
 
 function getGreenFilterLabel(key) {
   if (!key) return '';
-  if (key === 'green_only') return 'Sadece Yeşil Reçeteliler (13 Madde & İçerenler)';
+  if (key === 'green_only') return 'Tüm Yeşil Reçeteliler (28 Etkin Madde & İçerenler)';
   if (key === 'non_green') return 'Standart (Yeşil Olmayan) İlaçlar';
   if (key === 'import_zero') return 'İthal Bağımlısı Yeşil Reçeteler (0 Muadil)';
   if (key === 'green_active') return 'Aktif Krizdeki Yeşil Reçeteler (FDA)';
@@ -1120,7 +1160,7 @@ function getGreenFilterLabel(key) {
   const keyUpper = key.toUpperCase();
   const canonical = greenAliases[keyUpper] || keyUpper;
   const m = turkeyGreenMeds.find(x => x.name.toUpperCase() === canonical || x.name.toUpperCase() === keyUpper);
-  return m ? `No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})` : key;
+  return m ? `No ${m.no}: ${m.name} (${m.deaSchedule ? `${m.deaSchedule} · ` : ''}${m.brand.split('/')[0].trim()})` : key;
 }
 
 const fdaTherapeuticCategories = [
@@ -1550,7 +1590,7 @@ function shortageTableV2(rows, isFdaSource = true) {
                   ${r.greenData ? `
                     <div class="green-rx-meta">
                       <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
+                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
                       </span>
                       <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                         ${r.greenData.localEquivCount > 0 
@@ -1634,7 +1674,7 @@ function shortageTableV2(rows, isFdaSource = true) {
                 ${r.greenData ? `
                   <div class="green-rx-meta">
                     <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
+                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
                     </span>
                     <div style="font-size:10.5px; color:#334155; margin-top:1px;">
                       ${r.greenData.localEquivCount > 0 
@@ -1916,6 +1956,34 @@ async function shortagePageV2(
     const isFdaSource = source === 'Drug Shortages';
 
     page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+      <!-- 🟢 TÜM YEŞİL REÇETELİLER MASTER FİLTRE & BİLGİ BANDI -->
+      <div class="glass panel green-master-banner" style="margin-bottom:14px; padding:16px 20px; border-left:5px solid #10b981; background:linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.05)); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div style="flex:1; min-width:280px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="font-size:20px;">🟢</span>
+            <h2 style="margin:0; font-size:15px; font-family:Outfit; color:#065f46; font-weight:700;">
+              Resmi Yeşil Reçete & DEA Kontrollü İlaçlar İzleme Sistemi (${turkeyGreenMeds.length} Etkin Madde & Kombinasyonlar)
+            </h2>
+            <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10.5px; font-weight:700;">
+              DEA Schedule II-V & TİTCK Ek-4/A
+            </span>
+          </div>
+          <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.4;">
+            Önceki ve yeni eklenen tüm kontrollü moleküller (Fentanyl, Morphine, Oxycodone, Adderall, Ritalin, Suboxone, Ketamine, Xanax, Contramal, Lyrica vb.) ve bunları içeren tüm müstahzarlar/kombinasyonlar (Percocet, Vicodin vb.) tek merkezden izlenmektedir.
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button class="button" onclick="toggleShortageV2GreenOnly()" style="background:${currentShortageV2GreenFilter === 'green_only' ? '#047857' : '#059669'}; border-color:#047857; color:#fff; font-weight:700; padding:9px 18px; font-size:12.5px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 2px 8px rgba(16,185,129,0.3); border-radius:10px; cursor:pointer;" title="Tıkla: Tüm yeşil reçeteli ilaçları ve kombinasyonları filtrele">
+            ${currentShortageV2GreenFilter === 'green_only' ? '✓ TÜM YEŞİL REÇETELİLER SEÇİLİ (Filtreyi Kaldır)' : '🟢 TÜM YEŞİL REÇETELİLERİ FİLTRELE (Tek Tıkla Süz) →'}
+          </button>
+          ${currentShortageV2GreenFilter ? `
+            <button class="button secondary" onclick="setShortageV2GreenFilter('')" style="padding:8px 12px; font-size:11.5px; color:#e11d48; border-color:#fecdd3;">
+              ✕ Yeşil Filtreyi Sıfırla
+            </button>
+          ` : ''}
+        </div>
+      </div>
+
       <!-- FDA Resmi Veri Portalı Senkronizasyon Kartı -->
       <div class="glass panel fda-sync-banner" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #0284c7; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
@@ -2157,8 +2225,8 @@ async function shortagePageV2(
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
           <button class="tab ${source === 'Drug Shortages' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages'); setShortageV2GreenFilter('');">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
-          <button class="tab ${currentShortageV2GreenFilter === 'green_only' ? 'active' : ''}" onclick="setShortageV2GreenFilter('green_only')">🟢 Sadece Yeşil Reçeteli İlaçlar (13 Madde & İçerenler)</button>
-          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases'); setShortageV2GreenFilter('');">🇹🇷 Türkiye 13 Ulusal Yeşil Molekül Portföyü</button>
+          <button class="tab ${currentShortageV2GreenFilter === 'green_only' ? 'active' : ''}" onclick="setShortageV2GreenFilter('green_only')">🟢 Tüm Yeşil Reçeteliler (${turkeyGreenMeds.length} Etkin Madde & İçerenler)</button>
+          <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases'); setShortageV2GreenFilter('');">🇹🇷 Türkiye ${turkeyGreenMeds.length} Ulusal Yeşil Molekül Portföyü</button>
           <button class="tab ${source === '' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source(''); setShortageV2GreenFilter('');">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs'); setShortageV2GreenFilter('');">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products'); setShortageV2GreenFilter('');">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
@@ -2171,10 +2239,24 @@ async function shortagePageV2(
             🟢 Yeşil Reçete Filtresi:
             <select id="shortageV2GreenFilter" style="border:1.5px solid #10b981; background:#f0fdf4; font-weight:600; color:#065f46;">
               <option value="">Tüm İlaçlar (Standart + Yeşil Reçete)</option>
-              <option value="green_only" ${currentShortageV2GreenFilter === 'green_only' ? 'selected' : ''}>🟢 Sadece Yeşil Reçeteliler (13 Madde & İçerenler)</option>
+              <option value="green_only" ${currentShortageV2GreenFilter === 'green_only' ? 'selected' : ''}>🟢 Tüm Yeşil Reçeteliler (${turkeyGreenMeds.length} Madde & Kombinasyonlar)</option>
               <option value="non_green" ${currentShortageV2GreenFilter === 'non_green' ? 'selected' : ''}>⚪ Standart İlaçlar (Yeşil Olmayanlar)</option>
-              <optgroup label="📋 13 Resmi Etkin Madde (İçeren Kombinasyonlar Dahil)">
-                ${turkeyGreenMeds.map(m => `
+              <optgroup label="🚨 DEA Schedule II (Narkotikler & Uyarıcılar - 11 Madde)">
+                ${turkeyGreenMeds.filter(m => m.deaSchedule === 'Schedule II').map(m => `
+                  <option value="${m.name}" ${currentShortageV2GreenFilter.toUpperCase() === m.name ? 'selected' : ''}>
+                    No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})
+                  </option>
+                `).join('')}
+              </optgroup>
+              <optgroup label="⚡ DEA Schedule III & IV & V (Sedatifler, Anksiyolitikler & Diğerleri - 12 Madde)">
+                ${turkeyGreenMeds.filter(m => ['Schedule III', 'Schedule IV', 'Schedule V'].includes(m.deaSchedule)).map(m => `
+                  <option value="${m.name}" ${currentShortageV2GreenFilter.toUpperCase() === m.name ? 'selected' : ''}>
+                    No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})
+                  </option>
+                `).join('')}
+              </optgroup>
+              <optgroup label="🇹🇷 TİTCK / Ek-4/A Kontrole Tabi İlave Moleküller (5 Madde)">
+                ${turkeyGreenMeds.filter(m => m.deaSchedule === 'TİTCK / Ek-4/A').map(m => `
                   <option value="${m.name}" ${currentShortageV2GreenFilter.toUpperCase() === m.name ? 'selected' : ''}>
                     No ${m.no}: ${m.name} (${m.brand.split('/')[0].trim()})
                   </option>
