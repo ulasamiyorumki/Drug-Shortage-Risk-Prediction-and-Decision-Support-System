@@ -1167,6 +1167,19 @@ function getGreenSubstanceQueryPattern(key) {
   return pats.join('|');
 }
 
+function getGreenCategoryPatterns(cat) {
+  if (cat === 'import_zero') {
+    return turkeyGreenMeds.filter(m => (m.origin || '').includes('İTHAL') && m.localEquivCount === 0).flatMap(m => m.patterns || [m.name.toLowerCase()]);
+  }
+  if (cat === 'green_active') {
+    return turkeyGreenMeds.filter(m => (m.fdaShortage || '').includes('Active')).flatMap(m => m.patterns || [m.name.toLowerCase()]);
+  }
+  if (cat === 'local_prod') {
+    return turkeyGreenMeds.filter(m => (m.origin || '').includes('İMAL')).flatMap(m => m.patterns || [m.name.toLowerCase()]);
+  }
+  return [];
+}
+
 function getGreenFilterLabel(key) {
   if (!key) return '';
   if (key === 'green_only') return `Tüm Yeşil Reçeteliler (${turkeyGreenMeds.length} Etkin Madde & İçerenler)`;
@@ -1253,6 +1266,38 @@ window.setShortageV2Category = function(cat) {
 window.setShortageV2Availability = function(av) {
   currentShortageV2Availability = (currentShortageV2Availability === av) ? '' : av;
   currentShortageV2Page = 1;
+  shortagePageV2();
+};
+
+window.setShortageV2Risk = function(rk) {
+  currentShortageV2Risk = (currentShortageV2Risk === rk) ? '' : rk;
+  currentShortageV2Page = 1;
+  shortagePageV2();
+};
+
+window.clearGlobalSearch = function() {
+  currentShortageV2Query = '';
+  const searchInput = document.querySelector('#globalSearch');
+  if (searchInput) searchInput.value = '';
+  location.hash = '#shortagesv2';
+  shortagePageV2();
+};
+
+window.resetAllShortageV2Filters = function() {
+  currentShortageV2Query = '';
+  currentShortageV2Source = 'Drug Shortages';
+  currentShortageV2GreenFilter = '';
+  currentShortageV2Status = '';
+  currentShortageV2Manufacturer = '';
+  currentShortageV2Category = '';
+  currentShortageV2Availability = '';
+  currentShortageV2Reason = '';
+  currentShortageV2Risk = '';
+  currentShortageV2Limit = 25;
+  currentShortageV2Page = 1;
+  const searchInput = document.querySelector('#globalSearch');
+  if (searchInput) searchInput.value = '';
+  location.hash = '#shortagesv2';
   shortagePageV2();
 };
 
@@ -1771,6 +1816,8 @@ async function shortagePageV2(
     let overview;
     let summary;
     let data;
+    let isClientRisk = Boolean(riskFilter);
+    let matchedGreen = [];
 
     if (source === 'green_cases') {
       const [ov, sm] = await Promise.all([
@@ -1830,21 +1877,31 @@ async function shortagePageV2(
       const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
       const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
       const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
+      const mfgParam = currentShortageV2Manufacturer ? `&manufacturer=${encodeURIComponent(currentShortageV2Manufacturer)}` : '';
       const reasonParam = reasonFilter ? `&reason=${encodeURIComponent(reasonFilter)}` : '';
       const categoryParam = currentShortageV2Category ? `&category=${encodeURIComponent(currentShortageV2Category)}` : '';
       const availParam = currentShortageV2Availability ? `&availability=${encodeURIComponent(currentShortageV2Availability)}` : '';
       const greenParam = (currentShortageV2GreenFilter === 'green_only' || (currentShortageV2GreenFilter && !['non_green'].includes(currentShortageV2GreenFilter)))
         ? '&green=1'
         : (currentShortageV2GreenFilter === 'non_green' ? '&non_green=1' : '');
-      const greenSubstanceParam = (currentShortageV2GreenFilter && !['green_only', 'non_green', 'import_zero', 'green_active', 'local_prod'].includes(currentShortageV2GreenFilter))
-        ? `&green_substance=${encodeURIComponent(getGreenSubstanceQueryPattern(currentShortageV2GreenFilter))}`
-        : '';
-      const limitNum = currentShortageV2Limit === 'all' ? 2000 : Number(currentShortageV2Limit) || 25;
+      
+      let greenSubstanceQuery = '';
+      if (currentShortageV2GreenFilter && !['green_only', 'non_green'].includes(currentShortageV2GreenFilter)) {
+        if (['import_zero', 'green_active', 'local_prod'].includes(currentShortageV2GreenFilter)) {
+          greenSubstanceQuery = getGreenCategoryPatterns(currentShortageV2GreenFilter).join('|');
+        } else {
+          greenSubstanceQuery = getGreenSubstanceQueryPattern(currentShortageV2GreenFilter);
+        }
+      }
+      const greenSubstanceParam = greenSubstanceQuery ? `&green_substance=${encodeURIComponent(greenSubstanceQuery)}` : '';
+      
+      isClientRisk = Boolean(riskFilter);
+      const limitNum = (isClientRisk || currentShortageV2Limit === 'all') ? 2000 : Number(currentShortageV2Limit) || 25;
 
       const [ov, sm, dt] = await Promise.all([
         api('/api/overview'),
         api('/api/analytics/shortages'),
-        api(`/api/records?page=${pageNo}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${reasonParam}${categoryParam}${availParam}${greenParam}${greenSubstanceParam}`)
+        api(`/api/records?page=${(isClientRisk ? 1 : pageNo)}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${mfgParam}${reasonParam}${categoryParam}${availParam}${greenParam}${greenSubstanceParam}`)
       ]);
       overview = ov;
       summary = sm;
@@ -1853,7 +1910,7 @@ async function shortagePageV2(
       // Smart green fallback: if user searched alprazolam, xanax, rivotril etc. and 0 rows found in source
       if (query && data.rows.length === 0) {
         const qNorm = normalizeMedText(query);
-        const matchedGreen = turkeyGreenMeds.filter(m => {
+        matchedGreen = turkeyGreenMeds.filter(m => {
           const qLow = query.toLowerCase();
           return m.name.toLowerCase().includes(qLow) || 
                  m.brand.toLowerCase().includes(qLow) ||
@@ -1959,7 +2016,100 @@ async function shortagePageV2(
       return (b.riskScore || 0) - (a.riskScore || 0);
     });
 
+    let totalFound = data.total;
+    if (isClientRisk || source === 'green_cases' || (query && data.rows.length === 0 && matchedGreen.length > 0)) {
+      totalFound = filtered.length;
+      data.total = totalFound;
+      const pageSize = Number(currentShortageV2Limit) || 25;
+      const startIdx = (pageNo - 1) * pageSize;
+      filtered = filtered.slice(startIdx, startIdx + pageSize);
+    }
+
     window.currentFilteredShortageRows = filtered;
+
+    const activeFilters = [];
+    if (query) {
+      activeFilters.push({
+        label: 'Arama Sözcüğü',
+        value: `"${query}"`,
+        icon: '🔎',
+        style: 'background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;',
+        onRemove: `clearGlobalSearch()`
+      });
+    }
+    if (currentShortageV2GreenFilter) {
+      activeFilters.push({
+        label: 'Yeşil Reçete',
+        value: getGreenFilterLabel(currentShortageV2GreenFilter),
+        icon: '🟢',
+        style: 'background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;',
+        onRemove: `setShortageV2GreenFilter('')`
+      });
+    }
+    if (source && source !== 'Drug Shortages') {
+      activeFilters.push({
+        label: 'Veri Kaynağı',
+        value: source === 'green_cases' ? `Türkiye Yeşil Molekül Portföyü (${turkeyGreenMeds.length})` : (sourceNames[source] || source),
+        icon: '🏛️',
+        style: 'background:#f8fafc; color:#334155; border:1px solid #cbd5e1;',
+        onRemove: `setShortageV2Source('Drug Shortages')`
+      });
+    }
+    if (status) {
+      activeFilters.push({
+        label: 'FDA Kriz Durumu',
+        value: status,
+        icon: '⚡',
+        style: 'background:#fff1f2; color:#be123c; border:1px solid #fda4af;',
+        onRemove: `setShortageV2Status('')`
+      });
+    }
+    if (currentShortageV2Manufacturer) {
+      activeFilters.push({
+        label: 'Üretici Firma',
+        value: currentShortageV2Manufacturer,
+        icon: '🏭',
+        style: 'background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;',
+        onRemove: `setShortageV2Manufacturer('')`
+      });
+    }
+    if (currentShortageV2Category) {
+      activeFilters.push({
+        label: 'Terapötik Kategori',
+        value: currentShortageV2Category,
+        icon: '📑',
+        style: 'background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe;',
+        onRemove: `setShortageV2Category('')`
+      });
+    }
+    if (currentShortageV2Availability) {
+      activeFilters.push({
+        label: 'Stok Durumu',
+        value: currentShortageV2Availability,
+        icon: '📦',
+        style: 'background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;',
+        onRemove: `setShortageV2Availability('')`
+      });
+    }
+    if (reasonFilter) {
+      activeFilters.push({
+        label: 'Sıkıntı Nedeni',
+        value: reasonFilter,
+        icon: '📋',
+        style: 'background:#fffbeb; color:#b45309; border:1px solid #fde68a;',
+        onRemove: `setShortageV2Reason('')`
+      });
+    }
+    if (riskFilter) {
+      const riskLabels = { high: 'Kritik (Risk ≥ 75)', med: 'Orta / Yüksek (Risk 30–74)', low: 'Düşük (Risk < 30)' };
+      activeFilters.push({
+        label: 'Risk Seviyesi',
+        value: riskLabels[riskFilter] || riskFilter,
+        icon: '⚠️',
+        style: 'background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;',
+        onRemove: `setShortageV2Risk('')`
+      });
+    }
 
     const greenImportZeroCount = turkeyGreenMeds.filter(m => m.origin.includes('İTHAL') && m.localEquivCount === 0).length;
     const greenActiveCount = turkeyGreenMeds.filter(m => m.fdaShortage.includes('Active')).length;
@@ -1973,6 +2123,54 @@ async function shortagePageV2(
     const isFdaSource = source === 'Drug Shortages';
 
     page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+      <!-- 🔍 FİLTRELEME VE TOTAL BULUNAN İLAÇ SONUÇLARI BİLGİ KARTI (BAŞTA GÖSTERİM) -->
+      <div class="glass panel v2-results-summary-card" style="margin-bottom:14px; padding:18px 22px; border-left:5px solid #0284c7; background:linear-gradient(135deg, rgba(2, 132, 199, 0.09) 0%, rgba(240, 249, 255, 0.6) 100%); border-radius:14px; box-shadow:0 3px 12px rgba(2,132,199,0.08);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+            <div style="width:46px; height:46px; border-radius:12px; background:linear-gradient(135deg, #0284c7, #0369a1); color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 4px 10px rgba(2,132,199,0.25);">
+              🔍
+            </div>
+            <div>
+              <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#0369a1; display:flex; align-items:center; gap:6px;">
+                <span>V2 Tedarik Kriz Süzgeci</span>
+                <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; padding:1px 6px;">Canlı Sayım</span>
+              </div>
+              <h3 style="margin:4px 0 0; font-size:20px; font-family:Outfit; color:#0f172a; font-weight:700;">
+                Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:24px; font-weight:800; background:#fff; padding:2px 12px; border-radius:8px; border:2px solid #38bdf8; box-shadow:0 2px 6px rgba(2,132,199,0.12); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ilaç bulundu.
+              </h3>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="text-align:right;">
+              <div style="font-size:11px; color:#64748b; font-weight:600;">Görüntülenen İlaçlar</div>
+              <div style="font-size:13px; font-weight:700; color:#0f172a;">
+                ${totalFound === 0 ? '0' : `${((data.page - 1) * (data.limit || 25)) + 1}–${Math.min(data.page * (data.limit || 25), totalFound)}`} / ${totalFound.toLocaleString('tr-TR')}
+              </div>
+            </div>
+            ${activeFilters.length > 0 ? `
+              <button class="button secondary" onclick="resetAllShortageV2Filters()" style="padding:6px 14px; font-size:11.5px; color:#be123c; border-color:#fecdd3; display:inline-flex; align-items:center; gap:6px; font-weight:600;" title="Tüm filtreleri temizleyip varsayılan görünüme dön">
+                ✕ Filtreleri Sıfırla (${activeFilters.length})
+              </button>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- DAHİL EDİLEN FİLTRELERİN AYRINTILI LİSTESİ -->
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(2, 132, 199, 0.15); display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
+          <span style="font-size:12px; font-weight:700; color:#334155; display:inline-flex; align-items:center; gap:4px;">
+            <span>🎯 Dahil Edilen Filtreler (${activeFilters.length}):</span>
+          </span>
+          ${activeFilters.length === 0 ? `
+            <span style="font-size:12px; color:#64748b; font-style:italic;">Filtre uygulanmadı — Seçili kaynak (${isFdaSource ? 'FDA Drug Shortages' : (source || 'Birleşik Katalog')}) kapsamındaki tüm kayıtlar listeleniyor.</span>
+          ` : activeFilters.map(f => `
+            <span class="badge" style="font-size:11px; padding:3px 8px; ${f.style || 'background:#fff; color:#0f172a; border:1px solid #cbd5e1;'} display:inline-flex; align-items:center; gap:5px;">
+              ${f.icon} <b>${f.label}:</b> ${esc(f.value)}
+              <span style="cursor:pointer; font-weight:bold; margin-left:3px; opacity:0.75;" onclick="${f.onRemove}" title="${f.label} filtresini kaldır">✕</span>
+            </span>
+          `).join('')}
+        </div>
+      </div>
       <!-- 🟢 TÜM YEŞİL REÇETELİLER MASTER FİLTRE & BİLGİ BANDI -->
       <div class="glass panel green-master-banner" style="margin-bottom:14px; padding:16px 20px; border-left:5px solid #10b981; background:linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.05)); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
         <div style="flex:1; min-width:280px;">
@@ -2378,32 +2576,34 @@ async function shortagePageV2(
           </label>
         </div>
 
-        ${(reasonFilter || currentShortageV2Category || currentShortageV2Availability || status || currentShortageV2Manufacturer || currentShortageV2GreenFilter) ? `
-          <div style="margin-top:14px; margin-bottom:14px; padding:10px 14px; border-radius:12px; background:rgba(2, 132, 199, 0.08); border:1px solid rgba(2, 132, 199, 0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        ${activeFilters.length > 0 ? `
+          <div style="margin-top:14px; margin-bottom:14px; padding:12px 16px; border-radius:12px; background:rgba(2, 132, 199, 0.08); border:1px solid rgba(2, 132, 199, 0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; color:#0369a1;">
-              <b>🔍 Aktif Süzgeçler:</b>
-              ${currentShortageV2GreenFilter ? `<span class="badge" style="font-size:10.5px; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; cursor:pointer;" onclick="setShortageV2GreenFilter('')" title="Tıkla: Yeşil reçete filtresini kaldır">🟢 Yeşil Reçete: ${esc(getGreenFilterLabel(currentShortageV2GreenFilter))} ✕</span>` : ''}
-              ${status ? `<span class="badge current" style="font-size:10.5px;">Durum: ${esc(status)}</span>` : ''}
-              ${currentShortageV2Manufacturer ? `<span class="badge" style="font-size:10.5px; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">Üretici: ${esc(currentShortageV2Manufacturer)}</span>` : ''}
-              ${currentShortageV2Category ? `<span class="category-pill">Kategori: ${esc(currentShortageV2Category)}</span>` : ''}
-              ${currentShortageV2Availability ? `<span class="avail-badge avail-green">Stok: ${esc(currentShortageV2Availability)}</span>` : ''}
-              ${reasonFilter ? `<span class="reason-badge">Neden: ${esc(reasonFilter)}</span>` : ''}
+              <b>🔍 Aktif Süzgeçler (${activeFilters.length}):</b>
+              <span class="badge" style="background:#0284c7; color:#fff; font-weight:700; font-size:11px; padding:3px 8px; border-radius:6px;">
+                Filtrelenen Toplam: ${totalFound.toLocaleString('tr-TR')} İlaç
+              </span>
+              ${activeFilters.map(f => `
+                <span class="badge" style="font-size:11px; padding:3px 8px; ${f.style || 'background:#fff; color:#0f172a; border:1px solid #cbd5e1;'} cursor:pointer;" onclick="${f.onRemove}" title="Tıkla: ${f.label} filtresini kaldır">
+                  ${f.icon} <b>${f.label}:</b> ${esc(f.value)} ✕
+                </span>
+              `).join('')}
             </div>
-            <button class="button secondary" id="clearActiveShortageV2Filters" style="padding:4px 10px; font-size:11px;">Filtreleri Temizle ✕</button>
+            <button class="button secondary" onclick="resetAllShortageV2Filters()" style="padding:5px 12px; font-size:11px; color:#be123c; border-color:#fecdd3; font-weight:600;">✕ Filtreleri Temizle</button>
           </div>
         ` : ''}
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:22px; flex-wrap:wrap; gap:10px;">
           <div>
             <h2 style="margin:0;">
-              ${source === 'green_cases' ? `🟢 Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Portföyü (${turkeyGreenMeds.length} Molekül)` : (isFdaSource ? 'FDA Resmi Kriz Veri Tabanı' : (source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'))} Kayıtları · ${data.total.toLocaleString('tr-TR')}
+              ${source === 'green_cases' ? `🟢 Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Portföyü (${turkeyGreenMeds.length} Molekül)` : (isFdaSource ? 'FDA Resmi Kriz Veri Tabanı' : (source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'))} Kayıtları · <span style="color:#0284c7; font-weight:800; background:#e0f2fe; padding:2px 10px; border-radius:8px; border:1px solid #bae6fd;">${totalFound.toLocaleString('tr-TR')} İlaç Bulundu</span>
               ${query ? `<small style="font-size:12px; color:var(--muted); font-weight:normal;">("${esc(query)}" için filtrelendi)</small>` : ''}
               ${currentShortageV2Manufacturer ? `<small style="font-size:12px; color:#0284c7; font-weight:normal;">(Firma: "${esc(currentShortageV2Manufacturer)}")</small>` : ''}
             </h2>
             <span style="font-size:11px; color:var(--muted);">${source === 'green_cases' ? `T.C. Sağlık Bakanlığı TİTCK ve SGK Ek-4/A kapsamındaki ${turkeyGreenMeds.length} ulusal psikotrop ilaç ve kriz durumları listelenmektedir` : (isFdaSource ? 'FDA resmi sitesindeki tüm alanlar listelenmektedir · Satıra tıklayarak çapraz profili açabilirsiniz' : 'Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz')}</span>
           </div>
           <button class="button csv-export-btn" onclick="exportShortagesV2Csv()" title="Görüntülenen kriz kayıtlarını Excel/CSV olarak indir">
-            📥 Süzülmüş Kriz Kayıtlarını Dışa Aktar (CSV)
+            📥 Süzülmüş Kriz Kayıtlarını Dışa Aktar (CSV · ${totalFound.toLocaleString('tr-TR')} İlaç)
           </button>
         </div>
 
@@ -2411,10 +2611,10 @@ async function shortagePageV2(
 
         <!-- Sayfalama (Pagination) -->
         <div class="pagination" style="margin-top:16px;">
-          <span>${data.total.toLocaleString('tr-TR')} kayıttan ${data.total === 0 ? 0 : (data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, data.total)} gösteriliyor (Sayfa ${data.page})</span>
+          <span>Filtrelenen <b>${totalFound.toLocaleString('tr-TR')}</b> ilaçtan <b>${totalFound === 0 ? 0 : (data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, totalFound)}</b> arası gösteriliyor (Sayfa ${data.page})</span>
           <div>
             <button class="button secondary" id="shortageV2Prev" ${data.page === 1 ? 'disabled' : ''}>← Önceki</button>
-            <button class="button secondary" id="shortageV2Next" ${data.page * data.limit >= data.total ? 'disabled' : ''}>Sonraki →</button>
+            <button class="button secondary" id="shortageV2Next" ${data.page * data.limit >= totalFound ? 'disabled' : ''}>Sonraki →</button>
           </div>
         </div>
       </section>
@@ -2483,20 +2683,7 @@ async function shortagePageV2(
       shortagePageV2();
     });
     document.querySelector('#resetShortageV2Filters')?.addEventListener('click', () => {
-      currentShortageV2Query = '';
-      currentShortageV2Source = 'Drug Shortages';
-      currentShortageV2Status = '';
-      currentShortageV2Manufacturer = '';
-      currentShortageV2Reason = '';
-      currentShortageV2Category = '';
-      currentShortageV2Availability = '';
-      currentShortageV2Risk = '';
-      currentShortageV2GreenFilter = '';
-      currentShortageV2Limit = 25;
-      currentShortageV2Page = 1;
-      const globalInput = document.querySelector('#globalSearch');
-      if (globalInput) globalInput.value = '';
-      shortagePageV2();
+      resetAllShortageV2Filters();
     });
 
     bindDetails();

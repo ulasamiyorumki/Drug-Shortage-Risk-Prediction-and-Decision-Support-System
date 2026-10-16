@@ -51,6 +51,11 @@ app.get('/api/records', async (req, res, next) => {
       filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
       params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
     }
+    if (req.query.manufacturer) {
+      const mfg = String(req.query.manufacturer).trim();
+      filters.push('(manufacturer LIKE ? OR vendor LIKE ? OR raw_json LIKE ?)');
+      params.push(`%${mfg}%`, `%${mfg}%`, `%"contact_info":"%${mfg}%`);
+    }
     const greenRegex = 'fentanyl|fentanil|durogesic|sublimaze|actiq|fentora|abstral|instanyl|' +
       'morphine|morfin|roxanol|kadian|' +
       'oxycodone|oksikodon|oxycontin|oxynorm|percocet|roxicodone|targin|' +
