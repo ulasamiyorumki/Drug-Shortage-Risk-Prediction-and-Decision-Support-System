@@ -87,7 +87,7 @@ function getShortageReason(r) {
   return null;
 }
 
-const greenMeds = /pregabalin|alprazolam|lorazepam|diclofenac|tramadol|midazolam|diazepam|thiopental|tiyopental|ketamine|ketamin|phenobarbital|fenobarbital|zopiclone|zopiklon|tianeptine|tianeptin|clonazepam|klonazepam|clorazepate|klorazepat|biperiden|clidinium|etomidate|etomidat|methylphenidate|metilfenidat|mefenamic acid|xanax|ativan|concerta|rivotril|dormicum|diazem|nervium|contramal|ultracet|lyrica|galara|alyse|ketalar|ekipental|luminaletten|imovane|akineton|hypnomidate|stablon/i;
+const greenMeds = /(?:^|[^a-z0-9])(alprazolam|biperiden|diazepam|phenobarbital|fenobarbital|ketamine|ketamin|clonazepam|klonazepam|lorazepam|midazolam|pregabalin|tianeptine|tianeptin|thiopental|tiyopental|tramadol|zopiclone|zopiklon|xanax|akineton|diazem|nervium|valium|diastat|luminaletten|luminal|ketalar|ketanest|rivotril|klonopin|ativan|dormicum|versed|lyrica|galara|alyse|neogaba|regapen|symra|stablon|coaxil|ekipental|pentothal|contramal|ultracet|tramal|zaldiar|imovane)(?:$|[^a-z0-9])/i;
 
 function recordRows(rows, selectable = false, isExplorer = false) {
   return rows.map(r => {
@@ -205,21 +205,19 @@ function calculateDrugScore(m, weights = state.riskWeights) {
 }
 
 const turkeyGreenMeds = [
-  { name: 'LORAZEPAM', brand: 'ATIVAN 1 MG / 2.5 MG', barcode: '8699532010018', atc: 'N05BA06', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA06-A1', localEquivCount: 0, yurtDisiList: 'Evet (Ek-1)', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 31, va: 25, short: 11, fda: 221 },
-  { name: 'METHYLPHENIDATE', brand: 'CONCERTA 18/27/36/54 MG', barcode: '8699593015112', atc: 'N06BA04', origin: 'İTHAL', manufacturer: 'JOHNSON & JOHNSON / JANSSEN', equivGroup: 'N06BA04-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation of manufacture', cms: 85, va: 42, short: 38, fda: 312 },
-  { name: 'ALPRAZOLAM', brand: 'XANAX 0.5 MG / 1 MG', barcode: '8699532011244', atc: 'N05BA12', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA12-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 63, va: 18, short: 0, fda: 179 },
-  { name: 'CLONAZEPAM', brand: 'RIVOTRIL 2 MG TABLET / DAMLA', barcode: '8699508010116', atc: 'N05BA09', origin: 'İTHAL', manufacturer: 'CHEPLAPHARM / DEVA DAĞITIM', equivGroup: 'N05BA09-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Regulatory & shipping delay', cms: 18, va: 5, short: 40, fda: 250 },
-  { name: 'MIDAZOLAM', brand: 'DORMICUM 5 MG/5 ML AMPUL', barcode: '8699508750012', atc: 'N05CD08', origin: 'İMAL / İTHAL', manufacturer: 'DEVA HOLDİNG / ROCHE', equivGroup: 'N05CD08-A1', localEquivCount: 3, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 24, va: 16, short: 27, fda: 126 },
-  { name: 'DIAZEPAM', brand: 'DIAZEM 2 MG / 5 MG / 10 MG AMPUL', barcode: '8699525091234', atc: 'N05BA01', origin: 'İMAL', manufacturer: 'DEVA HOLDİNG A.Ş.', equivGroup: 'N05BA01-A1', localEquivCount: 4, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Yüksek', cms: 35, va: 12, short: 0, fda: 210 },
-  { name: 'TRAMADOL', brand: 'CONTRAMAL 50 MG / 100 MG RETARD', barcode: '8699514092110', atc: 'N02AX02', origin: 'İMAL', manufacturer: 'ABDİ İBRAHİM İLAÇ SAN.', equivGroup: 'N02AX02-A1', localEquivCount: 5, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Kapasitesi Yüksek', cms: 52, va: 9, short: 0, fda: 198 },
-  { name: 'PREGABALIN', brand: 'LYRICA 75/150/300 MG (VE GALARA)', barcode: '8699532150028', atc: 'N03AX16', origin: 'İMAL / İTHAL', manufacturer: 'PFIZER / NOBEL / İLKO', equivGroup: 'N03AX16-A1', localEquivCount: 8, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Çoklu Yerli Üretici', cms: 26, va: 28, short: 0, fda: 597 },
-  { name: 'KETAMINE', brand: 'KETALAR 50 MG/ML FLAKON', barcode: '8699532750013', atc: 'N01AX03', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N01AX03-A1', localEquivCount: 1, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation & API delay', cms: 6, va: 5, short: 1, fda: 65 },
-  { name: 'THIOPENTAL', brand: 'EKİPENTAL 0.5 G / 1 G FLAKON', barcode: '8699638790114', atc: 'N01AF03', origin: 'İMAL', manufacturer: 'TÜM EKİP İLAÇ A.Ş.', equivGroup: 'N01AF03-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Ulusal Tek Üretici', cms: 4, va: 2, short: 0, fda: 18 },
-  { name: 'PHENOBARBITAL', brand: 'LUMINALETTEN / PHENOBARBITAL', barcode: '8699546010042', atc: 'N03AA02', origin: 'İTHAL', manufacturer: 'DESITIN / BAYER', equivGroup: 'N03AA02-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Active Shortage', fdaReason: 'To Be Discontinued', cms: 18, va: 1, short: 8, fda: 43 },
-  { name: 'ZOPICLONE', brand: 'IMOVANE 7.5 MG TABLET', barcode: '8699809010029', atc: 'N05CF01', origin: 'İTHAL', manufacturer: 'SANOFI SAĞLIK ÜRÜNLERİ', equivGroup: 'N05CF01-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi', cms: 15, va: 4, short: 0, fda: 123 },
-  { name: 'BIPERIDEN', brand: 'AKINETON 2 MG TAB / 5 MG AMPUL', barcode: '8699546011124', atc: 'N04AA02', origin: 'İMAL', manufacturer: 'LABORATUAR İLAÇ SAN.', equivGroup: 'N04AA02-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Yerli Üretim', cms: 12, va: 3, short: 0, fda: 35 },
-  { name: 'ETOMIDATE', brand: 'HYPNOMIDATE 20 MG/10 ML AMPUL', barcode: '8699593750013', atc: 'N01AX07', origin: 'İTHAL', manufacturer: 'JANSSEN-CILAG', equivGroup: 'N01AX07-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 0, va: 0, short: 12, fda: 126 },
-  { name: 'TIANEPTINE', brand: 'STABLON 12.5 MG TABLET', barcode: '8699552010210', atc: 'N06AX14', origin: 'İTHAL', manufacturer: 'SERVİER İLAÇ VE ARAŞTIRMA A.Ş.', equivGroup: 'N06AX14-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi Bağımlılığı (0 Muadil)', cms: 8, va: 2, short: 0, fda: 14 }
+  { no: 1, name: 'ALPRAZOLAM', brand: 'XANAX 0.5 MG / 1 MG', barcode: '8699532011244', atc: 'N05BA12', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA12-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Tedarik', cms: 63, va: 18, short: 0, fda: 179, patterns: ['alprazolam', 'xanax'] },
+  { no: 2, name: 'BIPERIDEN', brand: 'AKINETON 2 MG TAB / 5 MG AMPUL', barcode: '8699546011124', atc: 'N04AA02', origin: 'İMAL', manufacturer: 'LABORATUAR İLAÇ SAN.', equivGroup: 'N04AA02-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Stabil Yerli Üretim', cms: 12, va: 3, short: 0, fda: 35, patterns: ['biperiden', 'akineton'] },
+  { no: 3, name: 'DIAZEPAM', brand: 'DIAZEM 2 MG / 5 MG / 10 MG AMPUL', barcode: '8699525091234', atc: 'N05BA01', origin: 'İMAL', manufacturer: 'DEVA HOLDİNG A.Ş.', equivGroup: 'N05BA01-A1', localEquivCount: 4, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Yüksek', cms: 35, va: 12, short: 0, fda: 210, patterns: ['diazepam', 'diazem', 'nervium', 'valium', 'diastat'] },
+  { no: 4, name: 'PHENOBARBITAL', brand: 'LUMINALETTEN / PHENOBARBITAL', barcode: '8699546010042', atc: 'N03AA02', origin: 'İTHAL', manufacturer: 'DESITIN / BAYER', equivGroup: 'N03AA02-A1', localEquivCount: 0, yurtDisiList: 'Evet (Dönemsel)', fdaShortage: 'Active Shortage', fdaReason: 'To Be Discontinued', cms: 18, va: 1, short: 8, fda: 43, patterns: ['phenobarbital', 'fenobarbital', 'luminaletten', 'luminal'] },
+  { no: 5, name: 'KETAMINE', brand: 'KETALAR 50 MG/ML FLAKON', barcode: '8699532750013', atc: 'N01AX03', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N01AX03-A1', localEquivCount: 1, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Discontinuation & API delay', cms: 6, va: 5, short: 1, fda: 65, patterns: ['ketamine', 'ketamin', 'ketalar', 'ketanest'] },
+  { no: 6, name: 'CLONAZEPAM', brand: 'RIVOTRIL 2 MG TABLET / DAMLA', barcode: '8699508010116', atc: 'N05BA09', origin: 'İTHAL', manufacturer: 'CHEPLAPHARM / DEVA DAĞITIM', equivGroup: 'N05BA09-A1', localEquivCount: 0, yurtDisiList: 'Evet', fdaShortage: 'Active Shortage', fdaReason: 'Regulatory & shipping delay', cms: 18, va: 5, short: 40, fda: 250, patterns: ['clonazepam', 'klonazepam', 'rivotril', 'klonopin'] },
+  { no: 7, name: 'LORAZEPAM', brand: 'ATIVAN 1 MG / 2.5 MG', barcode: '8699532010018', atc: 'N05BA06', origin: 'İTHAL', manufacturer: 'PFIZER İLAÇLARI A.Ş.', equivGroup: 'N05BA06-A1', localEquivCount: 0, yurtDisiList: 'Evet (Ek-1)', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 31, va: 25, short: 11, fda: 221, patterns: ['lorazepam', 'ativan'] },
+  { no: 8, name: 'MIDAZOLAM', brand: 'DORMICUM 5 MG/5 ML AMPUL', barcode: '8699508750012', atc: 'N05CD08', origin: 'İMAL / İTHAL', manufacturer: 'DEVA HOLDİNG / ROCHE', equivGroup: 'N05CD08-A1', localEquivCount: 3, yurtDisiList: 'Hayır', fdaShortage: 'Active Shortage', fdaReason: 'Demand increase for the drug', cms: 24, va: 16, short: 27, fda: 126, patterns: ['midazolam', 'dormicum', 'versed'] },
+  { no: 9, name: 'PREGABALIN', brand: 'LYRICA 75/150/300 MG (VE GALARA)', barcode: '8699532150028', atc: 'N03AX16', origin: 'İMAL / İTHAL', manufacturer: 'PFIZER / NOBEL / İLKO', equivGroup: 'N03AX16-A1', localEquivCount: 8, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Çoklu Yerli Üretici', cms: 26, va: 28, short: 0, fda: 597, patterns: ['pregabalin', 'lyrica', 'galara', 'alyse', 'neogaba', 'regapen', 'symra'] },
+  { no: 10, name: 'TIANEPTINE', brand: 'STABLON 12.5 MG TABLET', barcode: '8699552010210', atc: 'N06AX14', origin: 'İTHAL', manufacturer: 'SERVİER İLAÇ VE ARAŞTIRMA A.Ş.', equivGroup: 'N06AX14-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi Bağımlılığı (0 Muadil)', cms: 8, va: 2, short: 0, fda: 14, patterns: ['tianeptine', 'tianeptin', 'stablon', 'coaxil'] },
+  { no: 11, name: 'THIOPENTAL', brand: 'EKİPENTAL 0.5 G / 1 G FLAKON', barcode: '8699638790114', atc: 'N01AF03', origin: 'İMAL', manufacturer: 'TÜM EKİP İLAÇ A.Ş.', equivGroup: 'N01AF03-A1', localEquivCount: 1, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Ulusal Tek Üretici', cms: 4, va: 2, short: 0, fda: 18, patterns: ['thiopental', 'tiyopental', 'ekipental', 'pentothal'] },
+  { no: 12, name: 'TRAMADOL', brand: 'CONTRAMAL 50 MG / 100 MG RETARD', barcode: '8699514092110', atc: 'N02AX02', origin: 'İMAL', manufacturer: 'ABDİ İBRAHİM İLAÇ SAN.', equivGroup: 'N02AX02-A1', localEquivCount: 5, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Yerli Üretim Kapasitesi Yüksek', cms: 52, va: 9, short: 0, fda: 198, patterns: ['tramadol', 'contramal', 'ultracet', 'tramal', 'zaldiar'] },
+  { no: 13, name: 'ZOPICLONE', brand: 'IMOVANE 7.5 MG TABLET', barcode: '8699809010029', atc: 'N05CF01', origin: 'İTHAL', manufacturer: 'SANOFI SAĞLIK ÜRÜNLERİ', equivGroup: 'N05CF01-A1', localEquivCount: 0, yurtDisiList: 'Hayır', fdaShortage: 'Kriz Yok', fdaReason: 'Tek İthal Tedarikçi', cms: 15, va: 4, short: 0, fda: 123, patterns: ['zopiclone', 'zopiklon', 'imovane'] }
 ];
 
 const greenAliases = {
@@ -228,8 +226,6 @@ const greenAliases = {
   'FENOBARBITAL': 'PHENOBARBITAL',
   'TIYOPENTAL': 'THIOPENTAL',
   'ZOPIKLON': 'ZOPICLONE',
-  'METILFENIDAT': 'METHYLPHENIDATE',
-  'ETOMIDAT': 'ETOMIDATE',
   'KETAMIN': 'KETAMINE'
 };
 
@@ -239,31 +235,17 @@ function normalizeMedText(str) {
     .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/Ş/g, 'S')
     .replace(/ç/g, 'c').replace(/Ç/g, 'C').replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
     .replace(/ö/g, 'o').replace(/Ö/g, 'O').replace(/ü/g, 'u').replace(/Ü/g, 'U')
-    .toUpperCase().trim();
+    .toLowerCase().trim();
 }
 
 function getTurkeyGreenMed(str) {
   if (!str) return null;
-  const raw = String(str).toUpperCase().trim();
   const norm = normalizeMedText(str);
-
   for (const m of turkeyGreenMeds) {
-    const mName = m.name.toUpperCase();
-    const mNorm = normalizeMedText(m.name);
-    if (raw.includes(mName) || mName.includes(raw) || norm.includes(mNorm) || mNorm.includes(norm)) {
-      return m;
-    }
-    // Check Turkish alias
-    for (const [trKey, enKey] of Object.entries(greenAliases)) {
-      if (enKey === mName && (norm.includes(trKey) || trKey.includes(norm))) {
-        return m;
-      }
-    }
-    // Check brand parts
-    const brandParts = m.brand.toUpperCase().split(/[\s/()+,]+/);
-    for (const part of brandParts) {
-      if (part.length >= 4 && (raw.includes(part) || norm.includes(normalizeMedText(part)))) {
-        return m;
+    if (m.patterns) {
+      for (const p of m.patterns) {
+        const regex = new RegExp(`(?:^|[^a-z0-9])${p}(?:$|[^a-z0-9])`, 'i');
+        if (regex.test(norm)) return m;
       }
     }
   }
@@ -638,7 +620,7 @@ function simulatorPage() {
     scenario2: {
       title: 'Senaryo 2: Batı Avrupa İhraç Kısıtı & Kur Şoku',
       subtitle: 'TÜİK Fasıl 30 verisi temelli: Almanya, İsviçre ve İtalya menşeli %100 ithal orijinal ilaçlarda %70 arz kesintisi.',
-      shockDesc: 'Türkiye’de yerli muadili olmayan ithal yeşil reçeteli ilaçlar (Xanax, Concerta, Ativan) piyasada bulunamaz hale gelir.'
+      shockDesc: 'Türkiye’de yerli muadili olmayan ithal yeşil reçeteli ilaçlar (Xanax, Rivotril, Ativan) piyasada bulunamaz hale gelir.'
     },
     scenario3: {
       title: 'Senaryo 3: Küresel Etkin Madde & GMP Kriz Şoku',
@@ -1738,11 +1720,14 @@ async function shortagePageV2(
       summary = sm;
       data = dt;
 
-      // Smart green fallback: if user searched alprazolam, xanax, concerta etc. and 0 rows found in source
+      // Smart green fallback: if user searched alprazolam, xanax, rivotril etc. and 0 rows found in source
       if (query && data.rows.length === 0) {
+        const qNorm = normalizeMedText(query);
         const matchedGreen = turkeyGreenMeds.filter(m => {
           const qLow = query.toLowerCase();
-          return m.name.toLowerCase().includes(qLow) || m.brand.toLowerCase().includes(qLow);
+          return m.name.toLowerCase().includes(qLow) || 
+                 m.brand.toLowerCase().includes(qLow) ||
+                 (m.patterns && m.patterns.some(p => p.includes(qNorm) || qNorm.includes(p)));
         });
         if (matchedGreen.length > 0) {
           const syntheticRows = matchedGreen.map(m => ({
@@ -1956,7 +1941,7 @@ async function shortagePageV2(
               <div class="green-stat-card" style="border-left:3px solid #f59e0b;" onclick="setShortageV2Source('green_cases')">
                 <div style="font-size:11px; font-weight:700; color:#b45309;">⚡ Aktif Küresel Kriz (FDA)</div>
                 <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenActiveCount} İlaç</div>
-                <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Metilfenidat (Concerta), Lorazepam, Midazolam, vb.</div>
+                <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Klonazepam (Rivotril), Lorazepam (Ativan), Midazolam, vb.</div>
               </div>
               <div class="green-stat-card" style="border-left:3px solid #10b981;" onclick="setShortageV2Source('green_cases')">
                 <div style="font-size:11px; font-weight:700; color:#047857;">🟢 Yerli İmalat Güvencesi</div>
