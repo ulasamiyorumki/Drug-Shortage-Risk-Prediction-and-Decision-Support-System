@@ -1,0 +1,19 @@
+{
+  "name": "drug-shortage-decision-support",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "node --watch main.js",
+    "import:sqlite": "node scripts/import-sqlite.js"
+  },
+  "engines": { "node": ">=22.0.0" },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "mysql2": "^3.14.4"
+  }
+}

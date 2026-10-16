@@ -49,7 +49,7 @@ drug_page = page_by_title.get("İlaç İnceleyici")
 data_store = DrugStore(PROJECT_ROOT / "Datasets" / "drug_data.sqlite3")
 
 st.sidebar.markdown("## 💊 Drug Shortage Risk Analysis & Decision Support System")
-st.sidebar.caption("Developed by Ulaş, Cemre, Begüm, Melisa")
+st.sidebar.caption("Developed by Ulaş, Cemre, Begüm, Melisa  \nIndustrial Engineering Design Project")
 st.sidebar.divider()
 
 default_index = next((i for i, (module, _) in enumerate(pages) if module.PAGE_TITLE == "Keşifsel Veri Analizi"), 0)

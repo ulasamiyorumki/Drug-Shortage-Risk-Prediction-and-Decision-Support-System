@@ -1,0 +1,944 @@
+/* ==========================================================================
+   DRUGFLOW OVERRIDES — Comprehensive Desktop + Tablet + Mobile Responsive
+   ========================================================================== */
+
+/* --- Root Variables --- */
+:root {
+    --glass: rgba(244, 250, 255, .16);
+    --line: rgba(255, 255, 255, .64);
+    --shadow: 0 22px 52px rgba(25, 89, 143, .20);
+}
+
+/* --- Backdrop --- */
+.backdrop {
+    background: linear-gradient(120deg, rgba(7, 135, 180, .16), rgba(249, 178, 112, .10)),
+                url('/Background.avif') center / cover no-repeat #dff3fa;
+}
+.backdrop:after {
+    background: linear-gradient(115deg, rgba(226, 249, 255, .22), rgba(255, 241, 237, .10));
+    backdrop-filter: blur(.5px);
+}
+
+/* ==========================================================================
+   1. DESKTOP BASE (Default ≥ 901px)
+   ========================================================================== */
+.app-shell {
+    display: grid;
+    grid-template-columns: 224px 1fr;
+    width: min(88vw, 1240px);
+    min-height: 76vh;
+    margin: 2vh auto;
+    background: rgba(213, 242, 249, .08);
+    border: 1px solid rgba(255, 255, 255, .66);
+    border-radius: 26px;
+    backdrop-filter: blur(28px) saturate(150%);
+    box-shadow: 0 30px 75px rgba(23, 81, 129, .25);
+}
+
+/* Sidebar Desktop */
+.sidebar {
+    padding: 27px 15px;
+    background: rgba(210, 243, 250, .10);
+    border-right: 1px solid rgba(255, 255, 255, .42);
+    display: flex;
+    flex-direction: column;
+}
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Mobile-only elements completely hidden on desktop */
+.sidebar-close   { display: none !important; }
+.sidebar-overlay { display: none !important; }
+.mobile-menu     { display: none !important; }
+
+/* Page Content Desktop */
+.page {
+    padding: 10px 28px 30px;
+}
+.app-shell main, .page, .panel, .grid > * {
+    min-width: 0;
+}
+
+/* Desktop Topbar */
+.topbar {
+    height: 76px;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.global-search {
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 8px 25px rgba(75, 143, 192, 0.08);
+}
+.global-search input {
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+}
+#globalSearchBtn {
+    padding: 8px 20px;
+    font-size: 12px;
+    white-space: nowrap;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+/* Back Button */
+.back-circle-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 44px;
+    max-height: 44px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--ink);
+    font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 14px rgba(75, 143, 192, 0.15);
+    backdrop-filter: blur(12px);
+    flex-shrink: 0;
+}
+.back-circle-btn:hover {
+    background: #ffffff;
+    color: var(--blue);
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 8px 22px rgba(25, 89, 143, 0.25);
+}
+.back-circle-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* Chat Float Glassmorphism */
+.chat-float {
+    left: auto;
+    right: 26px;
+    bottom: 24px;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 6px 20px rgba(25, 89, 143, 0.2);
+    color: #0d8295;
+    transition: all 0.3s ease;
+    z-index: 100;
+}
+.chat-float:hover {
+    background: rgba(255, 255, 255, 0.85);
+    transform: translateY(-2px);
+}
+
+.chat {
+    max-height: 600px;
+    left: auto;
+    right: 24px;
+    bottom: 84px;
+    background: rgba(238, 249, 254, .94);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 20px 55px rgba(35, 103, 145, 0.26);
+    z-index: 100;
+}
+.chat-messages {
+    max-height: 440px;
+}
+
+/* Shortage Badge */
+.reason-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    background: rgba(220, 243, 255, 0.7);
+    border: 1px solid rgba(140, 205, 240, 0.6);
+    border-radius: 6px;
+    font-size: 11px;
+    color: #174261;
+    font-weight: 500;
+    max-width: 320px;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+/* Tables Desktop */
+.data-table {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    border-radius: 12px;
+}
+.data-table table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+.data-table th, .data-table td {
+    padding: 10px 10px;
+    white-space: nowrap;
+}
+th {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s, color 0.2s;
+    position: relative;
+}
+th:hover {
+    background: rgba(0, 0, 0, 0.03);
+    color: var(--ink);
+}
+.sort-icon {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 10px;
+    color: #0abbd0;
+}
+
+/* Comparison Grid Desktop */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+.mobile-compare-wrapper { display: none; }
+.desktop-compare-wrapper { display: block; }
+
+/* Form Controls */
+.controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+.controls input, .controls select {
+    min-width: 0;
+}
+.controls .button {
+    flex-shrink: 0;
+}
+
+/* EDA Source List */
+.source-item {
+    justify-content: flex-start !important;
+}
+.source-item small {
+    margin-left: 6px !important;
+    text-align: left !important;
+}
+
+
+/* ==========================================================================
+   2. DESKTOP SAFETY SHIELD (≥ 901px)
+   Guarantees desktop computer layout NEVER collapses or breaks
+   ========================================================================== */
+@media (min-width: 901px) {
+    .app-shell {
+        display: grid !important;
+        grid-template-columns: 224px 1fr !important;
+        width: min(88vw, 1240px) !important;
+        margin: 2vh auto !important;
+        border-radius: 26px !important;
+        border: 1px solid rgba(255, 255, 255, .66) !important;
+    }
+    .sidebar {
+        display: flex !important;
+        position: static !important;
+        transform: none !important;
+        box-shadow: none !important;
+        width: auto !important;
+        z-index: auto !important;
+        border-right: 1px solid rgba(255, 255, 255, .42) !important;
+    }
+    .mobile-menu {
+        display: none !important;
+    }
+    .sidebar-close {
+        display: none !important;
+    }
+    .sidebar-overlay {
+        display: none !important;
+    }
+    .desktop-compare-wrapper {
+        display: block !important;
+    }
+    .mobile-compare-wrapper {
+        display: none !important;
+    }
+}
+
+
+/* ==========================================================================
+   3. RESIZED WINDOW & SMALL LAPTOPS (901px – 1200px)
+   ========================================================================== */
+@media (min-width: 901px) and (max-width: 1200px) {
+    .app-shell {
+        grid-template-columns: 210px 1fr !important;
+        width: calc(100vw - 32px) !important;
+        max-width: 1200px !important;
+        margin: 14px auto !important;
+    }
+    .page {
+        padding: 10px 18px 25px !important;
+    }
+    .stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    .main-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .detail-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    .comparison-grid {
+        grid-template-columns: 1fr !important;
+        gap: 16px;
+    }
+}
+
+
+/* ==========================================================================
+   4. TABLETS (Portrait & Landscape: 601px – 900px)
+   ========================================================================== */
+@media (max-width: 900px) {
+
+    /* App Shell: Single Column, full height */
+    .app-shell {
+        grid-template-columns: 1fr !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        min-height: 100vh !important;
+        overflow-x: hidden !important;
+    }
+
+    /* Sidebar: Slide-out drawer */
+    .sidebar {
+        display: none !important;
+    }
+    .sidebar.open {
+        display: flex !important;
+        flex-direction: column !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        bottom: 0 !important;
+        width: 285px !important;
+        max-width: 82vw !important;
+        background: #edf6fb !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        box-shadow: 8px 0 32px rgba(10, 40, 75, 0.22) !important;
+        z-index: 1000 !important;
+        padding: 20px 16px !important;
+        overflow-y: auto !important;
+        border-right: 1px solid rgba(180, 215, 235, 0.85) !important;
+        animation: slideInSidebar 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideInSidebar {
+        from { transform: translateX(-100%); }
+        to   { transform: translateX(0); }
+    }
+
+    /* Sidebar Close Button */
+    .sidebar-close {
+        display: none !important;
+    }
+    .sidebar.open .sidebar-close {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid rgba(180, 215, 235, 0.85);
+        background: #ffffff;
+        font-size: 20px;
+        line-height: 1;
+        color: var(--ink);
+        cursor: pointer;
+    }
+
+    /* Background Overlay */
+    .sidebar-overlay {
+        display: none !important;
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(14, 30, 48, 0.45) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        z-index: 999 !important;
+    }
+    .sidebar-overlay.active {
+        display: block !important;
+    }
+
+    /* Hamburger Menu Button */
+    .mobile-menu {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        font-size: 20px;
+        color: var(--ink);
+        cursor: pointer;
+        flex-shrink: 0;
+        box-shadow: 0 3px 10px rgba(75, 143, 192, 0.12);
+    }
+
+    /* Topbar Tablet */
+    .topbar {
+        height: auto !important;
+        min-height: 58px !important;
+        padding: 10px 14px !important;
+        gap: 10px !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+    }
+    .global-search {
+        height: 42px;
+        padding: 0 10px;
+        gap: 8px;
+    }
+    .global-search input {
+        font-size: 13.5px;
+    }
+    #globalSearchBtn {
+        padding: 6px 14px;
+        font-size: 11.5px;
+        border-radius: 8px;
+    }
+    .back-circle-btn {
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        min-height: 38px;
+        font-size: 17px;
+    }
+
+    /* Page Content Tablet */
+    .page {
+        padding: 14px 16px 35px !important;
+        max-width: 100vw;
+        box-sizing: border-box;
+        overflow-x: hidden;
+    }
+    .page h1 {
+        font-size: 23px;
+        line-height: 1.25;
+    }
+    .page-intro {
+        font-size: 13px;
+    }
+
+    /* Grids Tablet */
+    .stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px;
+    }
+    .main-grid {
+        grid-template-columns: 1fr !important;
+        gap: 16px;
+    }
+    .detail-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px;
+    }
+    .comparison-grid {
+        grid-template-columns: 1fr !important;
+        gap: 16px;
+    }
+
+    /* Comparison Page Responsive Cards */
+    .mobile-compare-wrapper {
+        display: block !important;
+    }
+    .desktop-compare-wrapper {
+        display: none !important;
+    }
+
+    /* Tables Tablet */
+    .data-table {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 12px;
+    }
+    .data-table table {
+        font-size: 11px;
+    }
+    .data-table th,
+    .data-table td {
+        padding: 8px 6px;
+    }
+
+    .drug-cell {
+        white-space: normal !important;
+        word-break: break-word;
+    }
+    .drug-cell b {
+        font-size: 11px !important;
+        line-height: 1.25;
+        display: block;
+        margin-bottom: 2px;
+    }
+    .drug-cell small {
+        font-size: 9px !important;
+    }
+
+    /* Panels & Pagination */
+    .panel {
+        padding: 16px;
+        border-radius: 16px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .pagination {
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+    }
+
+    /* Chat Widget Tablet */
+    .chat-float {
+        bottom: 18px;
+        right: 18px;
+        width: 46px;
+        height: 46px;
+        font-size: 19px;
+    }
+    .chat {
+        left: 12px;
+        right: 12px;
+        bottom: 74px;
+        width: auto;
+        max-width: calc(100vw - 24px);
+        max-height: 58vh;
+        border-radius: 18px;
+    }
+    .chat-messages {
+        max-height: 42vh;
+    }
+}
+
+
+/* ==========================================================================
+   5. MOBILE PHONES (≤ 600px)
+   ========================================================================== */
+@media (max-width: 600px) {
+
+    /* Topbar Mobile */
+    .topbar {
+        padding: 8px 10px !important;
+        gap: 8px !important;
+        min-height: 52px !important;
+    }
+    .mobile-menu {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        font-size: 18px;
+    }
+    .back-circle-btn {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+        font-size: 15px;
+    }
+    .global-search {
+        height: 38px;
+        padding: 0 8px;
+        gap: 6px;
+    }
+    .global-search span {
+        font-size: 16px;
+    }
+    .global-search input {
+        font-size: 12.5px;
+    }
+    .global-search input::placeholder {
+        font-size: 11px;
+    }
+    #globalSearchBtn {
+        padding: 5px 10px;
+        font-size: 11px;
+        border-radius: 7px;
+    }
+
+    /* Page Content Mobile */
+    .page {
+        padding: 10px 10px 30px !important;
+    }
+    .page h1 {
+        font-size: 20px;
+        line-height: 1.25;
+    }
+    .page-intro {
+        font-size: 12px;
+    }
+
+    /* Stats Mobile */
+    .stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px;
+    }
+    .stat {
+        min-height: 90px;
+        padding: 10px 12px;
+        border-radius: 14px;
+    }
+    .stat .stat-label {
+        font-size: 9.5px;
+    }
+    .stat strong {
+        font-size: 20px;
+        margin-top: 8px;
+    }
+    .stat small {
+        font-size: 9.5px;
+    }
+    .stat .trend {
+        font-size: 17px;
+    }
+
+    /* Detail Grid Mobile: 1 column */
+    .detail-grid {
+        grid-template-columns: 1fr !important;
+        gap: 8px;
+    }
+    .detail-field {
+        padding: 10px 12px;
+    }
+    .detail-field b {
+        font-size: 12px;
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* Form Controls & Filters */
+    .controls {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .controls label {
+        width: 100%;
+    }
+    .controls select,
+    .controls input {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Reason Badge in Tables */
+    .reason-badge {
+        max-width: 180px;
+        font-size: 9.5px;
+        padding: 2px 6px;
+        line-height: 1.25;
+    }
+
+    /* Tables Mobile */
+    .data-table table {
+        font-size: 10.5px;
+    }
+    .data-table th,
+    .data-table td {
+        padding: 7px 5px;
+    }
+
+    /* Chat Widget Mobile */
+    .chat-float {
+        bottom: 14px;
+        right: 14px;
+        width: 42px;
+        height: 42px;
+        font-size: 18px;
+    }
+    .chat {
+        left: 8px;
+        right: 8px;
+        bottom: 64px;
+        width: auto;
+        max-width: calc(100vw - 16px);
+        max-height: 56vh;
+        border-radius: 16px;
+    }
+    .chat-messages {
+        max-height: 40vh;
+    }
+}
+
+
+/* ==========================================================================
+   6. ULTRA-COMPACT MOBILE PHONES (≤ 380px)
+   ========================================================================== */
+@media (max-width: 380px) {
+    .stats {
+        grid-template-columns: 1fr !important;
+    }
+    .topbar {
+        padding: 6px 6px !important;
+        gap: 6px !important;
+    }
+    .mobile-menu,
+    .back-circle-btn {
+        width: 34px;
+        height: 34px;
+        min-width: 34px;
+        min-height: 34px;
+        font-size: 14px;
+    }
+    .global-search {
+        height: 36px;
+        padding: 0 6px;
+    }
+    #globalSearchBtn {
+        padding: 4px 8px;
+        font-size: 10px;
+    }
+}
+
+
+/* ==========================================================================
+   7. DRUGFLOW METHODOLOGY & GUIDE BANNER STYLES
+   ========================================================================== */
+.guide-banner {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(225, 246, 254, 0.65)) !important;
+    border: 1px solid rgba(14, 165, 233, 0.28) !important;
+    border-radius: 18px !important;
+    padding: 18px 22px !important;
+    margin-bottom: 22px !important;
+    box-shadow: 0 10px 30px rgba(14, 165, 233, 0.08) !important;
+    backdrop-filter: blur(14px) !important;
+}
+
+.guide-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #0369a1;
+    background: rgba(14, 165, 233, 0.12);
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    padding: 5px 12px;
+    border-radius: 20px;
+    margin-bottom: 14px;
+}
+
+.guide-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.guide-col {
+    background: rgba(255, 255, 255, 0.62);
+    border-radius: 13px;
+    padding: 13px 15px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.guide-title {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0284c7;
+    margin-bottom: 6px;
+}
+
+.guide-col p {
+    font-size: 12px;
+    line-height: 1.55;
+    color: #334155;
+    margin: 0;
+}
+
+.risk-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.risk-pill.high { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.risk-pill.med { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.risk-pill.low { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+
+.source-tag {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 6px;
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.scenario-card {
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    border-radius: 16px;
+    padding: 18px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+.scenario-card:hover, .scenario-card.active {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: #0284c7;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15);
+}
+
+@media (max-width: 900px) {
+    .guide-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+}
+
+
+/* ==========================================================================
+   8. RISK SCORE MODEL & FORMULA CONFIGURATOR STYLES
+   ========================================================================== */
+.formula-box {
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(14, 165, 233, 0.35);
+    border-radius: 16px;
+    padding: 18px 22px;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 20px rgba(14, 165, 233, 0.05);
+}
+
+.math-display {
+    font-family: 'Outfit', -apple-system, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #0369a1;
+    background: rgba(240, 249, 255, 0.85);
+    border: 1px dashed rgba(14, 165, 233, 0.4);
+    padding: 12px 18px;
+    border-radius: 12px;
+    margin: 10px 0 14px;
+    text-align: center;
+    letter-spacing: 0.3px;
+    overflow-x: auto;
+}
+
+.slider-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 14px;
+}
+
+.slider-card {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 14px;
+    padding: 15px 18px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+}
+
+.slider-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.slider-val-badge {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0284c7;
+    background: #e0f2fe;
+    padding: 3px 10px;
+    border-radius: 12px;
+    min-width: 44px;
+    text-align: center;
+}
+
+.slider-card input[type="range"] {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #cbd5e1;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    margin: 8px 0;
+}
+.slider-card input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0284c7;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.4);
+    transition: transform 0.1s;
+}
+.slider-card input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+}
+
+.weight-summary-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(14, 165, 233, 0.3);
+    margin-top: 18px;
+    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.08);
+}
