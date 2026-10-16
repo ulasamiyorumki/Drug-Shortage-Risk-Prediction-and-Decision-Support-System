@@ -1164,5 +1164,86 @@ th:hover {
     box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
 }
 
+/* Shortage V2 Eski Sistem Entegrasyon Stilleri (Durum Kartları, Şirketler, Dışa Aktar) */
+.status-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+.status-stat-item {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.status-stat-item:hover, .status-stat-item.active {
+    border-color: #0284c7;
+    background: #f0f9ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
+}
+.top-companies-container {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+.top-companies-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.company-pill-btn {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #334155;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+.company-pill-btn:hover, .company-pill-btn.active {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #0284c7;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+}
+.company-pill-btn b {
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 10px;
+}
+.company-pill-btn.active b {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+.csv-export-btn {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff !important;
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+    transition: all 0.15s ease;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.csv-export-btn:hover {
+    background: linear-gradient(135deg, #0369a1, #075985);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+}
+
 
 

@@ -155,7 +155,20 @@ app.get('/api/analytics/:view', async (req, res, next) => {
         ORDER BY value DESC 
         LIMIT 15
       `);
-      return res.json({ status, reasons });
+      const [topCompanies] = await pool.query(`
+        SELECT manufacturer label, COUNT(*) value 
+        FROM drug_records 
+        WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> '' 
+        GROUP BY manufacturer 
+        ORDER BY value DESC 
+        LIMIT 10
+      `);
+      const [[companiesCount]] = await pool.query(`
+        SELECT COUNT(DISTINCT manufacturer) count 
+        FROM drug_records 
+        WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> ''
+      `);
+      return res.json({ status, reasons, topCompanies, totalCompanies: companiesCount?.count || 0 });
     }
     if (view === 'suppliers') {
       const [vendors] = await pool.query("SELECT COALESCE(vendor, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'VA Contracts' GROUP BY vendor ORDER BY value DESC LIMIT 12");
