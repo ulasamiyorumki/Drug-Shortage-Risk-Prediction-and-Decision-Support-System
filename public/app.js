@@ -74,10 +74,15 @@ const shortageReasonsMap = {
 };
 
 function getShortageReason(r) {
-  if (r.shortage_reason && r.shortage_reason.trim()) return r.shortage_reason;
+  if (r.shortage_reason && r.shortage_reason.trim()) return r.shortage_reason.trim();
   const text = ((r.generic_name || '') + ' ' + (r.brand_name || '')).toLowerCase();
   for (const [key, val] of Object.entries(shortageReasonsMap)) {
     if (text.includes(key)) return val;
+  }
+  if (r.source === 'Drug Shortages') {
+    const st = String(r.shortage_status || '').toLowerCase();
+    if (st.includes('discontinu')) return 'Discontinuation of the manufacture of the drug';
+    return 'Belirtilmemiş (FDA Kaydı)';
   }
   return null;
 }
@@ -978,7 +983,8 @@ function enrichShortageRecord(r) {
 
   return {
     ...r,
-    reasonText: reasonText || (isGreen ? 'Kontrole tabi yeşil reçeteli molekül' : 'Aktif kriz bildirimi yok (Normal)'),
+    reasonText: reasonText || (isGreen ? 'Kontrole tabi yeşil reçeteli molekül' : null),
+    shortageReasonDisplay: reasonText || (isGreen ? 'Kontrole Tabi Molekül' : null),
     categoryKey: hasShortageReason ? classification.key : (isGreen ? 'green_rx' : 'normal'),
     categoryLabel: hasShortageReason ? classification.label : (isGreen ? 'Kontrole Tabi Molekül' : 'Rutin Tedarik'),
     action: finalAction,
@@ -1008,7 +1014,7 @@ function shortageTableV2(rows) {
             <th>Üretici / Tedarikçi</th>
             <th>NDC / Kod</th>
             <th>Tedarik Durumu</th>
-            <th>Kök Neden & Analiz</th>
+            <th>Sıkıntı Nedeni</th>
             <th>Kırılganlık Riski</th>
             <th>Önerilen Mühendislik Aksiyonu</th>
             <th>İşlem</th>
@@ -1026,8 +1032,16 @@ function shortageTableV2(rows) {
               <td><code>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
               <td>
-                <span class="reason-badge">${esc(r.categoryLabel)}</span>
-                <br><small style="color:var(--muted); font-size:10px;">${esc(r.reasonText)}</small>
+                ${r.shortageReasonDisplay ? `
+                  <span class="reason-badge" style="font-weight:600; font-size:11px; white-space:normal; display:inline-block; max-width:240px;">
+                    ${esc(r.shortageReasonDisplay)}
+                  </span>
+                  ${r.categoryLabel && r.categoryKey !== 'normal' ? `
+                    <small style="color:#0284c7; font-weight:600; font-size:10px; display:block; margin-top:3px;">
+                      🏷 ${esc(r.categoryLabel)}
+                    </small>
+                  ` : ''}
+                ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
               </td>
               <td><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></td>
               <td>
@@ -1131,12 +1145,12 @@ async function shortagePageV2(
       <section class="grid main-grid">
         <article class="glass panel">
           <div class="panel-head">
-            <h2>Kök Neden & Kriz Dinamiği Dağılımı</h2>
-            <span class="source-tag">FDA Kök Neden Dağılımı</span>
+            <h2>Öne Çıkan Sıkıntı Nedenleri</h2>
+            <span class="source-tag">FDA Sıkıntı Nedenleri</span>
           </div>
           ${chart(summary.reasons)}
           <div class="notice" style="margin-top:14px;">
-            💡 <b>Analiz Notu:</b> Sistem, aradığınız veya incelediğiniz her ilacın adını küresel FDA kriz veritabanındaki 35+ kritik molekül ve kök neden haritasıyla anlık eşleştirmektedir.
+            💡 <b>Sıkıntı Nedeni Analizi:</b> Sistem, aradığınız veya incelediğiniz her ilacın FDA ve küresel tedarik sıkıntısı nedenini (etkin madde eksikliği, talep artışı, lojistik gecikme, GMP uyumsuzluğu) doğrudan eşleştirerek listelemektedir.
           </div>
         </article>
 
@@ -1203,9 +1217,9 @@ async function shortagePageV2(
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
-            Kök Neden Sınıfı:
+            Sıkıntı Nedeni / Sınıfı:
             <select id="shortageV2Reason">
-              <option value="">Tüm Kök Nedenler</option>
+              <option value="">Tüm Sıkıntı Nedenleri</option>
               <option value="api" ${reasonFilter === 'api' ? 'selected' : ''}>Hammadde / API Sıkıntısı</option>
               <option value="logistics" ${reasonFilter === 'logistics' ? 'selected' : ''}>Lojistik & Boğaz Gecikmesi</option>
               <option value="gmp" ${reasonFilter === 'gmp' ? 'selected' : ''}>GMP & Kalite Uyumsuzluğu</option>
