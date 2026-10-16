@@ -843,9 +843,17 @@ async function shortagePage(query = '', status = '') {
 }
 
 let currentShortageV2Query = '';
+let currentShortageV2Source = '';
 let currentShortageV2Status = '';
 let currentShortageV2Reason = '';
 let currentShortageV2Risk = '';
+let currentShortageV2Page = 1;
+
+window.setShortageV2Source = function(src) {
+  currentShortageV2Source = src;
+  currentShortageV2Page = 1;
+  shortagePageV2();
+};
 
 function classifyShortageReason(reasonStr) {
   const r = (reasonStr || '').toLowerCase();
@@ -906,11 +914,42 @@ function classifyShortageReason(reasonStr) {
 function enrichShortageRecord(r) {
   const reasonText = getShortageReason(r) || r.shortage_reason || '';
   const classification = classifyShortageReason(reasonText);
+  const isDirectShortage = r.source === 'Drug Shortages';
   const isCurrent = String(r.shortage_status || '').toLowerCase() === 'current';
+  const isResolved = String(r.shortage_status || '').toLowerCase() === 'resolved';
+  const hasShortageReason = Boolean(reasonText && reasonText.trim() && reasonText !== 'Belirtilmemiş');
   const isGreen = greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
 
-  let score = (isCurrent ? 45 : 15) + classification.weight + (isGreen ? 25 : 0);
-  score = Math.min(100, Math.max(15, score));
+  let displayStatus = 'Rutin Tedarik';
+  let statusBadgeHtml = '';
+
+  if (isCurrent) {
+    displayStatus = 'Güncel Kriz';
+    statusBadgeHtml = '<span class="badge current">Güncel Kriz</span>';
+  } else if (isResolved) {
+    displayStatus = 'Çözüldü';
+    statusBadgeHtml = '<span class="badge resolved">Çözüldü</span>';
+  } else if (hasShortageReason) {
+    displayStatus = 'Kriz Riski / Eşleşti';
+    statusBadgeHtml = '<span class="badge current" style="background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;">Kriz Eşleşmesi</span>';
+  } else if (isGreen) {
+    displayStatus = 'Kontrole Tabi';
+    statusBadgeHtml = '<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;">Kontrole Tabi</span>';
+  } else {
+    displayStatus = 'Rutin Tedarik';
+    statusBadgeHtml = '<span class="badge neutral" style="background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;">Rutin Tedarik</span>';
+  }
+
+  // Endüstri Mühendisliği Karar Destek Risk Skoru (0-100)
+  let score = 20;
+  if (isCurrent) score += 40;
+  else if (hasShortageReason) score += 28;
+  else if (isResolved) score += 10;
+
+  if (hasShortageReason) score += classification.weight;
+  if (isGreen) score += 22;
+
+  score = Math.min(100, Math.max(12, score));
 
   let tier = 'low';
   let tierLabel = 'DÜŞÜK';
@@ -925,14 +964,31 @@ function enrichShortageRecord(r) {
     tierLabel = 'ORTA';
   }
 
+  let finalAction = classification.action;
+  let finalActionDetail = classification.actionDetail;
+  if (!hasShortageReason && !isCurrent && !isResolved) {
+    if (isGreen) {
+      finalAction = 'Kontrole Tabi Takip: Yıllık TİTCK kota ve tüketim projeksiyonu';
+      finalActionDetail = 'Yeşil reçeteli kısıtlı molekül; reçetesiz ve izinsiz temin edilemez, stok güvenliği kritik seviyede tutulmalı.';
+    } else {
+      finalAction = 'Rutin Tedarik İzleme: Standart Sipariş Verme Noktası (ROP)';
+      finalActionDetail = 'Tedarik zincirinde aktif kesinti veya bildirilmiş küresel kriz kaydı bulunmuyor.';
+    }
+  }
+
   return {
     ...r,
-    reasonText: reasonText || 'Belirtilmemiş',
-    categoryKey: classification.key,
-    categoryLabel: classification.label,
-    action: classification.action,
-    actionDetail: classification.actionDetail,
+    reasonText: reasonText || (isGreen ? 'Kontrole tabi yeşil reçeteli molekül' : 'Aktif kriz bildirimi yok (Normal)'),
+    categoryKey: hasShortageReason ? classification.key : (isGreen ? 'green_rx' : 'normal'),
+    categoryLabel: hasShortageReason ? classification.label : (isGreen ? 'Kontrole Tabi Molekül' : 'Rutin Tedarik'),
+    action: finalAction,
+    actionDetail: finalActionDetail,
+    displayStatus,
+    statusBadgeHtml,
+    isDirectShortage,
     isCurrent,
+    isResolved,
+    hasShortageReason,
     isGreen,
     riskScore: score,
     riskTier: tier,
@@ -941,18 +997,19 @@ function enrichShortageRecord(r) {
 }
 
 function shortageTableV2(rows) {
-  if (!rows.length) return '<p class="empty notice">Filtrelere uygun tedarik sıkıntısı kaydı bulunamadı.</p>';
+  if (!rows.length) return '<p class="empty notice">Filtrelere veya arama kriterine uygun ilaç kaydı bulunamadı.</p>';
   return `
     <div class="data-table">
       <table>
         <thead>
           <tr>
             <th>İlaç / Etkin Madde & Marka</th>
-            <th>Üretici Firma</th>
+            <th>Kaynak</th>
+            <th>Üretici / Tedarikçi</th>
             <th>NDC / Kod</th>
-            <th>Kriz Durumu</th>
-            <th>Kök Neden</th>
-            <th>Kritiklik Riski</th>
+            <th>Tedarik Durumu</th>
+            <th>Kök Neden & Analiz</th>
+            <th>Kırılganlık Riski</th>
             <th>Önerilen Mühendislik Aksiyonu</th>
             <th>İşlem</th>
           </tr>
@@ -964,9 +1021,10 @@ function shortageTableV2(rows) {
                 <b>${esc(label(r))}${r.isGreen ? ' <span style="display:inline-block;width:7px;height:7px;background:#10b981;border-radius:50%;margin-left:4px;box-shadow:0 0 6px #10b981;" title="Yeşil Reçete / Kontrole Tabi"></span>' : ''}</b>
                 <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
               </td>
+              <td><span class="source-tag">${esc(sourceLabel(r.source))}</span></td>
               <td>${esc(r.manufacturer || r.vendor || '—')}</td>
               <td><code>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
-              <td>${badge(r.shortage_status)}</td>
+              <td>${r.statusBadgeHtml}</td>
               <td>
                 <span class="reason-badge">${esc(r.categoryLabel)}</span>
                 <br><small style="color:var(--muted); font-size:10px;">${esc(r.reasonText)}</small>
@@ -987,26 +1045,45 @@ function shortageTableV2(rows) {
   `;
 }
 
-async function shortagePageV2(query = currentShortageV2Query, status = currentShortageV2Status, reasonFilter = currentShortageV2Reason, riskFilter = currentShortageV2Risk) {
+async function shortagePageV2(
+  query = currentShortageV2Query,
+  source = currentShortageV2Source,
+  status = currentShortageV2Status,
+  reasonFilter = currentShortageV2Reason,
+  riskFilter = currentShortageV2Risk,
+  pageNo = currentShortageV2Page
+) {
   currentShortageV2Query = query;
+  currentShortageV2Source = source;
   currentShortageV2Status = status;
   currentShortageV2Reason = reasonFilter;
   currentShortageV2Risk = riskFilter;
+  currentShortageV2Page = pageNo;
+
+  const gSearch = document.querySelector('#globalSearch');
+  if (gSearch && gSearch.value !== query) gSearch.value = query;
 
   const guide = guideBanner(
-    "FDA Drug Shortages ve küresel tedarik zinciri kriz verilerini Endüstri Mühendisliği kök neden analizi, risk matrisi ve proaktif müdahale stratejileriyle birleştiren gelişmiş V2 Karar Destek ekranıdır.",
-    "Krizin kök nedenine (Hammadde/API, Lojistik, GMP/Kalite, Talep Sıçraması, Piyasadan Çekilme) göre kriz kritiklik seviyesini ve önerilen mühendislik müdahalesini (Emniyet Stoku Arttırma, Dual-Sourcing, Boğaz Lead Time Tamponu, Muadil Formülasyon) dinamik olarak modeller.",
-    "Durum, kök neden ve risk seviyesi süzgeçleriyle hedef odaklı analiz yapın; kritiklik skoru yüksek ilaçlar için doğrudan önerilen eylem planlarını denetleyin."
+    "İlaç İnceleyici ile Tedarik Sıkıntısı Analizini birleştiren; 406.000+ ilacın tamamını kriz geçmişi, kök nedenleri ve mühendislik aksiyonlarıyla sunan birleşik V2 Karar Destek merkezidir.",
+    "Tüm ilaçların küresel FDA tedarik krizlerini, etken madde (API) darboğazlarını, boğaz ve sevkiyat gecikmelerini ve 6 kaynaklı birleşik veri profillerini tek ekranda inceler.",
+    "Arama kutusuna dilediğiniz ilacı veya NDC kodunu yazın; veri kaynağı sekmelerinden filtreleyin veya tüm ilaçların tedarik durumu ve mühendislik eylem planlarını sayfalayarak denetleyin."
   );
 
-  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Çok kriterli kriz kök neden sınıflaması, risk önceliklendirme ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">Veriler ve analiz modelleri yükleniyor…</div>';
+  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Tüm ilaçların tedarik sıkıntısı eşleşmeleri, kök neden sınıflaması ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">Veriler ve birleşik ilaç kayıtları yükleniyor…</div>';
 
   try {
-    const [summary, data] = await Promise.all([
+    const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
+    const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
+    const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
+
+    const [overview, summary, data] = await Promise.all([
+      api('/api/overview'),
       api('/api/analytics/shortages'),
-      api(`/api/records?source=Drug%20Shortages&limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`)
+      api(`/api/records?page=${pageNo}&limit=25${sourceParam}${queryParam}${statusParam}`)
     ]);
 
+    const count = Object.fromEntries(overview.counts.map(x => [x.source, x.count]));
+    const totalAllDrugs = Object.values(count).reduce((a, b) => a + Number(b), 0);
     const enriched = data.rows.map(enrichShortageRecord);
 
     let filtered = enriched;
@@ -1019,35 +1096,35 @@ async function shortagePageV2(query = currentShortageV2Query, status = currentSh
       else if (riskFilter === 'low') filtered = filtered.filter(r => r.riskScore < 30);
     }
 
-    const currentCount = summary.status.find(s => String(s.label).toLowerCase() === 'current')?.value || '—';
-    const highRiskCount = enriched.filter(r => r.riskScore >= 75).length;
-    const greenRxShortageCount = enriched.filter(r => r.isGreen).length;
+    const currentCount = Number(overview.currentShortages || 0);
+    const totalShortages = Number(count['Drug Shortages'] || 0);
+    const resolvedPercent = totalShortages ? Math.round(((totalShortages - currentCount) / totalShortages) * 100) : 0;
 
-    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Çok kriterli kriz kök neden sınıflaması, risk önceliklendirme ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'Tüm ilaçların tedarik sıkıntısı eşleşmeleri, kök neden sınıflaması ve Endüstri Mühendisliği karar destek motoru.') + guide + `
       <section class="grid stats">
         <article class="glass stat">
-          <span class="stat-label">Toplam Kriz Kaydı</span>
-          <strong>${data.total.toLocaleString('tr-TR')}</strong>
-          <small>FDA Drug Shortages</small>
+          <span class="stat-label">Katalogdaki Tüm İlaçlar</span>
+          <strong>${totalAllDrugs.toLocaleString('tr-TR')}</strong>
+          <small>6 Veri Kaynağı (İlaç İnceleyici)</small>
           <span class="trend">↗</span>
         </article>
         <article class="glass stat">
-          <span class="stat-label">Aktif Tedarik Krizi</span>
-          <strong>${Number(currentCount).toLocaleString('tr-TR')}</strong>
-          <small>Devam eden krizler</small>
+          <span class="stat-label">Aktif FDA Tedarik Krizi</span>
+          <strong>${currentCount.toLocaleString('tr-TR')}</strong>
+          <small>Devam eden kriz kayıtları</small>
           <span class="trend red">⚠</span>
         </article>
         <article class="glass stat">
-          <span class="stat-label">Kritik Riskli İlaçlar</span>
-          <strong>${highRiskCount}</strong>
-          <small>Risk Skoru ≥ 75 (Bu grupta)</small>
+          <span class="stat-label">FDA Kriz Kayıtları</span>
+          <strong>${totalShortages.toLocaleString('tr-TR')}</strong>
+          <small>Çözüm Oranı: %${resolvedPercent}</small>
           <span class="trend red">⚡</span>
         </article>
         <article class="glass stat">
-          <span class="stat-label">Kontrole Tabi / Yeşil Reçete</span>
-          <strong>${greenRxShortageCount}</strong>
-          <small>Yüksek öncelikli moleküller</small>
-          <span class="trend">⚚</span>
+          <span class="stat-label">VA Tedarikçi Firmaları</span>
+          <strong>${Number(overview.vendors || 0).toLocaleString('tr-TR')}</strong>
+          <small>Pazar konsantrasyonu</small>
+          <span class="trend">⌘</span>
         </article>
       </section>
 
@@ -1059,7 +1136,7 @@ async function shortagePageV2(query = currentShortageV2Query, status = currentSh
           </div>
           ${chart(summary.reasons)}
           <div class="notice" style="margin-top:14px;">
-            💡 <b>Analiz Notu:</b> Krizlerin büyük kısmı tekil üretici arızaları ve küresel API (etkin madde) tedarik zincirindeki aksamalardan kaynaklanmaktadır.
+            💡 <b>Analiz Notu:</b> Sistem, aradığınız veya incelediğiniz her ilacın adını küresel FDA kriz veritabanındaki 35+ kritik molekül ve kök neden haritasıyla anlık eşleştirmektedir.
           </div>
         </article>
 
@@ -1095,10 +1172,28 @@ async function shortagePageV2(query = currentShortageV2Query, status = currentSh
 
       <section class="glass panel" style="margin-top:18px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ Çok Kriterli Süzgeç & Karar Parametreleri</h2>
+          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ Birleşik Veri Kapsamı & Sıkıntı Süzgeçleri</h2>
           <button class="button secondary" id="resetShortageV2Filters" style="padding:6px 14px; font-size:11px;">Filtreleri Sıfırla</button>
         </div>
+
+        <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
+        <div class="tabs" style="margin-bottom:14px;">
+          <button class="tab ${source === '' ? 'active' : ''}" onclick="setShortageV2Source('')">Tüm İlaçlar (Birleşik İnceleyici · ${totalAllDrugs.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'Drug Shortages' ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages')">Yalnızca FDA Kriz Kayıtları (${totalShortages.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'FDA Drugs' ? 'active' : ''}" onclick="setShortageV2Source('FDA Drugs')">FDA Ruhsatlı İlaçlar (${Number(count['FDA Drugs'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'NDC Products' ? 'active' : ''}" onclick="setShortageV2Source('NDC Products')">NDC Ürün Kataloğu (${Number(count['NDC Products'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'VA Contracts' ? 'active' : ''}" onclick="setShortageV2Source('VA Contracts')">VA Tedarik Sözleşmeleri (${Number(count['VA Contracts'] || 0).toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'CMS Medicare Part D' ? 'active' : ''}" onclick="setShortageV2Source('CMS Medicare Part D')">CMS Talep Verileri (${Number(count['CMS Medicare Part D'] || 0).toLocaleString('tr-TR')})</button>
+        </div>
+
         <div class="controls" style="margin-bottom:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:12px;">
+          <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
+            Veri Kaynağı:
+            <select id="shortageV2SourceSelect">
+              <option value="" ${source === '' ? 'selected' : ''}>Tüm Kaynaklar (Birleşik İnceleyici)</option>
+              ${Object.entries(sourceNames).map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
+            </select>
+          </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
             Kriz Durumu:
             <select id="shortageV2Status">
@@ -1116,7 +1211,8 @@ async function shortagePageV2(query = currentShortageV2Query, status = currentSh
               <option value="gmp" ${reasonFilter === 'gmp' ? 'selected' : ''}>GMP & Kalite Uyumsuzluğu</option>
               <option value="demand" ${reasonFilter === 'demand' ? 'selected' : ''}>Talep Sıçraması & Kapasite</option>
               <option value="discontinued" ${reasonFilter === 'discontinued' ? 'selected' : ''}>Piyasadan Çekilme / Ruhsat</option>
-              <option value="other" ${reasonFilter === 'other' ? 'selected' : ''}>Diğer / Operasyonel</option>
+              <option value="green_rx" ${reasonFilter === 'green_rx' ? 'selected' : ''}>Kontrole Tabi (Yeşil Reçete)</option>
+              <option value="normal" ${reasonFilter === 'normal' ? 'selected' : ''}>Rutin Tedarik (Normal)</option>
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
@@ -1130,28 +1226,65 @@ async function shortagePageV2(query = currentShortageV2Query, status = currentSh
           </label>
         </div>
 
-        <h2 style="margin-top:22px;">Eşleşen Tedarik Sıkıntısı Kayıtları & Karar Matrisi · ${filtered.length.toLocaleString('tr-TR')} / ${data.total.toLocaleString('tr-TR')}</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:22px; flex-wrap:wrap; gap:10px;">
+          <h2 style="margin:0;">
+            ${source ? esc(sourceNames[source] || source) : 'Birleşik İlaç Kataloğu'} Tedarik Kayıtları · ${data.total.toLocaleString('tr-TR')}
+            ${query ? `<small style="font-size:12px; color:var(--muted); font-weight:normal;">("${esc(query)}" için filtrelendi)</small>` : ''}
+          </h2>
+          <span style="font-size:11px; color:var(--muted);">Satıra tıklayarak 6 kaynaklı çapraz ilaç profilini açabilirsiniz</span>
+        </div>
+
         ${shortageTableV2(filtered)}
+
+        <!-- Sayfalama (Pagination) -->
+        <div class="pagination" style="margin-top:16px;">
+          <span>${data.total.toLocaleString('tr-TR')} kayıttan ${(data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, data.total)} gösteriliyor (Sayfa ${data.page})</span>
+          <div>
+            <button class="button secondary" id="shortageV2Prev" ${data.page === 1 ? 'disabled' : ''}>← Önceki</button>
+            <button class="button secondary" id="shortageV2Next" ${data.page * data.limit >= data.total ? 'disabled' : ''}>Sonraki →</button>
+          </div>
+        </div>
       </section>
     `;
 
+    document.querySelector('#shortageV2SourceSelect')?.addEventListener('change', e => {
+      currentShortageV2Source = e.target.value;
+      currentShortageV2Page = 1;
+      shortagePageV2();
+    });
     document.querySelector('#shortageV2Status')?.addEventListener('change', e => {
-      shortagePageV2(currentShortageV2Query, e.target.value, currentShortageV2Reason, currentShortageV2Risk);
+      currentShortageV2Status = e.target.value;
+      currentShortageV2Page = 1;
+      shortagePageV2();
     });
     document.querySelector('#shortageV2Reason')?.addEventListener('change', e => {
-      shortagePageV2(currentShortageV2Query, currentShortageV2Status, e.target.value, currentShortageV2Risk);
+      currentShortageV2Reason = e.target.value;
+      shortagePageV2();
     });
     document.querySelector('#shortageV2Risk')?.addEventListener('change', e => {
-      shortagePageV2(currentShortageV2Query, currentShortageV2Status, currentShortageV2Reason, e.target.value);
+      currentShortageV2Risk = e.target.value;
+      shortagePageV2();
+    });
+    document.querySelector('#shortageV2Prev')?.addEventListener('click', () => {
+      if (currentShortageV2Page > 1) {
+        currentShortageV2Page--;
+        shortagePageV2();
+      }
+    });
+    document.querySelector('#shortageV2Next')?.addEventListener('click', () => {
+      currentShortageV2Page++;
+      shortagePageV2();
     });
     document.querySelector('#resetShortageV2Filters')?.addEventListener('click', () => {
       currentShortageV2Query = '';
+      currentShortageV2Source = '';
       currentShortageV2Status = '';
       currentShortageV2Reason = '';
       currentShortageV2Risk = '';
+      currentShortageV2Page = 1;
       const globalInput = document.querySelector('#globalSearch');
       if (globalInput) globalInput.value = '';
-      shortagePageV2('', '', '', '');
+      shortagePageV2();
     });
 
     bindDetails();
@@ -1408,7 +1541,8 @@ function setupGlobalSearch() {
       shortagePage(q, document.querySelector('#shortageStatus')?.value || '');
     } else if (hash === 'shortagesv2') {
       currentShortageV2Query = q;
-      shortagePageV2(q, currentShortageV2Status, currentShortageV2Reason, currentShortageV2Risk);
+      currentShortageV2Page = 1;
+      shortagePageV2();
     } else if (hash === 'suppliers') {
       supplierPage(q);
     } else if (hash === 'demand') {
@@ -1426,7 +1560,8 @@ function syncSearchPlaceholder() {
   const input = document.querySelector('#globalSearch');
   if (!input) return;
   const hash = (location.hash.slice(1) || 'dashboard');
-  if (hash === 'shortages' || hash === 'shortagesv2') input.placeholder = 'FDA Tedarik Sıkıntılarında ara (İlaç, marka, NDC…)';
+  if (hash === 'shortagesv2') input.placeholder = 'Tüm ilaçlarda ara (İlaç, etken madde, marka, NDC…)';
+  else if (hash === 'shortages') input.placeholder = 'FDA Tedarik Sıkıntılarında ara (İlaç, marka, NDC…)';
   else if (hash === 'suppliers') input.placeholder = 'Sözleşmelerde tedarikçi veya ilaç ara…';
   else if (hash === 'demand') input.placeholder = 'Talep ve fiyat verilerinde ara…';
   else if (hash === 'cases') input.placeholder = 'Yeşil reçeteli ilaç veya etken madde ara…';
