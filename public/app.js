@@ -1439,7 +1439,13 @@ function enrichShortageRecord(r) {
     rj.substance_name,
     rj.generic_name,
     rj.brand_name,
-    rj.dosage_form
+    rj.dosage_form,
+    rj['Drug Name'],
+    rj['drug_name'],
+    rj['Title'],
+    rj['title'],
+    rj['Product Name'],
+    rj['product_name']
   ].filter(Boolean);
 
   let greenMatch = null;
@@ -1451,6 +1457,13 @@ function enrichShortageRecord(r) {
   const isGreen = Boolean(greenMatch) || greenMeds.test(combinedText);
   if (!greenMatch && isGreen) {
     greenMatch = getTurkeyGreenMed(combinedText);
+    if (!greenMatch) {
+      const match = combinedText.match(greenMeds);
+      if (match && match[1]) {
+        const matchedWord = match[1].toLowerCase();
+        greenMatch = turkeyGreenMeds.find(m => m.patterns && m.patterns.some(p => p.toLowerCase() === matchedWord)) || null;
+      }
+    }
   }
   const isDirectShortage = r.source === 'Drug Shortages';
   const isCurrent = String(r.shortage_status || '').toLowerCase() === 'current';
@@ -1888,10 +1901,9 @@ async function shortagePageV2(
       };
     } else if (source === 'Drug Shortages') {
       // ⚡ FDA Resmi Kriz Veri Tabanı (1.587 kayıt)
-      // FDA kriz veri tabanındaki 1.587 kaydın tümü tek seferde yüklenir ve önbelleğe alınır.
-      // Yeşil reçete süzgeci veya diğer filtreler seçildiğinde, 1.587 kayıt içinden tam ve kesin
-      // eşleşen ilaç adedi anında ve doğru olarak hesaplanır.
-      if (!v2FdaRecordsCache || !v2FdaRecordsCache.length) {
+      // FDA kriz veri tabanındaki 1.587 kaydın tümü yüklenir ve önbelleğe alınır.
+      // Sunucu yanıtı 100 kayıtla sınırlasa dahi tüm sayfalar paralel çekilerek 1.587 kaydın tamamı eksiksiz alınır.
+      if (!v2FdaRecordsCache || v2FdaRecordsCache.length < 1500) {
         const [ov, sm, dt] = await Promise.all([
           api('/api/overview'),
           api('/api/analytics/shortages'),
@@ -1899,7 +1911,25 @@ async function shortagePageV2(
         ]);
         overview = ov;
         summary = sm;
-        v2FdaRecordsCache = dt.rows || [];
+        let allRows = (dt && Array.isArray(dt.rows)) ? dt.rows : [];
+        const expectedTotal = Number(dt?.total || overview?.counts?.find(x => x.source === 'Drug Shortages')?.count || 1587);
+
+        // Sunucu 100 kayıtlık sayfalama yapıyorsa, kalan sayfalar paralel getirilerek 1.587 kaydın tümü birleştirilir
+        if (expectedTotal > allRows.length && allRows.length > 0) {
+          const pageSize = allRows.length;
+          const totalPages = Math.ceil(expectedTotal / pageSize);
+          const pagePromises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            pagePromises.push(api(`/api/records?source=Drug%20Shortages&limit=${pageSize}&page=${p}`));
+          }
+          const pageResults = await Promise.all(pagePromises);
+          for (const pr of pageResults) {
+            if (pr && Array.isArray(pr.rows)) {
+              allRows = allRows.concat(pr.rows);
+            }
+          }
+        }
+        v2FdaRecordsCache = allRows;
       } else {
         const [ov, sm] = await Promise.all([
           api('/api/overview'),
@@ -2075,7 +2105,7 @@ async function shortagePageV2(
             if (mName === targetCanon) return true;
             if (r.greenData.patterns && r.greenData.patterns.some(p => pats.includes(p.toLowerCase()))) return true;
           }
-          const rText = `${r.generic_name || ''} ${r.brand_name || ''} ${r.search_text || ''}`.toLowerCase();
+          const rText = `${r.generic_name || ''} ${r.brand_name || ''} ${r.search_text || ''} ${r.presentation || ''}`.toLowerCase();
           return pats.some(p => rText.includes(p.toLowerCase()));
         });
       }
@@ -2093,7 +2123,19 @@ async function shortagePageV2(
     });
 
     // 🎯 FİLTRELENMİŞ KESİN TOPLAM İLAÇ SAYISI:
-    const totalFound = filtered.length;
+    const hasAnyClientFilter = Boolean(
+      currentShortageV2GreenFilter ||
+      riskFilter ||
+      reasonFilter ||
+      currentShortageV2Category ||
+      currentShortageV2Availability ||
+      currentShortageV2Manufacturer ||
+      currentShortageV2Limit === 'all' ||
+      query
+    );
+    const totalFound = (source === 'Drug Shortages' || source === 'green_cases' || hasAnyClientFilter)
+      ? filtered.length
+      : (data.total || filtered.length);
     data.total = totalFound;
 
     // CSV dışa aktarımı için filtrelenmiş kayıtların tamamı (sayfalanmamış liste) saklanır
@@ -2108,7 +2150,9 @@ async function shortagePageV2(
     data.limit = pageSize;
 
     const startIdx = (currentPage - 1) * pageSize;
-    const paginatedRows = filtered.slice(startIdx, startIdx + pageSize);
+    const paginatedRows = (source === 'Drug Shortages' || source === 'green_cases' || hasAnyClientFilter)
+      ? filtered.slice(startIdx, startIdx + pageSize)
+      : filtered;
 
     const activeFilters = [];
     if (query) {
