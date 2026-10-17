@@ -1140,6 +1140,7 @@ let currentShortageV2Risk = '';
 let currentShortageV2Limit = 25;
 let currentShortageV2Page = 1;
 let currentShortageV2GreenFilter = ''; // '', 'green_only', 'non_green', 'import_zero', 'green_active', 'local_prod', or molecule name
+let v2FdaRecordsCache = null; // ⚡ FDA Drug Shortages (1.587 kriz kaydı) için istemci önbelleği
 
 function setShortageV2GreenFilter(val) {
   currentShortageV2GreenFilter = val || '';
@@ -1867,11 +1868,51 @@ async function shortagePageV2(
           r.ndc.toLowerCase().includes(qLow)
         );
       }
+      if (currentShortageV2GreenFilter) {
+        if (currentShortageV2GreenFilter === 'import_zero') {
+          filteredGreen = filteredGreen.filter(r => (r.raw_json?.origin || '').includes('İTHAL') && r.raw_json?.localEquivCount === 0);
+        } else if (currentShortageV2GreenFilter === 'green_active') {
+          filteredGreen = filteredGreen.filter(r => r.shortage_status === 'Current');
+        } else if (currentShortageV2GreenFilter === 'local_prod') {
+          filteredGreen = filteredGreen.filter(r => (r.raw_json?.origin || '').includes('İMAL'));
+        } else if (currentShortageV2GreenFilter !== 'green_only' && currentShortageV2GreenFilter !== 'non_green') {
+          const targetCanon = (greenAliases[currentShortageV2GreenFilter.toUpperCase()] || currentShortageV2GreenFilter).toUpperCase();
+          filteredGreen = filteredGreen.filter(r => r.generic_name.toUpperCase() === targetCanon || r.generic_name.toUpperCase() === currentShortageV2GreenFilter.toUpperCase());
+        }
+      }
       data = {
         rows: filteredGreen,
         total: filteredGreen.length,
         page: 1,
-        limit: 25
+        limit: filteredGreen.length
+      };
+    } else if (source === 'Drug Shortages') {
+      // ⚡ FDA Resmi Kriz Veri Tabanı (1.587 kayıt)
+      // FDA kriz veri tabanındaki 1.587 kaydın tümü tek seferde yüklenir ve önbelleğe alınır.
+      // Yeşil reçete süzgeci veya diğer filtreler seçildiğinde, 1.587 kayıt içinden tam ve kesin
+      // eşleşen ilaç adedi anında ve doğru olarak hesaplanır.
+      if (!v2FdaRecordsCache || !v2FdaRecordsCache.length) {
+        const [ov, sm, dt] = await Promise.all([
+          api('/api/overview'),
+          api('/api/analytics/shortages'),
+          api('/api/records?source=Drug%20Shortages&limit=2000')
+        ]);
+        overview = ov;
+        summary = sm;
+        v2FdaRecordsCache = dt.rows || [];
+      } else {
+        const [ov, sm] = await Promise.all([
+          api('/api/overview'),
+          api('/api/analytics/shortages')
+        ]);
+        overview = ov;
+        summary = sm;
+      }
+      data = {
+        rows: v2FdaRecordsCache,
+        total: v2FdaRecordsCache.length,
+        page: 1,
+        limit: v2FdaRecordsCache.length
       };
     } else {
       const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
@@ -1894,14 +1935,23 @@ async function shortagePageV2(
         }
       }
       const greenSubstanceParam = greenSubstanceQuery ? `&green_substance=${encodeURIComponent(greenSubstanceQuery)}` : '';
-      
-      isClientRisk = Boolean(riskFilter);
-      const limitNum = (isClientRisk || currentShortageV2Limit === 'all') ? 2000 : Number(currentShortageV2Limit) || 25;
+
+      const hasClientFilter = Boolean(
+        currentShortageV2GreenFilter ||
+        riskFilter ||
+        reasonFilter ||
+        currentShortageV2Category ||
+        currentShortageV2Availability ||
+        currentShortageV2Manufacturer ||
+        currentShortageV2Limit === 'all'
+      );
+      const limitNum = hasClientFilter ? 2000 : (Number(currentShortageV2Limit) || 25);
+      const reqPage = hasClientFilter ? 1 : pageNo;
 
       const [ov, sm, dt] = await Promise.all([
         api('/api/overview'),
         api('/api/analytics/shortages'),
-        api(`/api/records?page=${(isClientRisk ? 1 : pageNo)}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${mfgParam}${reasonParam}${categoryParam}${availParam}${greenParam}${greenSubstanceParam}`)
+        api(`/api/records?page=${reqPage}&limit=${limitNum}${sourceParam}${queryParam}${statusParam}${mfgParam}${reasonParam}${categoryParam}${availParam}${greenParam}${greenSubstanceParam}`)
       ]);
       overview = ov;
       summary = sm;
@@ -1952,6 +2002,29 @@ async function shortagePageV2(
     const enriched = data.rows.map(enrichShortageRecord);
 
     let filtered = enriched;
+    if (query) {
+      const qLow = query.toLowerCase();
+      filtered = filtered.filter(r => {
+        const gn = (r.generic_name || '').toLowerCase();
+        const bn = (r.brand_name || '').toLowerCase();
+        const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+        const nd = (r.ndc || r.product_ndc || r.package_ndc || '').toLowerCase();
+        const pr = (r.presentation || '').toLowerCase();
+        const tc = (r.therapeuticCategory || '').toLowerCase();
+        const sr = (r.shortage_reason || '').toLowerCase();
+        const st = (r.search_text || '').toLowerCase();
+        const rt = (r.reasonText || '').toLowerCase();
+        const gName = (r.greenData?.name || '').toLowerCase();
+        const gBrand = (r.greenData?.brand || '').toLowerCase();
+        return gn.includes(qLow) || bn.includes(qLow) || mf.includes(qLow) || nd.includes(qLow) ||
+               pr.includes(qLow) || tc.includes(qLow) || sr.includes(qLow) || st.includes(qLow) ||
+               rt.includes(qLow) || gName.includes(qLow) || gBrand.includes(qLow);
+      });
+    }
+    if (status) {
+      const sLow = status.toLowerCase();
+      filtered = filtered.filter(r => (r.shortage_status || '').toLowerCase() === sLow);
+    }
     if (reasonFilter) {
       if (reasonFilter === 'green_cases' || reasonFilter === 'green_rx') {
         filtered = filtered.filter(r => r.isGreen);
@@ -1994,13 +2067,16 @@ async function shortagePageV2(
         filtered = filtered.filter(r => r.isGreen && (r.greenData?.origin || '').includes('İMAL'));
       } else {
         const pats = getGreenSubstancePatterns(currentShortageV2GreenFilter);
+        const targetCanon = (greenAliases[currentShortageV2GreenFilter.toUpperCase()] || currentShortageV2GreenFilter).toUpperCase();
         filtered = filtered.filter(r => {
-          if (!r.isGreen || !r.greenData) return false;
-          const mName = (r.greenData.name || '').toUpperCase();
-          const targetCanon = (greenAliases[currentShortageV2GreenFilter.toUpperCase()] || currentShortageV2GreenFilter).toUpperCase();
-          if (mName === targetCanon) return true;
-          if (r.greenData.patterns && r.greenData.patterns.some(p => pats.includes(p.toLowerCase()))) return true;
-          return false;
+          if (!r.isGreen) return false;
+          if (r.greenData) {
+            const mName = (r.greenData.name || '').toUpperCase();
+            if (mName === targetCanon) return true;
+            if (r.greenData.patterns && r.greenData.patterns.some(p => pats.includes(p.toLowerCase()))) return true;
+          }
+          const rText = `${r.generic_name || ''} ${r.brand_name || ''} ${r.search_text || ''}`.toLowerCase();
+          return pats.some(p => rText.includes(p.toLowerCase()));
         });
       }
     }
@@ -2016,16 +2092,23 @@ async function shortagePageV2(
       return (b.riskScore || 0) - (a.riskScore || 0);
     });
 
-    let totalFound = data.total;
-    if (isClientRisk || source === 'green_cases' || (query && data.rows.length === 0 && matchedGreen.length > 0)) {
-      totalFound = filtered.length;
-      data.total = totalFound;
-      const pageSize = Number(currentShortageV2Limit) || 25;
-      const startIdx = (pageNo - 1) * pageSize;
-      filtered = filtered.slice(startIdx, startIdx + pageSize);
-    }
+    // 🎯 FİLTRELENMİŞ KESİN TOPLAM İLAÇ SAYISI:
+    const totalFound = filtered.length;
+    data.total = totalFound;
 
+    // CSV dışa aktarımı için filtrelenmiş kayıtların tamamı (sayfalanmamış liste) saklanır
     window.currentFilteredShortageRows = filtered;
+
+    // Sayfalama (Pagination) hesaplaması:
+    const pageSize = currentShortageV2Limit === 'all' ? Math.max(totalFound, 1) : (Number(currentShortageV2Limit) || 25);
+    const totalPages = Math.max(1, Math.ceil(totalFound / pageSize));
+    let currentPage = Math.min(Math.max(1, pageNo), totalPages);
+    currentShortageV2Page = currentPage;
+    data.page = currentPage;
+    data.limit = pageSize;
+
+    const startIdx = (currentPage - 1) * pageSize;
+    const paginatedRows = filtered.slice(startIdx, startIdx + pageSize);
 
     const activeFilters = [];
     if (query) {
@@ -2138,6 +2221,13 @@ async function shortagePageV2(
               <h3 style="margin:4px 0 0; font-size:20px; font-family:Outfit; color:#0f172a; font-weight:700;">
                 Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:24px; font-weight:800; background:#fff; padding:2px 12px; border-radius:8px; border:2px solid #38bdf8; box-shadow:0 2px 6px rgba(2,132,199,0.12); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ilaç bulundu.
               </h3>
+              <div style="font-size:12px; color:#475569; margin-top:4px;">
+                ${isFdaSource 
+                  ? (activeFilters.length > 0 
+                      ? `1.587 FDA kriz kaydı arasından seçili ${currentShortageV2GreenFilter ? 'yeşil reçete ve ' : ''}kriterlere uyan ilaçlar listeleniyor.` 
+                      : 'FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamı listeleniyor.')
+                  : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`)}
+              </div>
             </div>
           </div>
 
@@ -2145,7 +2235,7 @@ async function shortagePageV2(
             <div style="text-align:right;">
               <div style="font-size:11px; color:#64748b; font-weight:600;">Görüntülenen İlaçlar</div>
               <div style="font-size:13px; font-weight:700; color:#0f172a;">
-                ${totalFound === 0 ? '0' : `${((data.page - 1) * (data.limit || 25)) + 1}–${Math.min(data.page * (data.limit || 25), totalFound)}`} / ${totalFound.toLocaleString('tr-TR')}
+                ${totalFound === 0 ? '0' : `${((currentPage - 1) * pageSize) + 1}–${Math.min(currentPage * pageSize, totalFound)}`} / ${totalFound.toLocaleString('tr-TR')}
               </div>
             </div>
             ${activeFilters.length > 0 ? `
@@ -2607,14 +2697,14 @@ async function shortagePageV2(
           </button>
         </div>
 
-        ${shortageTableV2(filtered, isFdaSource)}
+        ${shortageTableV2(paginatedRows, isFdaSource)}
 
         <!-- Sayfalama (Pagination) -->
         <div class="pagination" style="margin-top:16px;">
-          <span>Filtrelenen <b>${totalFound.toLocaleString('tr-TR')}</b> ilaçtan <b>${totalFound === 0 ? 0 : (data.page - 1) * data.limit + 1}–${Math.min(data.page * data.limit, totalFound)}</b> arası gösteriliyor (Sayfa ${data.page})</span>
+          <span>Filtrelenen <b>${totalFound.toLocaleString('tr-TR')}</b> ilaçtan <b>${totalFound === 0 ? 0 : (currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, totalFound)}</b> arası gösteriliyor (Sayfa ${currentPage} / ${totalPages})</span>
           <div>
-            <button class="button secondary" id="shortageV2Prev" ${data.page === 1 ? 'disabled' : ''}>← Önceki</button>
-            <button class="button secondary" id="shortageV2Next" ${data.page * data.limit >= totalFound ? 'disabled' : ''}>Sonraki →</button>
+            <button class="button secondary" id="shortageV2Prev" ${currentPage <= 1 ? 'disabled' : ''}>← Önceki</button>
+            <button class="button secondary" id="shortageV2Next" ${currentPage >= totalPages ? 'disabled' : ''}>Sonraki →</button>
           </div>
         </div>
       </section>
@@ -2679,8 +2769,10 @@ async function shortagePageV2(
       }
     });
     document.querySelector('#shortageV2Next')?.addEventListener('click', () => {
-      currentShortageV2Page++;
-      shortagePageV2();
+      if (currentShortageV2Page < totalPages) {
+        currentShortageV2Page++;
+        shortagePageV2();
+      }
     });
     document.querySelector('#resetShortageV2Filters')?.addEventListener('click', () => {
       resetAllShortageV2Filters();

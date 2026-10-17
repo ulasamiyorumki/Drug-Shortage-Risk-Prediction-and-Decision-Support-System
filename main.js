@@ -96,15 +96,15 @@ app.get('/api/records', async (req, res, next) => {
       'nitrazepam|mogadon|alodorm|' +
       'oxazepam|oksazepam|serax|sobril|alopam';
     if (req.query.green || req.query.is_green) {
-      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
+      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR COALESCE(search_text, "") REGEXP ?)');
       params.push(greenRegex, greenRegex, greenRegex);
     } else if (req.query.non_green) {
-      filters.push('(generic_name NOT REGEXP ? AND brand_name NOT REGEXP ? AND (search_text IS NULL OR search_text NOT REGEXP ?))');
+      filters.push('((generic_name IS NULL OR generic_name NOT REGEXP ?) AND (brand_name IS NULL OR brand_name NOT REGEXP ?) AND (search_text IS NULL OR search_text NOT REGEXP ?))');
       params.push(greenRegex, greenRegex, greenRegex);
     }
     if (req.query.green_substance) {
       const gs = String(req.query.green_substance).trim();
-      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR search_text REGEXP ?)');
+      filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR COALESCE(search_text, "") REGEXP ?)');
       params.push(gs, gs, gs);
     }
     if (req.query.reason) {
