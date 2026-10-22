@@ -92,7 +92,7 @@ const greenMeds = /(?:^|[^a-z0-9])(fentanyl|fentanil|durogesic|sublimaze|actiq|f
 function recordRows(rows, selectable = false, isExplorer = false) {
   return rows.map(r => {
     const isGreen = greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const gb = '';
     const reason = getShortageReason(r);
     const reasonBadge = reason ? `<span class="reason-badge">${esc(reason)}</span>` : '<span style="color:var(--muted)">—</span>';
     if (isExplorer) {
@@ -366,7 +366,7 @@ function casesPage() {
           <tbody>
             ${filtered.map(item => `
               <tr class="selectable" onclick="goToDrug('${item.name}')" style="cursor:pointer">
-                <td><b>${esc(item.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b></td>
+                <td><b>${esc(item.name)}</b></td>
                 <td><b>${esc(item.brand)}</b><br><small style="color:var(--muted)">${esc(item.manufacturer)}</small></td>
                 <td><code>${esc(item.barcode)}</code></td>
                 <td><span class="source-tag">${esc(item.atc)}</span></td>
@@ -778,7 +778,7 @@ function simulatorPage() {
           <tbody>
             ${simResults.map(r => `
               <tr class="selectable" onclick="goToDrug('${r.name}')" style="cursor:pointer">
-                <td><b>${esc(r.name)} <span class="green-rx-symbol" style="font-size:9.5px; padding:1px 6px;" title="TİTCK Resmi Yeşil Reçeteli İlaç">🟢 YEŞİL REÇETE</span></b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
+                <td><b>${esc(r.name)}</b><br><small style="color:var(--muted)">${esc(r.brand)}</small></td>
                 <td><span class="badge ${r.origin === 'İMAL' ? 'resolved' : 'current'}">${esc(r.origin)}</span></td>
                 <td><b>${r.baseRisk} / 100</b></td>
                 <td><b style="color:${r.simRisk >= 85 ? 'var(--red)' : r.simRisk >= 65 ? '#b45309' : 'var(--green)'}; font-size:14px;">${r.simRisk} / 100</b></td>
@@ -989,7 +989,7 @@ async function detail(id) {
     const greenMatch = getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '');
     const groups = Object.groupBy(data.related, x => x.source);
     const isGreen = Boolean(greenMatch) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const greenBadge = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const greenBadge = '';
     page.innerHTML = header(`${label(r)}${greenBadge}`, 'FDA, NDC, tedarik sıkıntısı, CMS ve VA kaynaklarındaki mevcut kayıtlar.') + `
       ${greenMatch ? `
         <div class="glass panel" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #10b981; background:linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(240, 249, 255, 0.8));">
@@ -1049,7 +1049,7 @@ function shortageTable(rows) {
   if (!rows.length) return '<p class="empty notice">Eşleşen tedarik sıkıntısı kaydı bulunamadı.</p>';
   return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici</th><th>NDC</th><th>Durum</th><th>Sıkıntı Nedeni</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
     const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const gb = '';
     return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -1058,7 +1058,7 @@ function scopedTable(rows, emptyText) {
   if (!rows.length) return `<p class="empty notice">${emptyText}</p>`;
   return `<div class="data-table"><table><thead><tr><th>İlaç / Ürün</th><th>Üretici / Tedarikçi</th><th>NDC</th><th>Yıl</th></tr></thead><tbody>${rows.map(r => {
     const isGreen = Boolean(getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '')) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
-    const gb = isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : '';
+    const gb = '';
     return `<tr data-id="${r.id}" class="selectable"><td class="drug-cell"><b>${esc(label(r))}${gb}</b><small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small></td><td>${esc(r.manufacturer || r.vendor || '—')}</td><td>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</td><td>${badge(r.shortage_status)}</td><td><span class="reason-badge">${esc(r.shortage_reason || 'Belirtilmemiş')}</span></td><td>${esc(r.report_year || '—')}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -1661,7 +1661,7 @@ function shortageTableV2(rows, isFdaSource = true) {
             ${rows.map(r => `
               <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
                 <td class="drug-cell">
-                  <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
+                  <b>${esc(label(r))}</b>
                   <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
                   ${r.greenData ? `
                     <div class="green-rx-meta">
@@ -1745,7 +1745,7 @@ function shortageTableV2(rows, isFdaSource = true) {
           ${rows.map(r => `
             <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
               <td class="drug-cell">
-                <b>${esc(label(r))}${r.isGreen ? ' <span class="green-rx-symbol" title="TİTCK Resmi Yeşil Reçeteli İlaç (Kontrole Tabi)">🟢 YEŞİL REÇETE</span>' : ''}</b>
+                <b>${esc(label(r))}</b>
                 <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
                 ${r.greenData ? `
                   <div class="green-rx-meta">
