@@ -1713,70 +1713,150 @@ th:hover {
 }
 
 /* ==========================================================================
-   RISK ANALİZ KRİTERLERİ & AĞIRLIKLANDIRMA SİSTEMİ BİLEŞENLERİ
+   RISK ANALİZ KRİTERLERİ & AĞIRLIKLANDIRMA SİSTEMİ BİLEŞENLERİ (DSRDS)
    ========================================================================== */
-.risk-crit-grid {
+.dsrds-crit-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-    gap: 14px;
-    margin-bottom: 22px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin: 18px 0 24px;
 }
 
-.risk-crit-big-btn {
+@media (max-width: 860px) {
+    .dsrds-crit-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dsrds-crit-btn {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     justify-content: space-between;
-    padding: 18px 20px;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255, 255, 255, 0.75);
-    background: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(12px);
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 14px;
+    border: 2px solid #bcdcfa;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f9fe 100%);
+    box-shadow: 0 4px 12px rgba(24, 126, 229, 0.08), inset 0 1px 0 #ffffff;
     cursor: pointer;
     text-align: left;
-    transition: all 0.22s ease;
-    box-shadow: 0 4px 15px rgba(24, 126, 229, 0.05);
-    position: relative;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
     user-select: none;
     width: 100%;
     box-sizing: border-box;
 }
 
-.risk-crit-big-btn:hover {
-    transform: translateY(-3px);
+.dsrds-crit-btn:hover {
+    transform: translateY(-2px);
     border-color: #187ce5;
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 12px 28px rgba(24, 126, 229, 0.16);
+    background: linear-gradient(180deg, #ffffff 0%, #e8f4fd 100%);
+    box-shadow: 0 8px 24px rgba(24, 126, 229, 0.18), inset 0 1px 0 #ffffff;
 }
 
-.risk-crit-btn {
+.dsrds-crit-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 6px rgba(24, 126, 229, 0.2);
+    background: #e1f0fc;
+}
+
+.dsrds-crit-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #187ce5 0%, #0ab8ce 100%);
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 800;
+    font-family: Outfit, sans-serif;
+    box-shadow: 0 4px 10px rgba(24, 126, 229, 0.3);
+    flex-shrink: 0;
+}
+
+.dsrds-crit-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.dsrds-crit-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 3px;
+    line-height: 1.3;
+}
+
+.dsrds-crit-sub {
+    font-size: 11.5px;
+    color: var(--muted);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dsrds-crit-meta {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    padding: 16px;
-    border-radius: 14px;
-    border: 1.5px solid rgba(255, 255, 255, 0.7);
-    background: rgba(255, 255, 255, 0.52);
-    backdrop-filter: blur(12px);
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 15px rgba(24, 126, 229, 0.04);
-    position: relative;
-    user-select: none;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
-.risk-crit-btn:hover {
-    transform: translateY(-2px);
-    border-color: rgba(24, 126, 229, 0.45);
-    background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 10px 24px rgba(24, 126, 229, 0.12);
+.dsrds-crit-pill-weight {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 0.3px;
 }
 
-.risk-crit-btn.active {
+.dsrds-crit-pill-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #187ce5;
+    font-size: 11.5px;
+    font-weight: 800;
+    background: #ffffff;
+    border: 1px solid rgba(24, 126, 229, 0.3);
+    padding: 3px 10px;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+}
+
+.dsrds-crit-btn:hover .dsrds-crit-pill-action {
+    background: #187ce5;
+    color: #ffffff;
+    border-color: #187ce5;
+}
+
+.dsrds-warning-callout {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1.5px solid #fde68a;
+    border-left: 5px solid #f59e0b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #92400e;
+}
+
+.dsrds-boxed-formula {
+    background: #ffffff;
     border: 2px solid #187ce5;
-    background: linear-gradient(135deg, rgba(235, 246, 255, 0.95), rgba(255, 255, 255, 0.9));
-    box-shadow: 0 12px 28px rgba(24, 126, 229, 0.18);
+    border-radius: 14px;
+    padding: 18px 24px;
+    margin: 16px 0;
+    box-shadow: 0 4px 15px rgba(24, 126, 229, 0.08);
 }
+
 
 .risk-crit-btn.active::after {
     content: "AÇIK / DÜZENLENİYOR";
