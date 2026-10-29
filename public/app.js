@@ -5,7 +5,8 @@ const sourceNames = {
   'NDC Products': 'NDC Ürün Dizini',
   'NDC Packages': 'NDC Paket Dizini',
   'CMS Medicare Part D': 'CMS Medicare Part D',
-  'VA Contracts': 'VA Sözleşmeleri'
+  'VA Contracts': 'VA Sözleşmeleri',
+  'EMA Shortages': 'EMA Tedarik Krizleri (Avrupa İlaç Ajansı)'
 };
 const state = { query: '', dataset: 'FDA Drugs', page: 1, comparison: [], activeScenario: 'scenario1' };
 const esc = value => String(value ?? 'Mevcut değil').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
@@ -17,8 +18,14 @@ const sourceLabel = source => sourceNames[source] || source;
 
 function badge(status) {
   if (!status) return '<span class="badge neutral">Mevcut değil</span>';
-  const current = String(status).toLowerCase() === 'current';
-  return `<span class="badge ${current ? 'current' : 'resolved'}">${current ? 'Güncel' : esc(status)}</span>`;
+  const stLow = String(status).toLowerCase();
+  const current = stLow === 'current' || stLow.includes('ongoing');
+  const resolved = stLow.includes('resolved');
+  const discontinued = stLow.includes('discontinued');
+  if (current) return `<span class="badge current">${stLow.includes('ongoing') ? '🔴 Devam Eden' : 'Güncel'}</span>`;
+  if (resolved) return `<span class="badge resolved">🟢 Çözüldü</span>`;
+  if (discontinued) return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1;">⚫ Piyasadan Çekildi</span>`;
+  return `<span class="badge neutral">${esc(status)}</span>`;
 }
 
 // --- Endüstri Mühendisliği Sayfa Rehberi Banner Bileşeni ---
@@ -142,7 +149,7 @@ async function dashboard() {
       <section class="grid main-grid">
         <article class="glass panel">
           <div class="panel-head"><h2>Entegre Veri Kaynakları</h2><button class="panel-link" data-go="datasets">Kayıtları incele →</button></div>
-          <div class="source-list">${Object.entries(count).map(([source, value]) => `<div class="source-item"><span class="source-icon">${source === 'VA Contracts' ? '⌘' : source === 'Drug Shortages' ? '⚠' : '◌'}</span><b>${esc(sourceLabel(source))}</b><small>${Number(value).toLocaleString('tr-TR')} kayıt</small></div>`).join('')}</div>
+          <div class="source-list">${Object.entries(count).map(([source, value]) => `<div class="source-item"><span class="source-icon">${source === 'VA Contracts' ? '⌘' : source === 'Drug Shortages' ? '⚠' : source === 'EMA Shortages' ? '🇪🇺' : '◌'}</span><b>${esc(sourceLabel(source))}</b><small>${Number(value).toLocaleString('tr-TR')} kayıt</small></div>`).join('')}</div>
         </article>
         <article class="glass panel">
           <h2>Endüstri Mühendisi Hızlı Başlangıç</h2>
@@ -1141,6 +1148,7 @@ let currentShortageV2Limit = 25;
 let currentShortageV2Page = 1;
 let currentShortageV2GreenFilter = ''; // '', 'green_only', 'non_green', 'import_zero', 'green_active', 'local_prod', or molecule name
 let v2FdaRecordsCache = null; // ⚡ FDA Drug Shortages (1.587 kriz kaydı) için istemci önbelleği
+let v2EmaRecordsCache = null; // 🇪🇺 EMA Medicine Shortages (85 kriz kaydı) için istemci önbelleği
 
 function setShortageV2GreenFilter(val) {
   currentShortageV2GreenFilter = val || '';
@@ -1722,6 +1730,99 @@ function shortageTableV2(rows, isFdaSource = true) {
     `;
   };
 
+  const isEmaSource = source === 'EMA Shortages';
+  if (isEmaSource) {
+    return `
+      <div class="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:210px;">İlaç Adı & Etken Madde (INN)</th>
+              <th>AB Kıtlık Durumu</th>
+              <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
+              <th style="min-width:190px;">Etkilenen Form & Dozaj</th>
+              <th>Alternatif Bulunabilirliği</th>
+              <th>Tarihler & Beklenen Çözülme</th>
+              <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
+              <th>Resmi Bildirim</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => {
+              const raw = r.raw_json || {};
+              const alt = raw.availability_of_alternatives;
+              let altHtml = '<span class="ema-alt-pill-unknown">Belirtilmemiş</span>';
+              if (alt === 'Yes') {
+                altHtml = '<span class="ema-alt-pill-yes">✓ Alternatif Var</span>';
+              } else if (alt === 'No') {
+                altHtml = '<span class="ema-alt-pill-no">⚠ Alternatif Yok (Kritik)</span>';
+              } else if (alt) {
+                altHtml = `<span class="ema-alt-pill-unknown">${esc(alt)}</span>`;
+              }
+              const meshList = (raw.therapeutic_area_mesh || '').split(';').filter(Boolean);
+              const forms = raw.pharmaceutical_forms_affected || '—';
+              const strengths = raw.strengths_affected;
+
+              return `
+                <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
+                  <td>
+                    <div style="font-weight:800; font-size:13.5px; color:#1e3a8a;">
+                      ${esc(r.brand_name || raw.medicine_affected || '—')}
+                    </div>
+                    <div style="font-size:12px; color:#475569; font-weight:600; margin-top:2px;">
+                      🧪 INN: ${esc(r.generic_name || raw.international_non_proprietary_name_inn_or_common_name || '—')}
+                    </div>
+                    <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+                      <span class="ema-source-badge">🇪🇺 EMA</span>
+                      ${r.isGreen ? '<span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">🟢 Yeşil Reçete</span>' : ''}
+                      <span class="badge" style="background:#f1f5f9; color:#475569; font-size:10px;">${esc(raw.category || 'Human')}</span>
+                    </div>
+                  </td>
+                  <td>${r.statusBadgeHtml}</td>
+                  <td>
+                    ${meshList.length > 0 ? `
+                      <div style="display:flex; flex-direction:column; gap:4px;">
+                        ${meshList.slice(0, 2).map(m => `<span class="ema-mesh-chip" title="${esc(m)}">${esc(m)}</span>`).join('')}
+                        ${meshList.length > 2 ? `<small style="font-size:10px; color:#64748b;">+${meshList.length - 2} alan daha</small>` : ''}
+                      </div>
+                    ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                  </td>
+                  <td>
+                    <div style="font-size:12px; color:#1e293b; font-weight:600; line-height:1.3;">
+                      ${esc(forms)}
+                    </div>
+                    ${strengths ? `
+                      <div style="margin-top:4px; font-size:11px; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; display:inline-block;">
+                        Doz: ${esc(strengths)}
+                      </div>
+                    ` : ''}
+                  </td>
+                  <td>${altHtml}</td>
+                  <td>
+                    <div style="font-size:12px; font-weight:700; color:#0f172a;">
+                      ${raw.expected_resolution ? `🎯 ${esc(raw.expected_resolution)}` : (raw.expected_resolution_date ? `🎯 ${esc(raw.expected_resolution_date)}` : '<span style="color:#64748b; font-style:italic;">Belirtilmemiş</span>')}
+                    </div>
+                    ${raw.start_of_shortage_date ? `<small style="font-size:10.5px; color:#b45309; display:block; margin-top:3px; font-weight:600;">Başlangıç: ${esc(raw.start_of_shortage_date)}</small>` : ''}
+                    ${raw.first_published_date ? `<small style="font-size:10.5px; color:#64748b; display:block; margin-top:2px;">İlan: ${esc(raw.first_published_date)}</small>` : ''}
+                    ${raw.last_updated_date ? `<small style="font-size:10px; color:#0369a1; display:block; margin-top:1px;">Revizyon: ${esc(raw.last_updated_date)}</small>` : ''}
+                  </td>
+                  <td>${renderActionCell(r)}</td>
+                  <td>
+                    ${raw.shortage_url ? `
+                      <a href="${esc(raw.shortage_url)}" target="_blank" rel="noopener noreferrer" class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" onclick="event.stopPropagation();">
+                        EMA Sayfası ↗
+                      </a>
+                    ` : `<button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button>`}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   if (isFdaSource) {
     return `
       <div class="data-table">
@@ -1960,6 +2061,38 @@ async function shortagePageV2(
         page: 1,
         limit: v2FdaRecordsCache.length
       };
+    } else if (source === 'EMA Shortages') {
+      // 🇪🇺 EMA Resmi Kriz Kataloğu (85 kayıt)
+      if (!v2EmaRecordsCache || v2EmaRecordsCache.length === 0) {
+        const [ov, sm, dt] = await Promise.all([
+          api('/api/overview'),
+          api('/api/analytics/shortages'),
+          api('/api/records?source=EMA%20Shortages&limit=2000').catch(() => api('/api/ema-shortages'))
+        ]);
+        overview = ov;
+        summary = sm;
+        let allRows = (dt && Array.isArray(dt.rows)) ? dt.rows : [];
+        if (allRows.length === 0) {
+          try {
+            const fallback = await api('/api/ema-shortages');
+            allRows = (fallback && Array.isArray(fallback.rows)) ? fallback.rows : [];
+          } catch {}
+        }
+        v2EmaRecordsCache = allRows;
+      } else {
+        const [ov, sm] = await Promise.all([
+          api('/api/overview'),
+          api('/api/analytics/shortages')
+        ]);
+        overview = ov;
+        summary = sm;
+      }
+      data = {
+        rows: v2EmaRecordsCache,
+        total: v2EmaRecordsCache.length,
+        page: 1,
+        limit: v2EmaRecordsCache.length
+      };
     } else {
       const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
       const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
@@ -2074,6 +2207,8 @@ async function shortagePageV2(
     if (reasonFilter) {
       if (reasonFilter === 'green_cases' || reasonFilter === 'green_rx') {
         filtered = filtered.filter(r => r.isGreen);
+      } else if (reasonFilter === 'no_alt') {
+        filtered = filtered.filter(r => (r.raw_json?.availability_of_alternatives || '').toLowerCase() === 'no' || (r.shortage_reason || '').includes('Alternatif: No'));
       } else {
         filtered = filtered.filter(r => {
           if (r.categoryKey === reasonFilter) return true;
@@ -2149,7 +2284,7 @@ async function shortagePageV2(
       currentShortageV2Limit === 'all' ||
       query
     );
-    const totalFound = (source === 'Drug Shortages' || source === 'green_cases' || hasAnyClientFilter)
+    const totalFound = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'green_cases' || hasAnyClientFilter)
       ? filtered.length
       : (data.total || filtered.length);
     data.total = totalFound;
@@ -2166,7 +2301,7 @@ async function shortagePageV2(
     data.limit = pageSize;
 
     const startIdx = (currentPage - 1) * pageSize;
-    const paginatedRows = (source === 'Drug Shortages' || source === 'green_cases' || hasAnyClientFilter)
+    const paginatedRows = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'green_cases' || hasAnyClientFilter)
       ? filtered.slice(startIdx, startIdx + pageSize)
       : filtered;
 
@@ -2270,6 +2405,12 @@ async function shortagePageV2(
     const resolvedCount = Number(summary?.status?.find(s => s.label === 'Resolved')?.value || 19);
     const totalCompanies = Number(summary?.totalCompanies || 142);
     const isFdaSource = source === 'Drug Shortages';
+    const isEmaSource = source === 'EMA Shortages';
+
+    const filteredOngoingEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('ongoing')).length;
+    const filteredResolvedEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('resolved')).length;
+    const filteredDiscontinuedEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('discontinued')).length;
+    const filteredNoAltEma = filtered.filter(r => (r.raw_json?.availability_of_alternatives || '').toLowerCase() === 'no').length;
 
     page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
       <!-- 🔍 FİLTRELEME VE TOTAL BULUNAN İLAÇ SONUÇLARI BİLGİ KARTI (BAŞTA GÖSTERİM) -->
@@ -2292,7 +2433,11 @@ async function shortagePageV2(
                   ? (activeFilters.length > 0 
                       ? `1.587 FDA kriz kaydı içinden seçili kriterlere uyan kayıtlar listeleniyor.` 
                       : 'FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamı eksiksiz listeleniyor.')
-                  : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`)}
+                  : (isEmaSource
+                      ? (activeFilters.length > 0 
+                          ? `85 EMA Avrupa Birliği kriz kaydı içinden seçili kriterlere uyan kayıtlar listeleniyor.` 
+                          : 'Avrupa İlaç Ajansı (EMA) resmi ilaç tedarik sıkıntısı portalındaki 85 kriz kaydının tamamı eksiksiz listeleniyor.')
+                      : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`))}
               </div>
             </div>
           </div>
@@ -2317,20 +2462,35 @@ async function shortagePageV2(
           <span class="v2-metric-pill pill-total" title="Toplam filtrelenen ilaç sayısı">
             📊 <b>${totalFound.toLocaleString('tr-TR')}</b> Toplam İlaç
           </span>
-          <span class="v2-metric-pill pill-critical" onclick="setShortageV2Risk('high')" title="Tıkla: Sadece Kritik Riskli (Risk ≥ 75) ilaçları listele">
-            🚨 <b>${filteredCriticalCount.toLocaleString('tr-TR')}</b> Kritik Kırılganlık (Risk ≥ 75)
-          </span>
-          <span class="v2-metric-pill pill-active" onclick="setShortageV2Status('Current')" title="Tıkla: Devam eden aktif FDA krizlerini listele">
-            ⚡ <b>${filteredCurrentCrisisCount.toLocaleString('tr-TR')}</b> Aktif Kriz (Devam Eden)
-          </span>
-          <span class="v2-metric-pill pill-green" onclick="setShortageV2GreenFilter('green_only')" title="Tıkla: Yeşil reçeteli kontrole tabi ilaçları listele">
-            🟢 <b>${filteredGreenCount.toLocaleString('tr-TR')}</b> Kontrole Tabi (Yeşil Reçete)
-          </span>
-          ${filteredZeroEquivCount > 0 ? `
-            <span class="v2-metric-pill pill-zero" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: 0 yerli muadilli monopol ithal ilaçları listele">
-              ⚠ <b>${filteredZeroEquivCount.toLocaleString('tr-TR')}</b> 0 Yerli Muadil (Monopol)
+          ${isEmaSource ? `
+            <span class="v2-metric-pill pill-critical" onclick="setShortageV2Status('Shortage ongoing')" title="Tıkla: Sadece Devam Eden Krizleri listele">
+              🔴 <b>${filteredOngoingEma.toLocaleString('tr-TR')}</b> Devam Eden Kriz
             </span>
-          ` : ''}
+            <span class="v2-metric-pill pill-zero" onclick="setShortageV2Reason('no_alt')" title="Tıkla: Alternatifi Olmayan (Kritik Monopol) krizleri listele">
+              ⚠ <b>${filteredNoAltEma.toLocaleString('tr-TR')}</b> Alternatif Yok (Monopol)
+            </span>
+            <span class="v2-metric-pill pill-resolved" onclick="setShortageV2Status('Shortage resolved')" title="Tıkla: Çözülen krizleri listele" style="background:#f0fdf4; color:#16a34a; border-color:#bbf7d0;">
+              🟢 <b>${filteredResolvedEma.toLocaleString('tr-TR')}</b> Çözüldü
+            </span>
+            <span class="v2-metric-pill pill-green" onclick="setShortageV2GreenFilter('green_only')" title="Tıkla: Kontrole tabi / yeşil reçeteli ilaçları listele">
+              🧪 <b>${filteredGreenCount.toLocaleString('tr-TR')}</b> Yeşil Reçeteli (${filteredGreenCount})
+            </span>
+          ` : `
+            <span class="v2-metric-pill pill-critical" onclick="setShortageV2Risk('high')" title="Tıkla: Sadece Kritik Riskli (Risk ≥ 75) ilaçları listele">
+              🚨 <b>${filteredCriticalCount.toLocaleString('tr-TR')}</b> Kritik Kırılganlık (Risk ≥ 75)
+            </span>
+            <span class="v2-metric-pill pill-active" onclick="setShortageV2Status('Current')" title="Tıkla: Devam eden aktif FDA krizlerini listele">
+              ⚡ <b>${filteredCurrentCrisisCount.toLocaleString('tr-TR')}</b> Aktif Kriz (Devam Eden)
+            </span>
+            <span class="v2-metric-pill pill-green" onclick="setShortageV2GreenFilter('green_only')" title="Tıkla: Yeşil reçeteli kontrole tabi ilaçları listele">
+              🟢 <b>${filteredGreenCount.toLocaleString('tr-TR')}</b> Kontrole Tabi (Yeşil Reçete)
+            </span>
+            ${filteredZeroEquivCount > 0 ? `
+              <span class="v2-metric-pill pill-zero" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: 0 yerli muadilli monopol ithal ilaçları listele">
+                ⚠ <b>${filteredZeroEquivCount.toLocaleString('tr-TR')}</b> 0 Yerli Muadil (Monopol)
+              </span>
+            ` : ''}
+          `}
         </div>
 
         <!-- Dahil Edilen Filtrelerin Ayrıntılı Listesi -->
@@ -2688,6 +2848,7 @@ async function shortagePageV2(
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
           <button class="tab ${source === 'Drug Shortages' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages'); setShortageV2GreenFilter('');">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
+          <button class="tab ${source === 'EMA Shortages' ? 'active' : ''}" onclick="setShortageV2Source('EMA Shortages'); setShortageV2GreenFilter('');">🇪🇺 EMA Resmi Kriz Kataloğu (Avrupa İlaç Ajansı · 85)</button>
           <button class="tab ${currentShortageV2GreenFilter === 'green_only' ? 'active' : ''}" onclick="setShortageV2GreenFilter('green_only')">🟢 Tüm Yeşil Reçeteliler (${turkeyGreenMeds.length} Etkin Madde & İçerenler)</button>
           <button class="tab ${source === 'green_cases' ? 'active' : ''}" onclick="setShortageV2Source('green_cases'); setShortageV2GreenFilter('');">🇹🇷 Türkiye ${turkeyGreenMeds.length} Ulusal Yeşil Molekül Portföyü</button>
           <button class="tab ${source === '' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source(''); setShortageV2GreenFilter('');">🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</button>
@@ -2743,18 +2904,25 @@ async function shortagePageV2(
             Veri Kapsamı / Kaynak:
             <select id="shortageV2SourceSelect">
               <option value="Drug Shortages" ${source === 'Drug Shortages' ? 'selected' : ''}>⚡ FDA Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</option>
+              <option value="EMA Shortages" ${source === 'EMA Shortages' ? 'selected' : ''}>🇪🇺 EMA Kriz Kataloğu (Avrupa İlaç Ajansı · 85)</option>
               <option value="green_cases" ${source === 'green_cases' ? 'selected' : ''}>🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</option>
               <option value="" ${source === '' ? 'selected' : ''}>🌐 Birleşik İlaç Kataloğu (${totalAllDrugs.toLocaleString('tr-TR')})</option>
-              ${Object.entries(sourceNames).filter(([k]) => k !== 'Drug Shortages').map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
+              ${Object.entries(sourceNames).filter(([k]) => !['Drug Shortages', 'EMA Shortages'].includes(k)).map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v} (${Number(count[k] || 0).toLocaleString('tr-TR')})</option>`).join('')}
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
-            FDA Kriz Durumu:
+            ${isEmaSource ? 'AB (EMA) Kriz Durumu:' : 'FDA Kriz Durumu:'}
             <select id="shortageV2Status">
               <option value="">Tüm Durumlar</option>
-              <option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden - 1.141)</option>
-              <option value="To Be Discontinued" ${status === 'To Be Discontinued' ? 'selected' : ''}>Üretim Sonlandırılıyor (427)</option>
-              <option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü (19)</option>
+              ${isEmaSource ? `
+                <option value="Shortage ongoing" ${status === 'Shortage ongoing' ? 'selected' : ''}>Devam Eden Kriz (Ongoing - 27)</option>
+                <option value="Shortage resolved" ${status === 'Shortage resolved' ? 'selected' : ''}>Çözüldü (Resolved - 53)</option>
+                <option value="Medicine discontinued" ${status === 'Medicine discontinued' ? 'selected' : ''}>Piyasadan Çekildi (5)</option>
+              ` : `
+                <option value="Current" ${status === 'Current' ? 'selected' : ''}>Güncel (Devam Eden - 1.141)</option>
+                <option value="To Be Discontinued" ${status === 'To Be Discontinued' ? 'selected' : ''}>Üretim Sonlandırılıyor (427)</option>
+                <option value="Resolved" ${status === 'Resolved' ? 'selected' : ''}>Çözüldü (19)</option>
+              `}
             </select>
           </label>
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">

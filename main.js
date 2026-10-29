@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -6,7 +7,42 @@ import mysql from 'mysql2/promise';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const sourceNames = ['FDA Drugs', 'Drug Shortages', 'NDC Products', 'NDC Packages', 'CMS Medicare Part D', 'VA Contracts'];
+const sourceNames = ['FDA Drugs', 'Drug Shortages', 'NDC Products', 'NDC Packages', 'CMS Medicare Part D', 'VA Contracts', 'EMA Shortages'];
+
+let emaJsonCache = null;
+function getEmaShortages() {
+  if (!emaJsonCache) {
+    try {
+      const p = path.join(root, 'Datasets', 'EMA', 'ema_medicine_shortages.json');
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+        emaJsonCache = raw.map((r, idx) => ({
+          id: 900000 + idx + 1,
+          source: 'EMA Shortages',
+          report_year: r.first_published_date && r.first_published_date.split('/').length === 3 ? Number(r.first_published_date.split('/')[2]) || null : null,
+          generic_name: r.international_non_proprietary_name_inn_or_common_name || '',
+          brand_name: r.medicine_affected || '',
+          manufacturer: 'EMA / AB Ruhsat Sahibi',
+          vendor: null,
+          ndc: null,
+          product_ndc: null,
+          package_ndc: null,
+          application_no: null,
+          shortage_status: r.supply_shortage_status || '',
+          shortage_reason: `Alternatif: ${r.availability_of_alternatives || 'Belirtilmemiş'} | Terapötik Alan: ${r.therapeutic_area_mesh || 'Genel'}`,
+          search_text: `${r.medicine_affected || ''} ${r.international_non_proprietary_name_inn_or_common_name || ''} ${r.therapeutic_area_mesh || ''} ${r.pharmaceutical_forms_affected || ''} ${r.supply_shortage_status || ''}`,
+          raw_json: r
+        }));
+      } else {
+        emaJsonCache = [];
+      }
+    } catch {
+      emaJsonCache = [];
+    }
+  }
+  return emaJsonCache;
+}
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost', port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
@@ -27,35 +63,39 @@ app.get('/api/health', async (_req, res) => {
 
 app.get('/api/overview', async (_req, res, next) => {
   try {
-    const [counts] = await pool.query('SELECT source, COUNT(*) count FROM drug_records GROUP BY source');
-    const [current] = await pool.query("SELECT COUNT(*) count FROM drug_records WHERE source = 'Drug Shortages' AND LOWER(shortage_status) = 'current'");
-    const [vendors] = await pool.query("SELECT COUNT(DISTINCT vendor) count FROM drug_records WHERE source = 'VA Contracts' AND vendor IS NOT NULL AND vendor <> ''");
-    res.json({ counts, currentShortages: current[0].count, vendors: vendors[0].count });
+    let counts = [];
+    let currentShortages = 0;
+    let vendorsCount = 0;
+    try {
+      const [c] = await pool.query('SELECT source, COUNT(*) count FROM drug_records GROUP BY source');
+      counts = c || [];
+      const [current] = await pool.query("SELECT COUNT(*) count FROM drug_records WHERE source = 'Drug Shortages' AND LOWER(shortage_status) = 'current'");
+      currentShortages = current?.[0]?.count || 0;
+      const [vendors] = await pool.query("SELECT COUNT(DISTINCT vendor) count FROM drug_records WHERE source = 'VA Contracts' AND vendor IS NOT NULL AND vendor <> ''");
+      vendorsCount = vendors?.[0]?.count || 0;
+    } catch {
+      // Dev/fallback mode if DB pool is offline
+    }
+    const emaList = getEmaShortages();
+    if (!counts.some(x => x.source === 'EMA Shortages') && emaList.length > 0) {
+      counts.push({ source: 'EMA Shortages', count: emaList.length });
+    }
+    const emaOngoing = emaList.filter(x => (x.shortage_status || '').toLowerCase().includes('ongoing')).length;
+    res.json({ counts, currentShortages, vendors: vendorsCount, emaShortages: emaList.length, emaOngoing });
   } catch (error) { next(error); }
+});
+
+app.get('/api/ema-shortages', (req, res) => {
+  const emaRows = getEmaShortages();
+  res.json({ total: emaRows.length, rows: emaRows });
 });
 
 app.get('/api/records', async (req, res, next) => {
   try {
     const source = safeSource(req.query.source);
     const page = Math.max(Number(req.query.page) || 1, 1); const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 2000);
-    const q = String(req.query.q || '').trim(); const filters = []; const params = [];
-    if (source) { filters.push('source = ?'); params.push(source); }
-    if (q) { filters.push('(search_text LIKE ? OR ndc LIKE ? OR product_ndc LIKE ? OR package_ndc LIKE ? OR application_no LIKE ?)'); params.push(...Array(5).fill(`%${q}%`)); }
-    if (req.query.status) { filters.push('shortage_status = ?'); params.push(req.query.status); }
-    if (req.query.category) {
-      filters.push('raw_json LIKE ?');
-      params.push(`%${String(req.query.category).trim()}%`);
-    }
-    if (req.query.availability) {
-      const av = String(req.query.availability).trim();
-      filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
-      params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
-    }
-    if (req.query.manufacturer) {
-      const mfg = String(req.query.manufacturer).trim();
-      filters.push('(manufacturer LIKE ? OR vendor LIKE ? OR raw_json LIKE ?)');
-      params.push(`%${mfg}%`, `%${mfg}%`, `%"contact_info":"%${mfg}%`);
-    }
+    const q = String(req.query.q || '').trim();
+
     const greenRegex = 'fentanyl|fentanil|durogesic|sublimaze|actiq|fentora|abstral|instanyl|' +
       'morphine|morfin|roxanol|kadian|' +
       'oxycodone|oksikodon|oxycontin|oxynorm|percocet|roxicodone|targin|' +
@@ -95,6 +135,47 @@ app.get('/api/records', async (req, res, next) => {
       'lormetazepam|noctamid|loramet|' +
       'nitrazepam|mogadon|alodorm|' +
       'oxazepam|oksazepam|serax|sobril|alopam';
+
+    if (source === 'EMA Shortages') {
+      let emaRows = getEmaShortages();
+      if (q) {
+        const qLow = q.toLowerCase();
+        emaRows = emaRows.filter(r => (r.search_text || '').toLowerCase().includes(qLow));
+      }
+      if (req.query.status) {
+        const stLow = String(req.query.status).toLowerCase();
+        emaRows = emaRows.filter(r => (r.shortage_status || '').toLowerCase().includes(stLow));
+      }
+      if (req.query.green || req.query.is_green) {
+        emaRows = emaRows.filter(r => new RegExp(greenRegex, 'i').test(r.search_text || ''));
+      }
+      if (req.query.green_substance) {
+        const gs = String(req.query.green_substance).trim();
+        emaRows = emaRows.filter(r => new RegExp(gs, 'i').test(r.search_text || ''));
+      }
+      const total = emaRows.length;
+      const paginated = emaRows.slice((page - 1) * limit, page * limit);
+      return res.json({ total, page, limit, rows: paginated });
+    }
+
+    const filters = []; const params = [];
+    if (source) { filters.push('source = ?'); params.push(source); }
+    if (q) { filters.push('(search_text LIKE ? OR ndc LIKE ? OR product_ndc LIKE ? OR package_ndc LIKE ? OR application_no LIKE ?)'); params.push(...Array(5).fill(`%${q}%`)); }
+    if (req.query.status) { filters.push('shortage_status = ?'); params.push(req.query.status); }
+    if (req.query.category) {
+      filters.push('raw_json LIKE ?');
+      params.push(`%${String(req.query.category).trim()}%`);
+    }
+    if (req.query.availability) {
+      const av = String(req.query.availability).trim();
+      filters.push('(raw_json LIKE ? OR raw_json LIKE ?)');
+      params.push(`%"availability":"${av}%`, `%"Availability":"${av}%`);
+    }
+    if (req.query.manufacturer) {
+      const mfg = String(req.query.manufacturer).trim();
+      filters.push('(manufacturer LIKE ? OR vendor LIKE ? OR raw_json LIKE ?)');
+      params.push(`%${mfg}%`, `%${mfg}%`, `%"contact_info":"%${mfg}%`);
+    }
     if (req.query.green || req.query.is_green) {
       filters.push('(generic_name REGEXP ? OR brand_name REGEXP ? OR COALESCE(search_text, "") REGEXP ?)');
       params.push(greenRegex, greenRegex, greenRegex);
@@ -154,6 +235,11 @@ app.get('/api/records', async (req, res, next) => {
 
 app.get('/api/records/:id', async (req, res, next) => {
   try {
+    if (Number(req.params.id) >= 900000) {
+      const emaList = getEmaShortages();
+      const rec = emaList.find(x => x.id === Number(req.params.id));
+      if (rec) return res.json({ record: rec, related: [] });
+    }
     const [[record]] = await pool.query('SELECT * FROM drug_records WHERE id = ?', [req.params.id]);
     if (!record) return res.status(404).json({ message: 'Kayıt bulunamadı.' });
     
