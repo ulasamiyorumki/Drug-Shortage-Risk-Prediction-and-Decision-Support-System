@@ -1724,12 +1724,12 @@ window.exportShortagesV2Csv = function() {
 
   if (currentShortageV2Source === 'cross_fda_ema') {
     const crossHeaders = [
-      'Molekül Adı', 'Ticari Markalar', 'Yeşil Reçete', 'Sistemik Risk Skoru', 'Risk Seviyesi',
-      'FDA Kriz Durumu', 'FDA Kayıt Sayısı', 'FDA Kök Nedenleri',
-      'EMA Kriz Durumu', 'EMA Alternatif Durumu (Monopol)', 'EMA Beklenen Çözülme', 'EMA MeSH Alanı',
-      'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)',
-      'Alternatif Üretici Sayısı', 'Alternatif Üreticiler',
-      'Endüstri Mühendisliği Aksiyonu', 'Aksiyon Detayı'
+      'Molekül Adı (FDA ∩ EMA)', 'Ticari Markalar (Kombine)', 'Yeşil Reçete (TİTCK)', 'Sistemik Risk Skoru (DSRDS Modeli)', 'Risk Seviyesi (DSRDS Modeli)',
+      'FDA Kriz Durumu (FDA)', 'FDA Kayıt Sayısı (FDA)', 'FDA Kök Nedenleri (FDA)',
+      'EMA Kriz Durumu (EMA)', 'EMA Alternatif Durumu (EMA Monopol)', 'EMA Beklenen Çözülme (EMA)', 'EMA MeSH Alanı (EMA)',
+      'Medicare Reçete Talebi (Claims · CMS · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · CMS · 2025-2026 Q1 / 15 Aylık)',
+      'Alternatif Üretici Sayısı (FDA Analizi)', 'Alternatif Üreticiler (FDA Analizi)',
+      'Endüstri Mühendisliği Aksiyonu (DSRDS Modeli)', 'Aksiyon Detayı (DSRDS Modeli)'
     ];
     const csvContent = '\uFEFF' + [
       crossHeaders.join(','),
@@ -1766,12 +1766,12 @@ window.exportShortagesV2Csv = function() {
     return;
   }
   const headers = [
-    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu',
-    'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)', 'Sıkıntı Nedeni',
-    'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
-    'Alternatif Üretici Sayısı', 'Alternatif Üreticiler',
-    'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
-    'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
+    'ID (Sistem)', 'Kaynak (Veri Seti)', 'İlaç Adı / Generic (FDA)', 'Marka Adı (FDA)', 'FDA Kriz Durumu (FDA)', 'EMA Kriz Durumu (EMA)',
+    'Medicare Reçete Talebi (Claims · CMS · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · CMS · 2025-2026 Q1 / 15 Aylık)', 'Sıkıntı Nedeni (FDA)',
+    'Terapötik Kategori (FDA)', 'Bulunabilirlik / Stok (FDA)', 'Sunum & Dozaj Formu (FDA)', 'Üretici Firma (FDA)',
+    'Alternatif Üretici Sayısı (FDA Analizi)', 'Alternatif Üreticiler (FDA Analizi)',
+    'İletişim Bilgisi (FDA)', 'FDA Başvuru No (FDA)', 'NDC Kodu (FDA)', 'İlk İlan Tarihi (FDA)',
+    'Son Güncelleme (FDA)', 'Kırılganlık Riski (DSRDS Modeli)', 'Risk Seviyesi (DSRDS Modeli)', 'Önerilen Mühendislik Aksiyonu (DSRDS Modeli)', 'Yeşil Reçete (TİTCK / SGK)'
   ];
 
   const csvContent = '\uFEFF' + [
@@ -2232,22 +2232,22 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
         <table>
           <thead>
             <tr>
-              <th style="min-width:230px;">Ortak Molekül & Ticari Markalar</th>
-              <th>Transatlantik Risk</th>
-              <th style="min-width:240px;">🇺🇸 ABD FDA Kriz Verileri</th>
-              <th style="min-width:240px;">🇪🇺 AB EMA Kriz Verileri</th>
-              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
-              <th style="min-width:160px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+              <th style="min-width:230px;" title="Veri Seti: FDA ve EMA Ortak Kriz Molekülleri">Ortak Molekül & Ticari Markalar (FDA ∩ EMA)</th>
+              <th title="Veri Seti: DSRDS Transatlantik Sistemik Risk Modeli">Transatlantik Risk (DSRDS Modeli)</th>
+              <th style="min-width:240px;" title="Veri Seti: ABD Gıda ve İlaç Dairesi (FDA) Kriz Kayıtları">🇺🇸 ABD FDA Kriz Verileri (FDA)</th>
+              <th style="min-width:240px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) Kriz Kayıtları">🇪🇺 AB EMA Kriz Verileri (EMA)</th>
+              <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Alternatif Üretici Eşleştirmesi">Alternatif Üretici (FDA Analizi)</th>
+              <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims)">
+                <div style="font-weight:700;">Medicare Reçete Talebi (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th style="min-width:165px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Harcama ($)</div>
+              <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
+                <div style="font-weight:700;">Medicare Harcama ($) (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th>Beklenen Çözülme (EMA)</th>
-              <th style="min-width:260px;">Küresel Endüstri Mühendisliği Aksiyonu</th>
-              <th>Resmi Bildirim</th>
+              <th title="Veri Seti: Avrupa İlaç Ajansı (EMA) Tahmini Çözülme Takvimi">Beklenen Çözülme (EMA)</th>
+              <th style="min-width:260px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Stratejik Karar Desteği">Küresel Endüstri Mühendisliği Aksiyonu (DSRDS Modeli)</th>
+              <th title="Veri Seti: EMA Resmi Duyuru Sayfası">Resmi Bildirim (EMA)</th>
             </tr>
           </thead>
           <tbody>
@@ -2350,24 +2350,24 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
         <table>
           <thead>
             <tr>
-              <th style="min-width:210px;">İlaç Adı & Etken Madde (INN)</th>
-              <th>AB (EMA) Kriz Durumu</th>
-              <th style="min-width:145px;">FDA Kriz Durumu</th>
-              <th style="min-width:160px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+              <th style="min-width:210px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) İlaç ve INN Adı">İlaç Adı & Etken Madde (EMA)</th>
+              <th title="Veri Seti: Avrupa İlaç Ajansı (EMA) Resmi Kriz Durumu">AB (EMA) Kriz Durumu (EMA)</th>
+              <th style="min-width:145px;" title="Veri Seti: ABD FDA Veri Tabanı Eşleşmesi">FDA Kriz Durumu (FDA)</th>
+              <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims)">
+                <div style="font-weight:700;">Medicare Reçete Talebi (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th style="min-width:165px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Harcama ($)</div>
+              <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
+                <div style="font-weight:700;">Medicare Harcama ($) (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
-              <th style="min-width:240px; padding:12px 16px;">Etkilenen Form & Dozaj</th>
-              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
-              <th>Alternatif Bulunabilirliği</th>
-              <th>Tarihler & Beklenen Çözülme</th>
-              <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
-              <th>Resmi Bildirim</th>
+              <th style="min-width:180px;" title="Veri Seti: EMA MeSH (Medical Subject Headings) Sınıflandırması">Terapötik Alan (EMA / MeSH)</th>
+              <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: EMA İlaç Formu ve Dozaj Bilgisi">Etkilenen Form & Dozaj (EMA)</th>
+              <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Alternatif Üretici Eşleştirmesi">Alternatif Üretici (FDA Analizi)</th>
+              <th title="Veri Seti: EMA Alternatif İlaç Bulunabilirlik Tespiti">Alternatif Bulunabilirliği (EMA)</th>
+              <th title="Veri Seti: EMA Kriz Takvimi ve Çözülme Beklentisi">Tarihler & Beklenen Çözülme (EMA)</th>
+              <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
+              <th title="Veri Seti: EMA Resmi Duyuru Sayfası">Resmi Bildirim (EMA)</th>
             </tr>
           </thead>
           <tbody>
@@ -2489,26 +2489,26 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
         <table>
           <thead>
             <tr>
-              <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
-              <th>FDA Kriz Durumu</th>
-              <th style="min-width:145px;">EMA Kriz Durumu</th>
-              <th style="min-width:160px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+              <th style="min-width:200px;" title="Veri Seti: ABD FDA (Food and Drug Administration) Resmi Kriz Kataloğu">İlaç / Etkin Madde & Marka (FDA)</th>
+              <th title="Veri Seti: ABD FDA Drug Shortages Veri Tabanı">FDA Kriz Durumu (FDA)</th>
+              <th style="min-width:145px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğu">EMA Kriz Durumu (EMA)</th>
+              <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS (Centers for Medicare & Medicaid Services) Part D 15 Aylık Reçete Talebi (Claims)">
+                <div style="font-weight:700;">Medicare Reçete Talebi (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th style="min-width:165px; padding:12px 14px;">
-                <div style="font-weight:700;">Medicare Harcama ($)</div>
+              <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS (Centers for Medicare & Medicaid Services) Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
+                <div style="font-weight:700;">Medicare Harcama ($) (CMS)</div>
                 <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
               </th>
-              <th>Terapötik Kategori</th>
-              <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
-              <th>Bulunabilirlik (Stok)</th>
-              <th style="min-width:280px; padding:12px 16px;">Sunum & Dozaj Formu</th>
-              <th style="min-width:260px; padding:12px 16px;">Üretici Firma & İletişim</th>
-              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
-              <th style="min-width:160px; padding:12px 14px;">Kriz Tarihleri</th>
-              <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
-              <th>İşlem</th>
+              <th title="Veri Seti: ABD FDA Drug Shortages Terapötik Sınıflandırma">Terapötik Kategori (FDA)</th>
+              <th style="min-width:180px;" title="Veri Seti: ABD FDA Kriz Bildirim Gerekçesi & Kök Neden">Sıkıntı Nedeni & Kök Neden (FDA)</th>
+              <th title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi">Bulunabilirlik (Stok) (FDA)</th>
+              <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">Sunum & Dozaj Formu (FDA)</th>
+              <th style="min-width:260px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici Firma & Tedarik İletişim Bilgisi">Üretici Firma & İletişim (FDA)</th>
+              <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi">Alternatif Üretici (FDA Analizi)</th>
+              <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: ABD FDA İlk İlan ve Son Güncelleme Takvimi">Kriz Tarihleri (FDA)</th>
+              <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması & Risk Skoru">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
+              <th title="İşlem: Sistem Kayıt Detayı ve Çapraz Eşleşmeleri Görüntüle">İşlem (Sistem)</th>
             </tr>
           </thead>
           <tbody>
@@ -2590,24 +2590,24 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
       <table>
         <thead>
           <tr>
-            <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
-            <th>Kaynak</th>
-            <th style="min-width:250px; padding:12px 16px;">Üretici / Tedarikçi</th>
-            <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
-            <th>NDC / Kod</th>
-            <th>FDA Kriz Durumu</th>
-            <th style="min-width:145px;">EMA Kriz Durumu</th>
-            <th style="min-width:160px; padding:12px 14px;">
-              <div style="font-weight:700;">Medicare Reçete Talebi</div>
+            <th style="min-width:200px;" title="Veri Seti: ABD FDA / Ulusal Katalog">İlaç / Etkin Madde & Marka (FDA)</th>
+            <th title="Veri Seti: Kayıt Kaynağı">Kaynak (Veri Seti)</th>
+            <th style="min-width:250px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici ve Tedarikçi Bilgisi">Üretici / Tedarikçi (FDA)</th>
+            <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Alternatif Üretici Eşleştirmesi">Alternatif Üretici (FDA Analizi)</th>
+            <th title="Veri Seti: ABD FDA / NDC Kodu">NDC / Kod (FDA)</th>
+            <th title="Veri Seti: ABD FDA Kriz Kataloğu">FDA Kriz Durumu (FDA)</th>
+            <th style="min-width:145px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) Kriz Kataloğu">EMA Kriz Durumu (EMA)</th>
+            <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims)">
+              <div style="font-weight:700;">Medicare Reçete Talebi (CMS)</div>
               <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
             </th>
-            <th style="min-width:165px; padding:12px 14px;">
-              <div style="font-weight:700;">Medicare Harcama ($)</div>
+            <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
+              <div style="font-weight:700;">Medicare Harcama ($) (CMS)</div>
               <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
             </th>
-            <th style="min-width:180px;">Sıkıntı Nedeni</th>
-            <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
-            <th>İşlem</th>
+            <th style="min-width:180px;" title="Veri Seti: ABD FDA Kriz Nedeni">Sıkıntı Nedeni (FDA)</th>
+            <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
+            <th title="İşlem: Sistem Kayıt Detayı">İşlem (Sistem)</th>
           </tr>
         </thead>
         <tbody>
