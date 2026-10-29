@@ -2108,121 +2108,125 @@ function hasCrossShortage(r) {
   return crossSubstancesRegex.test(text);
 }
 
+// ==========================================================================
+// V2 TEDARİK KRİZLERİ TABLOSU HÜCRE OLUŞTURUCULARI (PAYLAŞILAN FONKSİYONLAR)
+// ==========================================================================
+function renderReasonCell(r) {
+  const rawReason = r.shortageReasonDisplay || r.shortage_reason || '';
+  if (!rawReason) return '<span style="color:var(--muted); font-size:11px;">—</span>';
+
+  const isZeroEquiv = r.greenData && r.greenData.localEquivCount === 0;
+  let trDesc = getFdaReasonTr(rawReason);
+  let enReason = rawReason;
+
+  if (rawReason.includes('İthal') || rawReason.includes('Muadil') || rawReason.includes('Kota') || rawReason.includes('Kontrole')) {
+    trDesc = rawReason;
+    enReason = isZeroEquiv ? '0 Muadil (Monopol İthalat)' : 'TİTCK / Ek-4/A Kontrolü';
+  }
+
+  return `
+    <div class="v2-reason-chip ${isZeroEquiv ? 'alert-zero' : ''}">
+      <span class="v2-reason-tr">${esc(trDesc)}</span>
+      ${enReason && enReason !== trDesc ? `<span class="v2-reason-en">FDA: ${esc(enReason)}</span>` : ''}
+    </div>
+  `;
+}
+
+function renderActionCell(r) {
+  return `
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <div><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></div>
+      <div class="v2-action-cell">
+        <div class="v2-action-title">
+          <span>⚡</span> <span>${esc(r.action || 'Rutin Tedarik İzleme')}</span>
+        </div>
+        ${r.actionDetail ? `<span class="v2-action-desc">${esc(r.actionDetail)}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderDrugCell(r) {
+  return `
+    <td class="drug-cell">
+      <b style="font-size:13px; color:#0f172a; line-height:1.35;">${esc(label(r))}</b>
+      <small style="font-size:11px; color:#64748b; margin-top:2px;">${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
+      ${r.greenData ? `
+        <div class="green-rx-meta">
+          <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10.5px; width:fit-content; font-weight:700;">
+            🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
+          </span>
+          <div style="font-size:11px; color:#334155; margin-top:2px;">
+            ${r.greenData.localEquivCount > 0 
+              ? `<span style="color:#047857; font-weight:700;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
+              : `<span style="color:#b91c1c; font-weight:800; background:#fee2e2; padding:1px 6px; border-radius:4px; border:1px solid #fca5a5;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
+            <span style="color:var(--muted); margin-left:4px;">· SGK: ${esc(r.greenData.equivGroup)}</span>
+          </div>
+          ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
+            <span class="badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:10px; width:fit-content; font-weight:700;">
+              🏛️ SGK Yurt Dışı İlaç: ${esc(r.greenData.yurtDisiList)}
+            </span>
+          ` : ''}
+        </div>
+      ` : ''}
+    </td>
+  `;
+}
+
+function renderEmaCrisisStatusCell(r) {
+  const match = getEmaCrisisMatch(r);
+  if (!match) {
+    return `
+      <div>
+        <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Avrupa İlaç Ajansı (EMA) kriz kataloğunda kriz kaydı bildirilmemiştir.">
+          ⚪ AB'de Kriz Yok
+        </span>
+      </div>
+    `;
+  }
+
+  const isOngoing = (match.status || '').toLowerCase().includes('ongoing');
+  const isResolved = (match.status || '').toLowerCase().includes('resolved');
+
+  const bg = isOngoing ? '#fee2e2' : (isResolved ? '#dcfce7' : '#fef3c7');
+  const color = isOngoing ? '#991b1b' : (isResolved ? '#15803d' : '#92400e');
+  const border = isOngoing ? '#fecaca' : (isResolved ? '#bbf7d0' : '#fde68a');
+  const icon = isOngoing ? '🚨' : (isResolved ? '🟢' : '🛑');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:3px;">
+      <span class="badge" style="background:${bg}; color:${color}; border:1px solid ${border}; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Tıkla: FDA ve EMA birleşik kriz analizini görüntüle">
+        ${icon} ${esc(match.status_tr || match.status)}
+      </span>
+      ${match.detail ? `<small style="font-size:10px; color:#475569; line-height:1.2;">${esc(match.detail)}</small>` : ''}
+    </div>
+  `;
+}
+
+function renderFdaCrisisStatusCell(r) {
+  const isCross = hasCrossShortage(r);
+  if (isCross) {
+    return `
+      <div style="display:flex; flex-direction:column; gap:3px;">
+        <span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu ilaç hem FDA hem EMA kriz listesinde! Birleşik analize gitmek için tıkla.">
+          ⚡ Aktif Kriz (Current)
+        </span>
+        <small style="font-size:10px; color:#991b1b; font-weight:700;">🇺🇸 FDA Kriz Kayıtlı</small>
+      </div>
+    `;
+  }
+  return `
+    <div>
+      <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="ABD FDA kriz kataloğunda bu molekül için bildirilmiş aktif kriz kaydı bulunmuyor.">
+        ⚪ ABD'de Kriz Yok
+      </span>
+    </div>
+  `;
+}
+
 function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Source) {
   if (!rows.length) return '<p class="empty notice" style="font-size:13px; font-weight:600; padding:32px;">🔍 Seçili filtrelere veya arama kriterine uygun kriz kaydı bulunamadı. Lütfen filtreleri gevşetmeyi veya sıfırlamayı deneyin.</p>';
 
-  const renderReasonCell = (r) => {
-    const rawReason = r.shortageReasonDisplay || r.shortage_reason || '';
-    if (!rawReason) return '<span style="color:var(--muted); font-size:11px;">—</span>';
-
-    const isZeroEquiv = r.greenData && r.greenData.localEquivCount === 0;
-    let trDesc = getFdaReasonTr(rawReason);
-    let enReason = rawReason;
-
-    if (rawReason.includes('İthal') || rawReason.includes('Muadil') || rawReason.includes('Kota') || rawReason.includes('Kontrole')) {
-      trDesc = rawReason;
-      enReason = isZeroEquiv ? '0 Muadil (Monopol İthalat)' : 'TİTCK / Ek-4/A Kontrolü';
-    }
-
-    return `
-      <div class="v2-reason-chip ${isZeroEquiv ? 'alert-zero' : ''}">
-        <span class="v2-reason-tr">${esc(trDesc)}</span>
-        ${enReason && enReason !== trDesc ? `<span class="v2-reason-en">FDA: ${esc(enReason)}</span>` : ''}
-      </div>
-    `;
-  };
-
-  const renderActionCell = (r) => {
-    return `
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <div><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></div>
-        <div class="v2-action-cell">
-          <div class="v2-action-title">
-            <span>⚡</span> <span>${esc(r.action || 'Rutin Tedarik İzleme')}</span>
-          </div>
-          ${r.actionDetail ? `<span class="v2-action-desc">${esc(r.actionDetail)}</span>` : ''}
-        </div>
-      </div>
-    `;
-  };
-
-  const renderDrugCell = (r) => {
-    return `
-      <td class="drug-cell">
-        <b style="font-size:13px; color:#0f172a; line-height:1.35;">${esc(label(r))}</b>
-        <small style="font-size:11px; color:#64748b; margin-top:2px;">${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
-        ${r.greenData ? `
-          <div class="green-rx-meta">
-            <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10.5px; width:fit-content; font-weight:700;">
-              🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
-            </span>
-            <div style="font-size:11px; color:#334155; margin-top:2px;">
-              ${r.greenData.localEquivCount > 0 
-                ? `<span style="color:#047857; font-weight:700;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
-                : `<span style="color:#b91c1c; font-weight:800; background:#fee2e2; padding:1px 6px; border-radius:4px; border:1px solid #fca5a5;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
-              <span style="color:var(--muted); margin-left:4px;">· SGK: ${esc(r.greenData.equivGroup)}</span>
-            </div>
-            ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
-              <span class="badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:10px; width:fit-content; font-weight:700;">
-                🏛️ SGK Yurt Dışı İlaç: ${esc(r.greenData.yurtDisiList)}
-              </span>
-            ` : ''}
-          </div>
-        ` : ''}
-      </td>
-    `;
-  };
-
-  const renderEmaCrisisStatusCell = (r) => {
-    const match = getEmaCrisisMatch(r);
-    if (!match) {
-      return `
-        <div>
-          <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Avrupa İlaç Ajansı (EMA) kriz kataloğunda kriz kaydı bildirilmemiştir.">
-            ⚪ AB'de Kriz Yok
-          </span>
-        </div>
-      `;
-    }
-
-    const isOngoing = (match.status || '').toLowerCase().includes('ongoing');
-    const isResolved = (match.status || '').toLowerCase().includes('resolved');
-
-    const bg = isOngoing ? '#fee2e2' : (isResolved ? '#dcfce7' : '#fef3c7');
-    const color = isOngoing ? '#991b1b' : (isResolved ? '#15803d' : '#92400e');
-    const border = isOngoing ? '#fecaca' : (isResolved ? '#bbf7d0' : '#fde68a');
-    const icon = isOngoing ? '🚨' : (isResolved ? '🟢' : '🛑');
-
-    return `
-      <div style="display:flex; flex-direction:column; gap:3px;">
-        <span class="badge" style="background:${bg}; color:${color}; border:1px solid ${border}; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Tıkla: FDA ve EMA birleşik kriz analizini görüntüle">
-          ${icon} ${esc(match.status_tr || match.status)}
-        </span>
-        ${match.detail ? `<small style="font-size:10px; color:#475569; line-height:1.2;">${esc(match.detail)}</small>` : ''}
-      </div>
-    `;
-  };
-
-  const renderFdaCrisisStatusCell = (r) => {
-    const isCross = hasCrossShortage(r);
-    if (isCross) {
-      return `
-        <div style="display:flex; flex-direction:column; gap:3px;">
-          <span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu ilaç hem FDA hem EMA kriz listesinde! Birleşik analize gitmek için tıkla.">
-            ⚡ Aktif Kriz (Current)
-          </span>
-          <small style="font-size:10px; color:#991b1b; font-weight:700;">🇺🇸 FDA Kriz Kayıtlı</small>
-        </div>
-      `;
-    }
-    return `
-      <div>
-        <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="ABD FDA kriz kataloğunda bu molekül için bildirilmiş aktif kriz kaydı bulunmuyor.">
-          ⚪ ABD'de Kriz Yok
-        </span>
-      </div>
-    `;
-  };
 
   const activeSource = source || currentShortageV2Source || (rows[0] && rows[0].source);
   const isCrossSource = activeSource === 'cross_fda_ema' || (rows[0] && rows[0].id && String(rows[0].id).startsWith('cross-'));
@@ -4754,31 +4758,41 @@ function exportRiskCriteriaGreenDrugsCSV() {
     return;
   }
   const headers = [
-    'Sıra', 'ID', 'Etkin Madde (INN)', 'Marka Adı', 'Üretici Firma', 'Menşe',
-    'Yerli Muadil Sayısı', 'FDA Kriz Durumu', 'Kriz Nedeni', 'Bulunabilirlik',
-    'Sunum & Dozaj', 'NDC', 'FDA Başvuru No', 'CMS Medicare Reçete Talebi (15 Ay)',
-    'CMS Medicare Harcama $ (15 Ay)', 'DSRDS Risk Puanı', 'Risk Seviyesi'
+    'Sıra', 'ID', 'İlaç / Etkin Madde & Marka (FDA)', 'FDA Kriz Durumu', 'EMA Kriz Durumu',
+    'CMS Medicare Reçete Talebi (15 Ay)', 'CMS Medicare Harcama $ (15 Ay)', 'Terapötik Kategori',
+    'Sıkıntı Nedeni & Kök Neden', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'NDC Kodu',
+    'FDA Başvuru No', 'Üretici Firma', 'İletişim Bilgisi', 'Alternatif Üretici Sayısı',
+    'Alternatif Üreticiler', 'Son Güncelleme', 'İlk İlan Tarihi', 'DSRDS Risk Puanı',
+    'Risk Seviyesi', 'Önerilen Karar Destek Aksiyonu'
   ];
   const rows = records.map((r, i) => {
     const m = getMedicareDataMatch(r);
+    const ema = getEmaCrisisMatch(r);
+    const altCount = Number(r.alternative_manufacturers_count) || (r.alternative_manufacturers ? r.alternative_manufacturers.length : 0);
+    const altNames = Array.isArray(r.alternative_manufacturers) ? r.alternative_manufacturers.join(', ') : '';
     return [
       i + 1,
       r.id,
-      r.generic_name || '',
-      r.brand_name || '',
-      r.manufacturer || r.vendor || '',
-      (r.greenData?.origin || '').includes('İTHAL') ? 'İTHAL' : 'İMALAT',
-      r.greenData?.localEquivCount !== undefined ? r.greenData.localEquivCount : '',
+      r.brand_name || r.generic_name || '',
       r.shortage_status || '',
+      ema ? (ema.status_tr || ema.status) : "AB'de Kriz Yok",
+      m ? m.claims : '',
+      m ? m.spending : '',
+      r.therapeuticCategory || '',
       r.shortage_reason || r.reasonText || '',
       r.availability || '',
       r.presentation || '',
       r.ndc || '',
       r.application_no || '',
-      m ? m.claims : '',
-      m ? m.spending : '',
+      r.manufacturer || r.vendor || '',
+      r.contactInfo || '',
+      altCount,
+      altNames,
+      r.updateDate || '',
+      r.initialDate || '',
       r.riskScore || '',
-      r.riskTierLabel || ''
+      r.riskTierLabel || '',
+      r.action || ''
     ];
   });
   const csvContent = '\uFEFF' + [headers, ...rows]
@@ -4832,19 +4846,30 @@ function renderRiskCriteriaDrugTableOnly() {
 
   tableWrap.innerHTML = `
     <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #bcdcfa; overflow-x:auto;">
-      <table class="dsrds-drug-table">
+      <table class="dsrds-drug-table" style="min-width: 2200px; width: 100%;">
         <thead>
           <tr>
-            <th style="width:45px; text-align:center;">#</th>
-            <th style="min-width:230px;">İlaç / Etkin Madde & Marka (INN)</th>
-            <th style="min-width:180px;">Üretici Firma</th>
-            <th style="min-width:130px; text-align:center;">Menşe & Muadil (TR)</th>
-            <th style="min-width:130px; text-align:center;">FDA Kriz Durumu</th>
-            <th style="min-width:180px;">Kriz Nedeni & Kök Neden</th>
-            <th style="min-width:145px; text-align:center;">Medicare Reçete (15 Ay)</th>
-            <th style="min-width:135px; text-align:center;">Medicare Harcama ($)</th>
-            <th style="min-width:115px; text-align:center;">DSRDS Risk Puanı</th>
-            <th style="min-width:130px; text-align:center;">Karar Destek Analizi</th>
+            <th style="width:45px; text-align:center;" title="Kayıt Sıra Numarası (1–400)">#</th>
+            <th style="min-width:220px;" title="Veri Seti: ABD FDA Resmi Kriz Kataloğu & TİTCK Yeşil Reçete">1. İlaç / Etkin Madde & Marka (FDA)</th>
+            <th title="Veri Seti: ABD FDA Drug Shortages Veri Tabanı">2. FDA Kriz Durumu (FDA)</th>
+            <th style="min-width:145px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğu">3. EMA Kriz Durumu (EMA)</th>
+            <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims)">
+              <div style="font-weight:700;">4. Medicare Reçete Talebi (CMS)</div>
+              <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+            </th>
+            <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
+              <div style="font-weight:700;">5. Medicare Harcama ($) (CMS)</div>
+              <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+            </th>
+            <th title="Veri Seti: ABD FDA Drug Shortages Terapötik Sınıflandırma">6. Terapötik Kategori (FDA)</th>
+            <th style="min-width:180px;" title="Veri Seti: ABD FDA Kriz Bildirim Gerekçesi & Kök Neden">7. Sıkıntı Nedeni & Kök Neden (FDA)</th>
+            <th title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi">8. Bulunabilirlik (Stok) (FDA)</th>
+            <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">9. Sunum & Dozaj Formu (FDA)</th>
+            <th style="min-width:260px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici Firma & Tedarik İletişim Bilgisi">10. Üretici Firma & İletişim (FDA)</th>
+            <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi">11. Alternatif Üretici (FDA Analizi)</th>
+            <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: ABD FDA İlk İlan ve Son Güncelleme Takvimi">12. Kriz Tarihleri (FDA)</th>
+            <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması & Risk Skoru">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
+            <th style="min-width:160px; text-align:center;" title="İşlem: DSRDS 8 Ana Kriterine Yansıt ve Detay Modalını Aç">İşlem (Karar Destek)</th>
           </tr>
         </thead>
         <tbody>
@@ -4852,67 +4877,81 @@ function renderRiskCriteriaDrugTableOnly() {
             const seq = startIdx + idx + 1;
             const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
             return `
-              <tr class="${isSelected ? 'selected' : ''}">
-                <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px;">
+              <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
+                <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
                   ${seq}
                 </td>
-                <td>
-                  <div style="font-weight:800; font-size:13px; color:#1e3a8a;">
-                    ${esc(r.brand_name || r.generic_name || '—')}
-                  </div>
-                  <div style="font-size:11.5px; color:#475569; font-weight:600; margin-top:2px;">
-                    🧪 INN: ${esc(r.generic_name || '—')}
-                  </div>
-                  <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
-                    <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">🟢 Yeşil Reçete</span>
-                    ${r.ndc ? `<span style="font-size:10px; color:#475569; background:#f1f5f9; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #e2e8f0;">NDC: ${esc(r.ndc)}</span>` : ''}
-                    ${r.application_no ? `<span style="font-size:10px; color:#0369a1; background:#e0f2fe; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #bae6fd;">FDA: ${esc(r.application_no)}</span>` : ''}
-                  </div>
+                ${renderDrugCell(r)}
+                <td style="vertical-align:top; padding:14px 12px;">${r.statusBadgeHtml}</td>
+                <td style="vertical-align:top; padding:14px 12px;">${renderEmaCrisisStatusCell(r)}</td>
+                ${renderMedicareCells(r)}
+                <td style="vertical-align:top; padding:14px 12px;">
+                  ${r.therapeuticCategory ? `
+                    <span class="category-pill">${esc(r.therapeuticCategory)}</span>
+                  ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
                 </td>
-                <td>
-                  <div style="font-weight:700; font-size:12px; color:#0f172a; line-height:1.4;">
-                    🏢 ${esc(r.manufacturer || r.vendor || '—')}
+                <td style="vertical-align:top; padding:14px 12px;">${renderReasonCell(r)}</td>
+                <td style="vertical-align:top; padding:14px 12px;">${r.availBadgeHtml}</td>
+                <td style="min-width:280px; max-width:340px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="font-size:12.5px; color:#1e293b; line-height:1.55; word-break:break-word; font-weight:500;">
+                    ${esc(r.presentation)}
                   </div>
-                  ${r.contactInfo ? `
-                    <div style="font-size:10.5px; color:#0369a1; margin-top:3px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.contactInfo)}">
-                      📞 ${esc(r.contactInfo)}
+                  ${(r.ndc || r.application_no) ? `
+                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                      ${r.ndc ? `<code style="font-size:10.5px; color:#475569; background:#f1f5f9; padding:3px 8px; border-radius:5px; border:1px solid #e2e8f0; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#94a3b8;">NDC:</span> ${esc(r.ndc)}</code>` : ''}
+                      ${r.application_no ? `<code style="font-size:10.5px; color:#0369a1; background:#e0f2fe; padding:3px 8px; border-radius:5px; font-weight:700; border:1px solid #bae6fd; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#0284c7;">FDA:</span> ${esc(r.application_no)}</code>` : ''}
                     </div>
                   ` : ''}
                 </td>
-                <td style="text-align:center;">
-                  ${(r.greenData?.origin || '').includes('İTHAL') ? `
-                    <span class="badge" style="background:#fff1f2; color:#be123c; border:1px solid #fecdd3; font-size:10px; font-weight:700;">İTHAL</span>
-                  ` : `
-                    <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">İMALAT</span>
-                  `}
-                  <div style="margin-top:4px; font-size:10.5px; font-weight:600; color:#475569;">
-                    ${r.greenData?.localEquivCount === 0 
-                      ? '<span style="color:#dc2626; font-weight:800; background:#fee2e2; padding:1px 5px; border-radius:4px;">0 Muadil</span>' 
-                      : (r.greenData?.localEquivCount !== undefined ? `${r.greenData.localEquivCount} Yerli Muadil` : 'Kontrole Tabi')}
+                <td style="min-width:260px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="font-weight:700; font-size:13px; color:#0f172a; line-height:1.45; word-break:break-word; display:flex; align-items:flex-start; gap:6px;">
+                    <span style="font-size:14px; flex-shrink:0; margin-top:1px;">🏢</span>
+                    <span>${esc(r.manufacturer || r.vendor || '—')}</span>
+                  </div>
+                  ${r.contactInfo ? `
+                    <div style="margin-top:10px; font-size:11.5px; color:#0369a1; background:#f0f9ff; padding:7px 11px; border-radius:7px; border:1px solid #bae6fd; line-height:1.45; word-break:break-word; box-shadow:0 1px 3px rgba(2,132,199,0.06);">
+                      <div style="font-weight:700; font-size:10.5px; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:3px; display:flex; align-items:center; gap:4px;">
+                        <span>📞</span> <span>İletişim & Tedarik:</span>
+                      </div>
+                      <div style="color:#0c4a6e; font-weight:500;">
+                        ${esc(r.contactInfo)}
+                      </div>
+                    </div>
+                  ` : ''}
+                </td>
+                ${renderAlternativeManufacturersCell(r)}
+                <td style="min-width:160px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div>
+                      <span style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                        🔄 Son Güncelleme:
+                      </span>
+                      <span style="font-size:12px; font-weight:700; color:#0f172a;">
+                        ${esc(r.updateDate || '—')}
+                      </span>
+                    </div>
+                    ${r.initialDate ? `
+                      <div style="border-top:1px dashed #e2e8f0; padding-top:5px;">
+                        <span style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                          📢 İlk İlan Tarihi:
+                        </span>
+                        <span style="font-size:11.5px; color:#475569; font-weight:600;">
+                          ${esc(r.initialDate)}
+                        </span>
+                      </div>
+                    ` : ''}
                   </div>
                 </td>
-                <td style="text-align:center;">
-                  ${r.statusBadgeHtml}
-                </td>
-                <td>
-                  <div style="font-size:12px; font-weight:600; color:#334155; line-height:1.4;">
-                    ${esc(r.shortage_reason || r.reasonText || '—')}
+                <td style="vertical-align:top; padding:14px 16px;">${renderActionCell(r)}</td>
+                <td style="min-width:150px; text-align:center; vertical-align:top; padding:14px 16px;">
+                  <div style="display:flex; flex-direction:column; gap:6px; align-items:center;">
+                    <button type="button" class="dsrds-apply-btn ${isSelected ? 'applied' : ''}" style="width:100%; justify-content:center;" onclick="event.stopPropagation(); applyDrugToRiskCriteria('${esc(r.id)}')">
+                      ${isSelected ? '✓ Kriterlere Yansıtıldı' : '🎯 Kriterlere Yansıt'}
+                    </button>
+                    <button type="button" class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700; width:100%;" onclick="event.stopPropagation(); detail('${r.id}')">
+                      İncele →
+                    </button>
                   </div>
-                  ${r.availBadgeHtml ? `<div style="margin-top:4px;">${r.availBadgeHtml}</div>` : ''}
-                </td>
-                ${renderMedicareCells(r)}
-                <td style="text-align:center;">
-                  <div style="font-size:15px; font-weight:800; color:${r.riskScore >= 75 ? '#dc2626' : (r.riskScore >= 50 ? '#ea580c' : '#16a34a')};">
-                    ${r.riskScore} <small style="font-size:10.5px; color:#94a3b8;">/100</small>
-                  </div>
-                  <span class="badge" style="font-size:9.5px; margin-top:2px; font-weight:800; background:${r.riskTier === 'high' ? '#fee2e2' : (r.riskTier === 'med' ? '#ffedd5' : '#dcfce7')}; color:${r.riskTier === 'high' ? '#dc2626' : (r.riskTier === 'med' ? '#ea580c' : '#16a34a')};">
-                    ${r.riskTierLabel || (r.riskScore >= 75 ? 'KRİTİK' : (r.riskScore >= 50 ? 'YÜKSEK' : 'ORTA'))}
-                  </span>
-                </td>
-                <td style="text-align:center;">
-                  <button type="button" class="dsrds-apply-btn ${isSelected ? 'applied' : ''}" onclick="applyDrugToRiskCriteria('${esc(r.id)}')">
-                    ${isSelected ? '✓ Yansıtıldı' : '🎯 Kriterlere Yansıt'}
-                  </button>
                 </td>
               </tr>
             `;
