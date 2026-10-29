@@ -1,0 +1,974 @@
+[
+  {
+    "id": "cross-001",
+    "molecule_name": "ADHD Molekülleri (Methylphenidate / Lisdexamfetamine / Atomoxetine)",
+    "brand_names_combined": "ADHD medicines / CONCERTA / LISDEXAMFETAMINE DIMESYLATE / METHYLPHENIDATE HYDROCHLORIDE",
+    "is_green": true,
+    "cross_risk_score": 95,
+    "cross_risk_tier": "CRITICAL",
+    "cross_risk_label": "🚨 ÇİFT TARAFLI AKTİF KRİZ (Transatlantik Sistemik Darboğaz)",
+    "action": "Zorunlu Lisans & İkincil Küresel API Akreditasyonu",
+    "action_detail": "Hem ABD hem Avrupa pazarlarında eşzamanlı aktif açık mevcuttur. Yerel distribütör veya fason üretici transferi yetersiz kalacaktır; TİTCK doğrudan hammadde ikamesi ve acil kota protokolü uygulamalıdır.",
+    "ema_data": {
+      "medicines": [
+        "ADHD medicines"
+      ],
+      "inns": [
+        "atomoxetine;methylphenidate;lisdexamfetamine"
+      ],
+      "statuses": [
+        "Shortage ongoing"
+      ],
+      "status_display": "Shortage ongoing",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Attention Deficit Disorder with Hyperactivity"
+      ],
+      "expected_resolutions": [
+        "Depending on the medicine and the EEA country, the shortage may continue until the end of 2025."
+      ],
+      "resolution_display": "Depending on the medicine and the EEA country, the shortage may continue until the end of 2025.",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/adhd-medicines"
+      ]
+    },
+    "fda_data": {
+      "record_count": 146,
+      "generics": [
+        "Lisdexamfetamine Dimesylate Capsule",
+        "Lisdexamfetamine Dimesylate Tablet, Chewable",
+        "Methylphenidate Film, Extended Release",
+        "Methylphenidate Hydrochloride Tablet, Extended Release"
+      ],
+      "brands": [
+        "CONCERTA",
+        "LISDEXAMFETAMINE DIMESYLATE",
+        "METHYLPHENIDATE HYDROCHLORIDE",
+        "METHYLPHENIDATE TRANSDERMAL SYSTEM"
+      ],
+      "statuses": [
+        "Current"
+      ],
+      "status_display": "Current",
+      "reasons": [
+        "Delay in shipping of the drug",
+        "Demand increase for the drug",
+        "Discontinuation of the manufacture of the drug",
+        "Other",
+        "Shortage of an active ingredient"
+      ],
+      "categories": [
+        "Psychiatry"
+      ],
+      "sample_ndc": "0378-6860-77"
+    }
+  },
+  {
+    "id": "cross-002",
+    "molecule_name": "Alteplase",
+    "brand_names_combined": "Actilyse and Actilyse Cathflo / ACTIVASE",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Actilyse and Actilyse Cathflo"
+      ],
+      "inns": [
+        "alteplase"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Myocardial Infarction"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/actilyse-actilyse-cathflo"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Alteplase Injection"
+      ],
+      "brands": [
+        "ACTIVASE"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Cardiovascular",
+        "Hematology",
+        "Neurology"
+      ],
+      "sample_ndc": "50242-085-27"
+    }
+  },
+  {
+    "id": "cross-003",
+    "molecule_name": "Aprepitant",
+    "brand_names_combined": "Emend / EMEND",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Emend"
+      ],
+      "inns": [
+        "aprepitant"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Vomiting",
+        "Postoperative Nausea and Vomiting",
+        "Cancer",
+        "Neoplasms"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/emend"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Aprepitant Oral Powder for Suspension"
+      ],
+      "brands": [
+        "EMEND"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Gastroenterology"
+      ],
+      "sample_ndc": "0006-3066-03"
+    }
+  },
+  {
+    "id": "cross-004",
+    "molecule_name": "Arsenic Trioxide",
+    "brand_names_combined": "Trisenox / ARSENIC TRIOXIDE",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Trisenox"
+      ],
+      "inns": [
+        "arsenic trioxide"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Leukemia, Promyelocytic, Acute"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/trisenox"
+      ]
+    },
+    "fda_data": {
+      "record_count": 2,
+      "generics": [
+        "Arsenic Trioxide Injection"
+      ],
+      "brands": [
+        "ARSENIC TRIOXIDE"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Oncology"
+      ],
+      "sample_ndc": "63323-637-10"
+    }
+  },
+  {
+    "id": "cross-005",
+    "molecule_name": "Cetrorelix",
+    "brand_names_combined": "Cetrotide",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Cetrotide"
+      ],
+      "inns": [
+        "cetrorelix acetate"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Ovulation",
+        "Ovulation Induction"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/cetrotide"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Cetrorelix Acetate Injection"
+      ],
+      "brands": [],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Reproductive"
+      ],
+      "sample_ndc": "0480-5795-08"
+    }
+  },
+  {
+    "id": "cross-006",
+    "molecule_name": "Docetaxel",
+    "brand_names_combined": "Taxotere",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Taxotere"
+      ],
+      "inns": [
+        "docetaxel"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Head and Neck Neoplasms",
+        "Carcinoma, Non-Small-Cell Lung",
+        "Adenocarcinoma",
+        "Prostatic Neoplasms"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/taxotere"
+      ]
+    },
+    "fda_data": {
+      "record_count": 2,
+      "generics": [
+        "Docetaxel Injection"
+      ],
+      "brands": [],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Oncology"
+      ],
+      "sample_ndc": "50742-431-08"
+    }
+  },
+  {
+    "id": "cross-007",
+    "molecule_name": "Hydroxocobalamin",
+    "brand_names_combined": "Cyanokit / CYANOKIT / HYDROXOCOBALAMIN",
+    "is_green": false,
+    "cross_risk_score": 85,
+    "cross_risk_tier": "HIGH",
+    "cross_risk_label": "⚡ KISMİ AKTİF KRİZ (Bölgesel Sıçrama Riski)",
+    "action": "Erken Uyarı & Bölgesel Arbitraj Stoklama Tamponu",
+    "action_detail": "Kriz FDA (ABD) tarafında aktiftir. Küresel tedarik zinciri entegrasyonu nedeniyle diğer kıtaya sıçrama riski yüksektir; ROP +21 gün uzatılmalı ve güvenlik stoku artırılmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Cyanokit"
+      ],
+      "inns": [
+        "hydroxocobalamin"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Poisoning"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/cyanokit"
+      ]
+    },
+    "fda_data": {
+      "record_count": 2,
+      "generics": [
+        "Hydroxocobalamin Injection"
+      ],
+      "brands": [
+        "CYANOKIT",
+        "HYDROXOCOBALAMIN"
+      ],
+      "statuses": [
+        "Current"
+      ],
+      "status_display": "Current",
+      "reasons": [
+        "Other"
+      ],
+      "categories": [
+        "Other"
+      ],
+      "sample_ndc": "50633-310-11"
+    }
+  },
+  {
+    "id": "cross-008",
+    "molecule_name": "Ifosfamide",
+    "brand_names_combined": "Ifosfamide / IFEX / IFOSFAMIDE",
+    "is_green": false,
+    "cross_risk_score": 95,
+    "cross_risk_tier": "CRITICAL",
+    "cross_risk_label": "🚨 ÇİFT TARAFLI AKTİF KRİZ (Transatlantik Sistemik Darboğaz)",
+    "action": "Zorunlu Lisans & İkincil Küresel API Akreditasyonu",
+    "action_detail": "Hem ABD hem Avrupa pazarlarında eşzamanlı aktif açık mevcuttur. Yerel distribütör veya fason üretici transferi yetersiz kalacaktır; TİTCK doğrudan hammadde ikamesi ve acil kota protokolü uygulamalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Ifosfamide"
+      ],
+      "inns": [
+        "ifosfamide"
+      ],
+      "statuses": [
+        "Shortage ongoing"
+      ],
+      "status_display": "Shortage ongoing",
+      "alternatives": [
+        "Unknown"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Cancer"
+      ],
+      "expected_resolutions": [
+        "Expected to continue until Q1 2027."
+      ],
+      "resolution_display": "Expected to continue until Q1 2027.",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/ifosfamide"
+      ]
+    },
+    "fda_data": {
+      "record_count": 8,
+      "generics": [
+        "Ifosfamide Injection"
+      ],
+      "brands": [
+        "IFEX",
+        "IFOSFAMIDE"
+      ],
+      "statuses": [
+        "Current"
+      ],
+      "status_display": "Current",
+      "reasons": [
+        "Demand increase for the drug",
+        "Requirements related to complying with good manufacturing practices"
+      ],
+      "categories": [
+        "Oncology",
+        "Pediatric"
+      ],
+      "sample_ndc": "0338-3991-01"
+    }
+  },
+  {
+    "id": "cross-009",
+    "molecule_name": "Insulin (Human / Lispro)",
+    "brand_names_combined": "Insuman Basal and Comb 25 / Insulin lispro Sanofi / Insuman Rapid, Basal and Comb 25 (insulin human) / Insuman Rapid, Basal and Comb / HUMALOG TEMPO PEN / INSULIN LISPRO JUNIOR KWIKPEN / INSULIN LISPRO PROTAMINE AND INSULIN LISPRO INJECTABLE SUSPENSION MIX75/25 KWIKPEN",
+    "is_green": false,
+    "cross_risk_score": 80,
+    "cross_risk_tier": "HIGH",
+    "cross_risk_label": "⚡ KISMİ AKTİF KRİZ (Bölgesel Sıçrama Riski)",
+    "action": "Erken Uyarı & Bölgesel Arbitraj Stoklama Tamponu",
+    "action_detail": "Kriz EMA (Avrupa) tarafında aktiftir. Küresel tedarik zinciri entegrasyonu nedeniyle diğer kıtaya sıçrama riski yüksektir; ROP +21 gün uzatılmalı ve güvenlik stoku artırılmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Insuman Basal and Comb 25",
+        "Insulin lispro Sanofi",
+        "Insuman Rapid, Basal and Comb 25 (insulin human)",
+        "Insuman Rapid, Basal and Comb"
+      ],
+      "inns": [
+        "insulin human",
+        "insulin lispro"
+      ],
+      "statuses": [
+        "Medicine discontinued",
+        "Shortage ongoing",
+        "Shortage resolved"
+      ],
+      "status_display": "Medicine discontinued · Shortage ongoing · Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Diabetes Mellitus"
+      ],
+      "expected_resolutions": [
+        "The expected duration of the shortage is unknown."
+      ],
+      "resolution_display": "The expected duration of the shortage is unknown.",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/insuman-basal-comb-25",
+        "https://www.ema.europa.eu/en/medicines/human/shortages/insulin-lispro-sanofi",
+        "https://www.ema.europa.eu/en/medicines/human/shortages/insuman-rapid-basal-comb-25-insulin-human",
+        "https://www.ema.europa.eu/en/medicines/human/shortages/insuman-rapid-basal-comb"
+      ]
+    },
+    "fda_data": {
+      "record_count": 7,
+      "generics": [
+        "Insulin Glargine Injection",
+        "Insulin Glargine-aglr Injection",
+        "Insulin Lispro Injection",
+        "Insulin Lispro Protamine and Insulin Lispro Injection"
+      ],
+      "brands": [
+        "HUMALOG TEMPO PEN",
+        "INSULIN LISPRO JUNIOR KWIKPEN",
+        "INSULIN LISPRO PROTAMINE AND INSULIN LISPRO INJECTABLE SUSPENSION MIX75/25 KWIKPEN",
+        "LYUMJEV TEMPO PEN"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Endocrinology/Metabolism"
+      ],
+      "sample_ndc": "0002-8235-99"
+    }
+  },
+  {
+    "id": "cross-010",
+    "molecule_name": "Liraglutide",
+    "brand_names_combined": "Saxenda / Victoza / LIRAGLUTIDE / SAXENDA / VICTOZA",
+    "is_green": false,
+    "cross_risk_score": 95,
+    "cross_risk_tier": "CRITICAL",
+    "cross_risk_label": "🚨 ÇİFT TARAFLI AKTİF KRİZ (Transatlantik Sistemik Darboğaz)",
+    "action": "Zorunlu Lisans & İkincil Küresel API Akreditasyonu",
+    "action_detail": "Hem ABD hem Avrupa pazarlarında eşzamanlı aktif açık mevcuttur. Yerel distribütör veya fason üretici transferi yetersiz kalacaktır; TİTCK doğrudan hammadde ikamesi ve acil kota protokolü uygulamalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Saxenda",
+        "Victoza"
+      ],
+      "inns": [
+        "liraglutide"
+      ],
+      "statuses": [
+        "Shortage resolved",
+        "Shortage ongoing"
+      ],
+      "status_display": "Shortage resolved · Shortage ongoing",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Obesity",
+        "Overweight",
+        "Diabetes Mellitus, Type 2"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/saxenda",
+        "https://www.ema.europa.eu/en/medicines/human/shortages/victoza"
+      ]
+    },
+    "fda_data": {
+      "record_count": 11,
+      "generics": [
+        "Liraglutide Injection"
+      ],
+      "brands": [
+        "LIRAGLUTIDE",
+        "SAXENDA",
+        "VICTOZA"
+      ],
+      "statuses": [
+        "Current",
+        "To Be Discontinued"
+      ],
+      "status_display": "Current · To Be Discontinued",
+      "reasons": [
+        "Delay in shipping of the drug",
+        "Discontinuation of the manufacture of the drug"
+      ],
+      "categories": [
+        "Endocrinology/Metabolism"
+      ],
+      "sample_ndc": "71288-563-84"
+    }
+  },
+  {
+    "id": "cross-011",
+    "molecule_name": "Methotrexate",
+    "brand_names_combined": "Methotrexate / METHOTREXATE",
+    "is_green": false,
+    "cross_risk_score": 85,
+    "cross_risk_tier": "HIGH",
+    "cross_risk_label": "⚡ KISMİ AKTİF KRİZ (Bölgesel Sıçrama Riski)",
+    "action": "Erken Uyarı & Bölgesel Arbitraj Stoklama Tamponu",
+    "action_detail": "Kriz FDA (ABD) tarafında aktiftir. Küresel tedarik zinciri entegrasyonu nedeniyle diğer kıtaya sıçrama riski yüksektir; ROP +21 gün uzatılmalı ve güvenlik stoku artırılmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Methotrexate"
+      ],
+      "inns": [
+        "methotrexate"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Cancer",
+        "Neoplasms",
+        "Arthritis, Rheumatoid",
+        "Arthritis"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/methotrexate"
+      ]
+    },
+    "fda_data": {
+      "record_count": 14,
+      "generics": [
+        "Methotrexate Sodium Injection"
+      ],
+      "brands": [
+        "METHOTREXATE"
+      ],
+      "statuses": [
+        "Current"
+      ],
+      "status_display": "Current",
+      "reasons": [
+        "Demand increase for the drug",
+        "Other"
+      ],
+      "categories": [
+        "Oncology",
+        "Rheumatology"
+      ],
+      "sample_ndc": "63323-123-10"
+    }
+  },
+  {
+    "id": "cross-012",
+    "molecule_name": "Midazolam",
+    "brand_names_combined": "Buccolam / MIDAZOLAM / MIDAZOLAM HYDROCHLORIDE",
+    "is_green": true,
+    "cross_risk_score": 85,
+    "cross_risk_tier": "HIGH",
+    "cross_risk_label": "⚡ KISMİ AKTİF KRİZ (Bölgesel Sıçrama Riski)",
+    "action": "Erken Uyarı & Bölgesel Arbitraj Stoklama Tamponu",
+    "action_detail": "Kriz FDA (ABD) tarafında aktiftir. Küresel tedarik zinciri entegrasyonu nedeniyle diğer kıtaya sıçrama riski yüksektir; ROP +21 gün uzatılmalı ve güvenlik stoku artırılmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Buccolam"
+      ],
+      "inns": [
+        "midazolam"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Not stated"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Epilepsy"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/buccolam"
+      ]
+    },
+    "fda_data": {
+      "record_count": 27,
+      "generics": [
+        "Midazolam Hydrochloride Injection"
+      ],
+      "brands": [
+        "MIDAZOLAM",
+        "MIDAZOLAM HYDROCHLORIDE"
+      ],
+      "statuses": [
+        "Current"
+      ],
+      "status_display": "Current",
+      "reasons": [
+        "Delay in shipping of the drug",
+        "Demand increase for the drug",
+        "Other"
+      ],
+      "categories": [
+        "Anesthesia",
+        "Neurology"
+      ],
+      "sample_ndc": "0409-2596-05"
+    }
+  },
+  {
+    "id": "cross-013",
+    "molecule_name": "Peginterferon Alfa-2A",
+    "brand_names_combined": "Pegasys / PEGASYS",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Pegasys"
+      ],
+      "inns": [
+        "peginterferon alfa-2a"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Hepatitis C, Chronic",
+        "Hepatitis B, Chronic",
+        "Polycythemia Vera",
+        "Thrombocythemia, Essential"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/pegasys"
+      ]
+    },
+    "fda_data": {
+      "record_count": 2,
+      "generics": [
+        "Peginterferon alfa-2a Injection"
+      ],
+      "brands": [
+        "PEGASYS"
+      ],
+      "statuses": [
+        "Resolved"
+      ],
+      "status_display": "Resolved",
+      "reasons": [],
+      "categories": [
+        "Antiviral"
+      ],
+      "sample_ndc": "82154-0451-4"
+    }
+  },
+  {
+    "id": "cross-014",
+    "molecule_name": "Semaglutide",
+    "brand_names_combined": "Ozempic / Rybelsus / RYBELSUS",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Ozempic",
+        "Rybelsus"
+      ],
+      "inns": [
+        "semaglutide"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Diabetes Mellitus, Type 2"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/ozempic",
+        "https://www.ema.europa.eu/en/medicines/human/shortages/rybelsus"
+      ]
+    },
+    "fda_data": {
+      "record_count": 3,
+      "generics": [
+        "Semaglutide Tablet"
+      ],
+      "brands": [
+        "RYBELSUS"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Endocrinology/Metabolism"
+      ],
+      "sample_ndc": "0169-4314-30"
+    }
+  },
+  {
+    "id": "cross-015",
+    "molecule_name": "Somatropin",
+    "brand_names_combined": "Norditropin FlexPro / Norditropin NordiFlex / NORDITROPIN",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Norditropin FlexPro / Norditropin NordiFlex"
+      ],
+      "inns": [
+        "somatropin"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Dwarfism, Pituitary"
+      ],
+      "expected_resolutions": [
+        "Resolved - 22 December 2025"
+      ],
+      "resolution_display": "Resolved - 22 December 2025",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/norditropin-flexpro-norditropin-nordiflex"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Somatropin Injection"
+      ],
+      "brands": [
+        "NORDITROPIN"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Endocrinology/Metabolism"
+      ],
+      "sample_ndc": "0169-7703-21"
+    }
+  },
+  {
+    "id": "cross-016",
+    "molecule_name": "Tazobactam",
+    "brand_names_combined": "Zerbaxa",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Zerbaxa"
+      ],
+      "inns": [
+        "ceftolozane;tazobactam"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Bacterial Infections"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/zerbaxa"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Piperacillin and Tazobactam Injection"
+      ],
+      "brands": [],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Anti-Infective"
+      ],
+      "sample_ndc": "65219-434-20"
+    }
+  },
+  {
+    "id": "cross-017",
+    "molecule_name": "Voriconazole",
+    "brand_names_combined": "Vfend / VFEND",
+    "is_green": false,
+    "cross_risk_score": 60,
+    "cross_risk_tier": "RESOLVED",
+    "cross_risk_label": "🟢 ÇÖZÜLEN / İZLEMEDE KÜRESEL KRİZ",
+    "action": "Rutin Tedarikçi Doğrulama & Kontrat Güvencesi",
+    "action_detail": "Kriz her iki otoritede de çözülmüş veya stabil seviyeye çekilmiştir. Tedarikçi sözleşmelerinde asgari 90 günlük tampon stok taahhüdü aranmalıdır.",
+    "ema_data": {
+      "medicines": [
+        "Vfend"
+      ],
+      "inns": [
+        "voriconazole"
+      ],
+      "statuses": [
+        "Shortage resolved"
+      ],
+      "status_display": "Shortage resolved",
+      "alternatives": [
+        "Yes"
+      ],
+      "is_monopoly": false,
+      "mesh_categories": [
+        "Candidiasis",
+        "Mycoses",
+        "Aspergillosis"
+      ],
+      "expected_resolutions": [],
+      "resolution_display": "Belirtilmemiş",
+      "urls": [
+        "https://www.ema.europa.eu/en/medicines/human/shortages/vfend"
+      ]
+    },
+    "fda_data": {
+      "record_count": 1,
+      "generics": [
+        "Voriconazole Injection"
+      ],
+      "brands": [
+        "VFEND"
+      ],
+      "statuses": [
+        "To Be Discontinued"
+      ],
+      "status_display": "To Be Discontinued",
+      "reasons": [],
+      "categories": [
+        "Antiviral"
+      ],
+      "sample_ndc": "0049-3190-01"
+    }
+  }
+]

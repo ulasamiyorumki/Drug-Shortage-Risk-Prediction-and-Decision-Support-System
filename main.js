@@ -46,6 +46,24 @@ function getEmaShortages() {
   return emaJsonCache;
 }
 
+let crossJsonCache = null;
+function getCrossShortages() {
+  if (!crossJsonCache) {
+    try {
+      let p = path.join(root, 'Datasets', 'Unified', 'fda_ema_matched_shortages.json');
+      if (!fs.existsSync(p)) p = path.join(root, 'public', 'fda_ema_matched_shortages.json');
+      if (fs.existsSync(p)) {
+        crossJsonCache = JSON.parse(fs.readFileSync(p, 'utf8'));
+      } else {
+        crossJsonCache = [];
+      }
+    } catch {
+      crossJsonCache = [];
+    }
+  }
+  return crossJsonCache;
+}
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost', port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
@@ -91,6 +109,11 @@ app.get('/api/overview', async (_req, res, next) => {
 app.get('/api/ema-shortages', (req, res) => {
   const emaRows = getEmaShortages();
   res.json({ total: emaRows.length, rows: emaRows });
+});
+
+app.get('/api/cross-shortages', (req, res) => {
+  const crossRows = getCrossShortages();
+  res.json({ total: crossRows.length, rows: crossRows });
 });
 
 app.get('/api/records', async (req, res, next) => {

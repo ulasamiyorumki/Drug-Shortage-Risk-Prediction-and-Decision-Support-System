@@ -1616,6 +1616,82 @@ th:hover {
     gap: 5px;
 }
 
+/* ==========================================================================
+   11. TRANSATLANTİK ÇAPRAZ KRİZ (FDA ∩ EMA BİRLEŞİK KRİZ ANALİZİ)
+   ========================================================================== */
+
+.cross-badge-critical {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 2px 4px rgba(185, 28, 28, 0.2);
+}
+
+.cross-badge-high {
+    background: linear-gradient(135deg, #f59e0b, #b45309);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.cross-badge-resolved {
+    background: linear-gradient(135deg, #10b981, #047857);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.cross-box {
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    line-height: 1.35;
+}
+
+.cross-box-fda {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+}
+
+.cross-box-ema {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+}
+
+.cross-tag-both {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+
 
 
 

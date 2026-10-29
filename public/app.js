@@ -1149,6 +1149,7 @@ let currentShortageV2Page = 1;
 let currentShortageV2GreenFilter = ''; // '', 'green_only', 'non_green', 'import_zero', 'green_active', 'local_prod', or molecule name
 let v2FdaRecordsCache = null; // ⚡ FDA Drug Shortages (1.587 kriz kaydı) için istemci önbelleği
 let v2EmaRecordsCache = null; // 🇪🇺 EMA Medicine Shortages (85 kriz kaydı) için istemci önbelleği
+let v2CrossRecordsCache = null; // 🌐 FDA ∩ EMA Ortak Kriz (17 molekül) için istemci önbelleği
 
 function setShortageV2GreenFilter(val) {
   currentShortageV2GreenFilter = val || '';
@@ -1336,18 +1337,52 @@ window.exportShortagesV2Csv = function() {
     return;
   }
   const rows = window.currentFilteredShortageRows;
-  const headers = [
-    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'Sıkıntı Nedeni',
-    'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
-    'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
-    'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
-  ];
 
   const escapeCsv = val => {
     if (val === null || val === undefined) return '""';
     const s = String(val).replace(/"/g, '""');
     return `"${s}"`;
   };
+
+  if (currentShortageV2Source === 'cross_fda_ema') {
+    const crossHeaders = [
+      'Molekül Adı', 'Ticari Markalar', 'Yeşil Reçete', 'Sistemik Risk Skoru', 'Risk Seviyesi',
+      'FDA Kriz Durumu', 'FDA Kayıt Sayısı', 'FDA Kök Nedenleri',
+      'EMA Kriz Durumu', 'EMA Alternatif Durumu (Monopol)', 'EMA Beklenen Çözülme', 'EMA MeSH Alanı',
+      'Endüstri Mühendisliği Aksiyonu', 'Aksiyon Detayı'
+    ];
+    const csvContent = '\uFEFF' + [
+      crossHeaders.join(','),
+      ...rows.map(r => [
+        escapeCsv(r.molecule_name),
+        escapeCsv(r.brand_names_combined),
+        escapeCsv(r.is_green ? 'Evet' : 'Hayır'),
+        escapeCsv(r.cross_risk_score),
+        escapeCsv(r.cross_risk_label),
+        escapeCsv(r.fda_data?.status_display),
+        escapeCsv(r.fda_data?.record_count),
+        escapeCsv((r.fda_data?.reasons || []).join('; ')),
+        escapeCsv(r.ema_data?.status_display),
+        escapeCsv(r.ema_data?.is_monopoly ? 'Alternatif Yok (Monopol)' : 'Alternatif Var'),
+        escapeCsv(r.ema_data?.resolution_display),
+        escapeCsv((r.ema_data?.mesh_categories || []).join('; ')),
+        escapeCsv(r.action),
+        escapeCsv(r.action_detail)
+      ].join(','))
+    ].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `FDA_EMA_Ortak_Kriz_Molekulleri_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    return;
+  }
+  const headers = [
+    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'Sıkıntı Nedeni',
+    'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
+    'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
+    'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
+  ];
 
   const csvContent = '\uFEFF' + [
     headers.join(','),
@@ -1731,6 +1766,113 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
   };
 
   const activeSource = source || currentShortageV2Source || (rows[0] && rows[0].source);
+  const isCrossSource = activeSource === 'cross_fda_ema' || (rows[0] && rows[0].id && String(rows[0].id).startsWith('cross-'));
+  if (isCrossSource) {
+    return `
+      <div class="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:230px;">Ortak Molekül & Ticari Markalar</th>
+              <th>Transatlantik Risk</th>
+              <th style="min-width:240px;">🇺🇸 ABD FDA Kriz Verileri</th>
+              <th style="min-width:240px;">🇪🇺 AB EMA Kriz Verileri</th>
+              <th>Beklenen Çözülme (EMA)</th>
+              <th style="min-width:260px;">Küresel Endüstri Mühendisliği Aksiyonu</th>
+              <th>Resmi Bildirim</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => {
+              const ema = r.ema_data || {};
+              const fda = r.fda_data || {};
+              const isCrit = r.cross_risk_tier === 'CRITICAL';
+              const isHigh = r.cross_risk_tier === 'HIGH';
+              const badgeClass = isCrit ? 'cross-badge-critical' : (isHigh ? 'cross-badge-high' : 'cross-badge-resolved');
+
+              return `
+                <tr class="selectable">
+                  <td>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <b style="font-size:13.5px; color:#0f172a;">${esc(r.molecule_name)}</b>
+                      ${r.is_green ? `<span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; font-weight:800;">🟢 YEŞİL REÇETE</span>` : ''}
+                    </div>
+                    <div style="font-size:11px; color:#64748b; margin-top:3px; line-height:1.35;">
+                      <b>Markalar:</b> ${esc(r.brand_names_combined || '—')}
+                    </div>
+                    <div style="margin-top:4px;">
+                      <span class="cross-tag-both">🌐 FDA ∩ EMA Ortak Kriz</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="${badgeClass}">${esc(r.cross_risk_label)}</span>
+                    <div style="font-size:11px; font-weight:700; color:#475569; margin-top:4px;">
+                      Sistemik Risk: <span style="color:${isCrit ? '#dc2626' : (isHigh ? '#d97706' : '#16a34a')}; font-weight:800; font-size:12.5px;">${r.cross_risk_score}</span> / 100
+                    </div>
+                  </td>
+                  <td>
+                    <div class="cross-box cross-box-fda">
+                      <div style="font-weight:700; color:#1e293b; display:flex; justify-content:space-between; align-items:center;">
+                        <span>🇺🇸 FDA Durumu:</span>
+                        <span class="badge" style="background:${(fda.status_display || '').includes('Current') ? '#fee2e2' : '#f1f5f9'}; color:${(fda.status_display || '').includes('Current') ? '#b91c1c' : '#475569'}; font-weight:800; font-size:10px;">${esc(fda.status_display || 'Belirtilmemiş')}</span>
+                      </div>
+                      <div style="font-size:11px; color:#475569; margin-top:3px;">
+                        <b>${fda.record_count || 0}</b> FDA kriz kaydı · <b>${(fda.generics || []).length}</b> formülasyon
+                      </div>
+                      ${(fda.reasons && fda.reasons.length > 0) ? `
+                        <div style="font-size:10.5px; color:#0369a1; margin-top:3px; font-style:italic;">
+                          Neden: ${esc(fda.reasons.slice(0, 2).join('; '))}
+                        </div>
+                      ` : ''}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="cross-box cross-box-ema">
+                      <div style="font-weight:700; color:#0369a1; display:flex; justify-content:space-between; align-items:center;">
+                        <span>🇪🇺 EMA Durumu:</span>
+                        <span class="badge" style="background:${(ema.status_display || '').includes('ongoing') ? '#fee2e2' : '#dcfce7'}; color:${(ema.status_display || '').includes('ongoing') ? '#b91c1c' : '#15803d'}; font-weight:800; font-size:10px;">${esc(ema.status_display || 'Belirtilmemiş')}</span>
+                      </div>
+                      <div style="margin-top:3px;">
+                        ${ema.is_monopoly 
+                          ? `<span class="ema-alt-pill-no" style="font-size:10.5px; padding:2px 6px;">⚠ Alternatif Yok (Monopol)</span>` 
+                          : `<span class="ema-alt-pill-yes" style="font-size:10.5px; padding:2px 6px;">✓ Alternatif Var</span>`}
+                      </div>
+                      ${(ema.mesh_categories && ema.mesh_categories.length > 0) ? `
+                        <div style="font-size:10.5px; color:#475569; margin-top:3px;">
+                          MeSH: ${esc(ema.mesh_categories.slice(0, 2).join(', '))}
+                        </div>
+                      ` : ''}
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-size:12px; font-weight:700; color:#0f172a;">
+                      ${ema.resolution_display ? `🎯 ${esc(ema.resolution_display)}` : '<span style="color:#64748b; font-style:italic;">Belirtilmemiş</span>'}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="v2-action-cell">
+                      <div class="v2-action-title">
+                        <span>⚡</span> <span>${esc(r.action || 'Küresel Stratejik Stok')}</span>
+                      </div>
+                      <span class="v2-action-desc">${esc(r.action_detail || '')}</span>
+                    </div>
+                  </td>
+                  <td>
+                    ${(ema.urls && ema.urls[0]) ? `
+                      <a href="${esc(ema.urls[0])}" target="_blank" rel="noopener noreferrer" class="button" style="padding:6px 12px; font-size:11px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" onclick="event.stopPropagation();">
+                        EMA ↗
+                      </a>
+                    ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   const isEmaSource = activeSource === 'EMA Shortages' || (rows[0] && rows[0].source === 'EMA Shortages');
   if (isEmaSource) {
     return `
@@ -1936,25 +2078,35 @@ async function shortagePageV2(
   const gSearch = document.querySelector('#globalSearch');
   if (gSearch && gSearch.value !== query) gSearch.value = query;
 
-  const guide = source === 'EMA Shortages'
+  const guide = source === 'cross_fda_ema'
     ? guideBanner(
-        "Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğundaki 85 ilacın güncel kriz verilerini, etken maddelerini ve alternatif bulunabilirlik durumlarını sunar.",
-        "EMA kriz durumları (Shortage ongoing, Shortage resolved, Medicine discontinued), MeSH terapötik alanları, farmasötik formları ve beklenen çözüm tarihlerini içerir.",
-        "Alternatif bulunabilirliği olmayan ilaçlar 'Monopol Tedarik Riski' olarak işaretlenmiş olup doğrudan resmi EMA duyuru sayfasına bağlantı içerir."
+        "ABD FDA ve Avrupa İlaç Ajansı (EMA) resmi kriz listelerinde AYNI ANDA yer alan transatlantik krizdeki moleküllerin birleşik analizidir.",
+        "17 temel molekül altında toplanan 240+ kriz kaydı; hem FDA hem EMA statüsü, alternatif mevcudiyeti ve küresel sistemik risk puanıyla tek kalemde sunulur.",
+        "Hem ABD hem Avrupa pazarında açık veren moleküller, yerel distribütör sorunundan öte küresel hammadde (API) ve üretim darboğazına işaret eder."
       )
-    : guideBanner(
-        "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
-        "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
-        "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
-      );
+    : (source === 'EMA Shortages'
+      ? guideBanner(
+          "Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğundaki 85 ilacın güncel kriz verilerini, etken maddelerini ve alternatif bulunabilirlik durumlarını sunar.",
+          "EMA kriz durumları (Shortage ongoing, Shortage resolved, Medicine discontinued), MeSH terapötik alanları, farmasötik formları ve beklenen çözüm tarihlerini içerir.",
+          "Alternatif bulunabilirliği olmayan ilaçlar 'Monopol Tedarik Riski' olarak işaretlenmiş olup doğrudan resmi EMA duyuru sayfasına bağlantı içerir."
+        )
+      : guideBanner(
+          "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
+          "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
+          "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
+        ));
 
-  const headerSub = source === 'EMA Shortages'
-    ? 'Avrupa İlaç Ajansı (EMA) 85 resmi kriz kaydı, MeSH tıbbi alanları, monopol analizleri ve alternatif kararları.'
-    : 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.';
+  const headerSub = source === 'cross_fda_ema'
+    ? 'FDA ve EMA resmi veri tabanlarında ortak krizdeki 17 temel molekülün tek kalemde birleşik karar destek görünümü.'
+    : (source === 'EMA Shortages'
+      ? 'Avrupa İlaç Ajansı (EMA) 85 resmi kriz kaydı, MeSH tıbbi alanları, monopol analizleri ve alternatif kararları.'
+      : 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.');
 
-  const loadingMsg = source === 'EMA Shortages'
-    ? 'EMA Avrupa resmi kriz kayıtları yükleniyor…'
-    : 'FDA resmi kriz kayıtları yükleniyor…';
+  const loadingMsg = source === 'cross_fda_ema'
+    ? 'Transatlantik FDA ∩ EMA ortak kriz verileri yükleniyor…'
+    : (source === 'EMA Shortages'
+      ? 'EMA Avrupa resmi kriz kayıtları yükleniyor…'
+      : 'FDA resmi kriz kayıtları yükleniyor…');
 
   page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', headerSub) + guide + `<div class="empty glass">${loadingMsg}</div>`;
 
@@ -2136,6 +2288,73 @@ async function shortagePageV2(
         total: v2EmaRecordsCache.length,
         page: 1,
         limit: v2EmaRecordsCache.length
+      };
+    } else if (source === 'cross_fda_ema') {
+      // 🌐 Transatlantik FDA ∩ EMA Ortak Kriz (17 Molekül)
+      if (!v2CrossRecordsCache || v2CrossRecordsCache.length === 0) {
+        const [ov, sm] = await Promise.all([
+          api('/api/overview').catch(() => null),
+          api('/api/analytics/shortages').catch(() => null)
+        ]);
+        overview = ov;
+        summary = sm;
+        let allCross = [];
+        try {
+          const staticCross = await fetch('fda_ema_matched_shortages.json?v=1.0.24').then(r => r.json());
+          if (Array.isArray(staticCross) && staticCross.length > 0) {
+            allCross = staticCross;
+          }
+        } catch (e) {
+          console.warn('Cross static fetch failed:', e);
+        }
+        if (allCross.length === 0) {
+          try {
+            const apiRes = await api('/api/cross-shortages');
+            if (apiRes && Array.isArray(apiRes.rows) && apiRes.rows.length > 0) {
+              allCross = apiRes.rows;
+            }
+          } catch {}
+        }
+        v2CrossRecordsCache = allCross.map(r => ({
+          ...r,
+          generic_name: r.molecule_name,
+          brand_name: r.brand_names_combined,
+          shortage_status: r.cross_risk_label,
+          shortage_reason: r.action,
+          riskScore: r.cross_risk_score,
+          riskTier: r.cross_risk_tier === 'CRITICAL' ? 'critical' : (r.cross_risk_tier === 'HIGH' ? 'high' : 'low'),
+          riskTierLabel: r.cross_risk_label,
+          isGreen: r.is_green,
+          search_text: `${r.molecule_name} ${r.brand_names_combined} ${(r.ema_data?.inns || []).join(' ')} ${(r.fda_data?.generics || []).join(' ')} ${(r.fda_data?.brands || []).join(' ')}`
+        }));
+      } else {
+        const [ov, sm] = await Promise.all([
+          api('/api/overview').catch(() => null),
+          api('/api/analytics/shortages').catch(() => null)
+        ]);
+        overview = ov;
+        summary = sm;
+      }
+      let filteredCross = v2CrossRecordsCache;
+      if (query) {
+        const qLow = query.toLowerCase();
+        filteredCross = filteredCross.filter(r => (r.search_text || '').toLowerCase().includes(qLow));
+      }
+      if (currentShortageV2GreenFilter === 'green_only') {
+        filteredCross = filteredCross.filter(r => r.isGreen);
+      } else if (currentShortageV2GreenFilter === 'non_green') {
+        filteredCross = filteredCross.filter(r => !r.isGreen);
+      }
+      if (riskFilter === 'high' || riskFilter === 'CRITICAL') {
+        filteredCross = filteredCross.filter(r => r.cross_risk_tier === 'CRITICAL');
+      } else if (riskFilter === 'med' || riskFilter === 'HIGH') {
+        filteredCross = filteredCross.filter(r => r.cross_risk_tier === 'HIGH');
+      }
+      data = {
+        rows: filteredCross,
+        total: filteredCross.length,
+        page: 1,
+        limit: filteredCross.length
       };
     } else {
       const queryParam = query ? `&q=${encodeURIComponent(query)}` : '';
@@ -2328,7 +2547,7 @@ async function shortagePageV2(
       currentShortageV2Limit === 'all' ||
       query
     );
-    const totalFound = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'green_cases' || hasAnyClientFilter)
+    const totalFound = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'cross_fda_ema' || source === 'green_cases' || hasAnyClientFilter)
       ? filtered.length
       : (data.total || filtered.length);
     data.total = totalFound;
@@ -2345,7 +2564,7 @@ async function shortagePageV2(
     data.limit = pageSize;
 
     const startIdx = (currentPage - 1) * pageSize;
-    const paginatedRows = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'green_cases' || hasAnyClientFilter)
+    const paginatedRows = (source === 'Drug Shortages' || source === 'EMA Shortages' || source === 'cross_fda_ema' || source === 'green_cases' || hasAnyClientFilter)
       ? filtered.slice(startIdx, startIdx + pageSize)
       : filtered;
 
@@ -2450,13 +2669,14 @@ async function shortagePageV2(
     const totalCompanies = Number(summary?.totalCompanies || 142);
     const isFdaSource = source === 'Drug Shortages';
     const isEmaSource = source === 'EMA Shortages';
+    const isCrossSource = source === 'cross_fda_ema';
 
     const filteredOngoingEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('ongoing')).length;
     const filteredResolvedEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('resolved')).length;
     const filteredDiscontinuedEma = filtered.filter(r => (r.shortage_status || '').toLowerCase().includes('discontinued')).length;
     const filteredNoAltEma = filtered.filter(r => (r.raw_json?.availability_of_alternatives || '').toLowerCase() === 'no').length;
 
-    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
+    page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', headerSub) + guide + `
       <!-- 🔍 FİLTRELEME VE TOTAL BULUNAN İLAÇ SONUÇLARI BİLGİ KARTI (BAŞTA GÖSTERİM) -->
       <div class="glass panel v2-results-summary-card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
@@ -2470,10 +2690,14 @@ async function shortagePageV2(
                 <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; padding:1px 8px; font-weight:700;">Canlı Senkronize</span>
               </div>
               <h3 style="margin:4px 0 0; font-size:21px; font-family:Outfit; color:#0f172a; font-weight:800;">
-                Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:26px; font-weight:800; background:#fff; padding:2px 14px; border-radius:10px; border:2px solid #38bdf8; box-shadow:0 2px 8px rgba(2,132,199,0.14); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ilaç bulundu.
+                Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:26px; font-weight:800; background:#fff; padding:2px 14px; border-radius:10px; border:2px solid #38bdf8; box-shadow:0 2px 8px rgba(2,132,199,0.14); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ${isCrossSource ? 'ortak molekül' : 'ilaç'} bulundu.
               </h3>
               <div style="font-size:12.5px; color:#475569; margin-top:5px; font-weight:500;">
-                ${isFdaSource 
+                ${isCrossSource
+                  ? (activeFilters.length > 0 
+                      ? 'FDA ve EMA veritabanlarında ortak krizdeki 17 temel molekül içinden seçili kriterlere uyan kayıtlar listeleniyor.' 
+                      : 'ABD FDA ve AB EMA resmi kriz veri tabanlarında ortak krizdeki 17 temel molekül tek kalemde birleşik olarak listeleniyor.')
+                  : (isFdaSource 
                   ? (activeFilters.length > 0 
                       ? `1.587 FDA kriz kaydı içinden seçili kriterlere uyan kayıtlar listeleniyor.` 
                       : 'FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamı eksiksiz listeleniyor.')
@@ -2481,7 +2705,7 @@ async function shortagePageV2(
                       ? (activeFilters.length > 0 
                           ? `85 EMA Avrupa Birliği kriz kaydı içinden seçili kriterlere uyan kayıtlar listeleniyor.` 
                           : 'Avrupa İlaç Ajansı (EMA) resmi ilaç tedarik sıkıntısı portalındaki 85 kriz kaydının tamamı eksiksiz listeleniyor.')
-                      : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`))}
+                      : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`)))}
               </div>
             </div>
           </div>
@@ -2504,9 +2728,22 @@ async function shortagePageV2(
         <!-- Anlık Analitik Metrik Hapları -->
         <div class="v2-metric-pills-row">
           <span class="v2-metric-pill pill-total" title="Toplam filtrelenen ilaç sayısı">
-            📊 <b>${totalFound.toLocaleString('tr-TR')}</b> Toplam İlaç
+            📊 <b>${totalFound.toLocaleString('tr-TR')}</b> ${isCrossSource ? 'Ortak Molekül Grubu' : 'Toplam İlaç'}
           </span>
-          ${isEmaSource ? `
+          ${isCrossSource ? `
+            <span class="v2-metric-pill pill-critical" onclick="setShortageV2Risk('CRITICAL')" title="Tıkla: Hem FDA hem EMA'da çift taraflı aktif krizdeki molekülleri listele">
+              🚨 <b>${filtered.filter(r => r.cross_risk_tier === 'CRITICAL').length}</b> Çift Taraflı Aktif Kriz (Risk 95)
+            </span>
+            <span class="v2-metric-pill pill-zero" onclick="setShortageV2Risk('HIGH')" title="Tıkla: Kısmi aktif krizdeki molekülleri listele">
+              ⚡ <b>${filtered.filter(r => r.cross_risk_tier === 'HIGH').length}</b> Kısmi Aktif Kriz (Risk 80-85)
+            </span>
+            <span class="v2-metric-pill pill-resolved" onclick="setShortageV2Risk('RESOLVED')" title="Tıkla: Çözülen veya stabil krizleri listele" style="background:#f0fdf4; color:#16a34a; border-color:#bbf7d0;">
+              🟢 <b>${filtered.filter(r => r.cross_risk_tier === 'RESOLVED').length}</b> Çözülen / Stabil (Risk 60)
+            </span>
+            <span class="v2-metric-pill pill-green" onclick="setShortageV2GreenFilter('green_only')" title="Tıkla: Ortak krizdeki yeşil reçeteli molekülleri listele">
+              🧪 <b>${filtered.filter(r => r.is_green || r.isGreen).length}</b> Yeşil Reçeteli (ADHD, Midazolam)
+            </span>
+          ` : (isEmaSource ? `
             <span class="v2-metric-pill pill-critical" onclick="setShortageV2Status('Shortage ongoing')" title="Tıkla: Sadece Devam Eden Krizleri listele">
               🔴 <b>${filteredOngoingEma.toLocaleString('tr-TR')}</b> Devam Eden Kriz
             </span>
@@ -2534,7 +2771,7 @@ async function shortagePageV2(
                 ⚠ <b>${filteredZeroEquivCount.toLocaleString('tr-TR')}</b> 0 Yerli Muadil (Monopol)
               </span>
             ` : ''}
-          `}
+          `)}
         </div>
 
         <!-- Dahil Edilen Filtrelerin Ayrıntılı Listesi -->
@@ -2885,12 +3122,13 @@ async function shortagePageV2(
 
       <section class="glass panel" style="margin-top:18px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-          <h2 style="margin:0; font-size:15px; font-family:Outfit;">${source === 'EMA Shortages' ? '🇪🇺 EMA Avrupa Kriz Kataloğu & Süzgeçler' : '⚡ FDA Kriz Veri Kapsamı & Gelişmiş Süzgeçler'}</h2>
+          <h2 style="margin:0; font-size:15px; font-family:Outfit;">${source === 'cross_fda_ema' ? '🌐 Küresel Çapraz Kriz: FDA ∩ EMA Ortak Moleküller (Tek Kalemde Birleşik Analiz)' : (source === 'EMA Shortages' ? '🇪🇺 EMA Avrupa Kriz Kataloğu & Süzgeçler' : '⚡ FDA Kriz Veri Kapsamı & Gelişmiş Süzgeçler')}</h2>
           <button class="button secondary" id="resetShortageV2Filters" style="padding:6px 14px; font-size:11px;">Filtreleri Sıfırla</button>
         </div>
 
         <!-- Hızlı Veri Kaynağı Kapsam Sekmeleri -->
         <div class="tabs" style="margin-bottom:14px;">
+          <button class="tab ${source === 'cross_fda_ema' ? 'active' : ''}" onclick="setShortageV2Source('cross_fda_ema'); setShortageV2GreenFilter('');" style="${source === 'cross_fda_ema' ? 'background:linear-gradient(135deg,#0284c7,#0369a1); color:#fff; font-weight:800;' : 'border-color:#38bdf8; color:#0369a1; font-weight:700;'}">🌐 Küresel Çapraz Kriz (FDA ∩ EMA Ortak · 17 Molekül)</button>
           <button class="tab ${source === 'Drug Shortages' && !currentShortageV2GreenFilter ? 'active' : ''}" onclick="setShortageV2Source('Drug Shortages'); setShortageV2GreenFilter('');">⚡ FDA Resmi Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</button>
           <button class="tab ${source === 'EMA Shortages' ? 'active' : ''}" onclick="setShortageV2Source('EMA Shortages'); setShortageV2GreenFilter('');">🇪🇺 EMA Resmi Kriz Kataloğu (Avrupa İlaç Ajansı · 85)</button>
           <button class="tab ${currentShortageV2GreenFilter === 'green_only' ? 'active' : ''}" onclick="setShortageV2GreenFilter('green_only')">🟢 Tüm Yeşil Reçeteliler (${turkeyGreenMeds.length} Etkin Madde & İçerenler)</button>
@@ -2947,6 +3185,7 @@ async function shortagePageV2(
           <label style="font-size:12px; font-weight:600; color:var(--muted); display:flex; flex-direction:column; gap:4px;">
             Veri Kapsamı / Kaynak:
             <select id="shortageV2SourceSelect">
+              <option value="cross_fda_ema" ${source === 'cross_fda_ema' ? 'selected' : ''}>🌐 Küresel Çapraz Kriz: FDA ∩ EMA Ortak (17 Molekül)</option>
               <option value="Drug Shortages" ${source === 'Drug Shortages' ? 'selected' : ''}>⚡ FDA Kriz Veri Tabanı (Tüm FDA Sitesi · ${totalShortages.toLocaleString('tr-TR')})</option>
               <option value="EMA Shortages" ${source === 'EMA Shortages' ? 'selected' : ''}>🇪🇺 EMA Kriz Kataloğu (Avrupa İlaç Ajansı · 85)</option>
               <option value="green_cases" ${source === 'green_cases' ? 'selected' : ''}>🟢 Yeşil Reçeteli İlaçlar (${turkeyGreenMeds.length} Ulusal Molekül)</option>
