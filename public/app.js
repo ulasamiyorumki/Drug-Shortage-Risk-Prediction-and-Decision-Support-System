@@ -1331,6 +1331,135 @@ window.resetAllShortageV2Filters = function() {
   shortagePageV2();
 };
 
+const emaSubstancesMap = {
+  // 17 core cross-regulatory groups
+  'methylphenidate': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'lisdexamfetamine': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'atomoxetine': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'liraglutide': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Kısmi Alternatif', res: 'Devam Ediyor' },
+  'ifosfamide': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Mart 2027' },
+  'insulin': { status: 'Shortage ongoing / Discontinued', status_tr: 'Kısmi Kriz / Terk', tier: 'HIGH', alt: 'Alternatif Var', res: 'Insuman/Fiasp' },
+  'methotrexate': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'midazolam': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'hydroxocobalamin': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'semaglutide': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'alteplase': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'docetaxel': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'voriconazole': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'arsenic trioxide': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'somatropin': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'peginterferon': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'cetrorelix': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'tazobactam': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'aprepitant': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+
+  // Brands
+  'concerta': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'ritalin': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'vyvanse': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'elvanse': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2025 Sonu' },
+  'saxenda': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Kısmi Alternatif', res: 'Devam Ediyor' },
+  'victoza': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Kısmi Alternatif', res: 'Devam Ediyor' },
+  'ozempic': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'rybelsus': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'wegovy': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'actilyse': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'taxotere': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'vfend': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'trisenox': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'norditropin': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'pegasys': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'cetrotide': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'zerbaxa': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'emend': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'buccolam': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'cyanokit': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'insuman': { status: 'Shortage ongoing / Discontinued', status_tr: 'Kısmi Kriz / Terk', tier: 'HIGH', alt: 'Alternatif Var', res: 'Insuman Serisi' },
+
+  // Additional matched EMA substances
+  'amoxicillin': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'clavulanic': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'cisplatin': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'fluorouracil': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'quetiapine': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'topiramate': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'topamax': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'cyclophosphamide': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Bilinmiyor', res: 'Devam Ediyor' },
+  'fludarabine': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Bilinmiyor', res: 'Devam Ediyor' },
+  'risperidone': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'aztreonam': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'azactam': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'pancrelipase': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'creon': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'salbutamol': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'albuterol': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'tigecycline': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'tygacil': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'fondaparinux': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'arixtra': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'etanercept': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'enbrel': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'dulaglutide': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'trulicity': { status: 'Shortage resolved', status_tr: 'Çözüldü (Resolved)', tier: 'RESOLVED', alt: 'Alternatif Var', res: 'Stabil / İzlemede' },
+  'albendazole': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: '2028' },
+  'esmolol': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'brevibloc': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'rifabutin': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Kısmi Alternatif', res: 'Devam Ediyor' },
+  'mycobutin': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Kısmi Alternatif', res: 'Devam Ediyor' },
+  'verteporfin': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' },
+  'visudyne': { status: 'Shortage ongoing', status_tr: 'Devam Eden Kriz (Ongoing)', tier: 'CRITICAL', alt: 'Alternatif Var', res: 'Devam Ediyor' }
+};
+
+function getEmaCrisisMatch(r) {
+  if (!r) return null;
+  if (r.ema_data && r.ema_data.status_display) {
+    const isOg = r.ema_data.status_display.toLowerCase().includes('ongoing');
+    const isRs = r.ema_data.status_display.toLowerCase().includes('resolved');
+    return {
+      status: r.ema_data.status_display,
+      status_tr: isOg ? 'Devam Eden Kriz (Ongoing)' : (isRs ? 'Çözüldü (Resolved)' : r.ema_data.status_display),
+      tier: r.cross_risk_tier || 'HIGH',
+      detail: r.ema_data.resolution_display || (r.ema_data.is_monopoly ? '⚠ Alternatif Yok (Monopol)' : 'Alternatif Var')
+    };
+  }
+
+  const text = `${r.generic_name || ''} ${r.brand_name || ''} ${r.medicine_affected || ''} ${r.product_name || ''} ${r.name || ''}`.toLowerCase();
+  for (const [key, val] of Object.entries(emaSubstancesMap)) {
+    const rx = new RegExp(`\\b${key}\\b`, 'i');
+    if (rx.test(text)) {
+      return val;
+    }
+  }
+
+  // Also check v2EmaRecordsCache dynamically if loaded
+  if (Array.isArray(v2EmaRecordsCache) && v2EmaRecordsCache.length > 0) {
+    for (const emaRow of v2EmaRecordsCache) {
+      const emaText = `${emaRow.brand_name || ''} ${emaRow.generic_name || ''} ${(emaRow.raw_json?.medicine_affected || '')}`.toLowerCase();
+      const parts = emaText.split(/[\s,;/]+/).filter(p => p.length >= 5);
+      for (const p of parts) {
+        if (text.includes(p)) {
+          const st = emaRow.shortage_status || emaRow.raw_json?.supply_shortage_status || 'Belirtilmemiş';
+          const isOg = st.toLowerCase().includes('ongoing');
+          const isRs = st.toLowerCase().includes('resolved');
+          return {
+            status: st,
+            status_tr: isOg ? 'Devam Eden Kriz (Ongoing)' : (isRs ? 'Çözüldü (Resolved)' : st),
+            tier: isOg ? 'CRITICAL' : 'RESOLVED',
+            detail: emaRow.raw_json?.expected_resolution || 'EMA Kriz Listesi'
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function getEmaCrisisStatusText(r) {
+  const m = getEmaCrisisMatch(r);
+  return m ? (m.status_tr || m.status) : "AB'de Kriz Yok (Normal)";
+}
+
 window.exportShortagesV2Csv = function() {
   if (!window.currentFilteredShortageRows || !window.currentFilteredShortageRows.length) {
     alert('Dışa aktarılacak kriz kaydı bulunamadı.');
@@ -1378,7 +1507,7 @@ window.exportShortagesV2Csv = function() {
     return;
   }
   const headers = [
-    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'Sıkıntı Nedeni',
+    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu', 'Sıkıntı Nedeni',
     'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
     'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
     'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
@@ -1392,6 +1521,7 @@ window.exportShortagesV2Csv = function() {
       escapeCsv(label(r)),
       escapeCsv(r.brand_name || ''),
       escapeCsv(r.shortage_status || ''),
+      escapeCsv(getEmaCrisisStatusText(r)),
       escapeCsv(r.shortageReasonDisplay || r.shortage_reason || ''),
       escapeCsv(r.therapeuticCategory || ''),
       escapeCsv(r.availability || ''),
@@ -1782,6 +1912,57 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
     `;
   };
 
+  const renderEmaCrisisStatusCell = (r) => {
+    const match = getEmaCrisisMatch(r);
+    if (!match) {
+      return `
+        <div>
+          <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Avrupa İlaç Ajansı (EMA) kriz kataloğunda kriz kaydı bildirilmemiştir.">
+            ⚪ AB'de Kriz Yok
+          </span>
+        </div>
+      `;
+    }
+
+    const isOngoing = (match.status || '').toLowerCase().includes('ongoing');
+    const isResolved = (match.status || '').toLowerCase().includes('resolved');
+
+    const bg = isOngoing ? '#fee2e2' : (isResolved ? '#dcfce7' : '#fef3c7');
+    const color = isOngoing ? '#991b1b' : (isResolved ? '#15803d' : '#92400e');
+    const border = isOngoing ? '#fecaca' : (isResolved ? '#bbf7d0' : '#fde68a');
+    const icon = isOngoing ? '🚨' : (isResolved ? '🟢' : '🛑');
+
+    return `
+      <div style="display:flex; flex-direction:column; gap:3px;">
+        <span class="badge" style="background:${bg}; color:${color}; border:1px solid ${border}; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Tıkla: FDA ve EMA birleşik kriz analizini görüntüle">
+          ${icon} ${esc(match.status_tr || match.status)}
+        </span>
+        ${match.detail ? `<small style="font-size:10px; color:#475569; line-height:1.2;">${esc(match.detail)}</small>` : ''}
+      </div>
+    `;
+  };
+
+  const renderFdaCrisisStatusCell = (r) => {
+    const isCross = hasCrossShortage(r);
+    if (isCross) {
+      return `
+        <div style="display:flex; flex-direction:column; gap:3px;">
+          <span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; font-weight:800; font-size:10.5px; width:fit-content; cursor:pointer;" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu ilaç hem FDA hem EMA kriz listesinde! Birleşik analize gitmek için tıkla.">
+            ⚡ Aktif Kriz (Current)
+          </span>
+          <small style="font-size:10px; color:#991b1b; font-weight:700;">🇺🇸 FDA Kriz Kayıtlı</small>
+        </div>
+      `;
+    }
+    return `
+      <div>
+        <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="ABD FDA kriz kataloğunda bu molekül için bildirilmiş aktif kriz kaydı bulunmuyor.">
+          ⚪ ABD'de Kriz Yok
+        </span>
+      </div>
+    `;
+  };
+
   const activeSource = source || currentShortageV2Source || (rows[0] && rows[0].source);
   const isCrossSource = activeSource === 'cross_fda_ema' || (rows[0] && rows[0].id && String(rows[0].id).startsWith('cross-'));
   if (isCrossSource) {
@@ -1898,7 +2079,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
           <thead>
             <tr>
               <th style="min-width:210px;">İlaç Adı & Etken Madde (INN)</th>
-              <th>AB Kıtlık Durumu</th>
+              <th>AB (EMA) Kriz Durumu</th>
+              <th style="min-width:145px;">FDA Kriz Durumu</th>
               <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
               <th style="min-width:190px;">Etkilenen Form & Dozaj</th>
               <th>Alternatif Bulunabilirliği</th>
@@ -1944,6 +2126,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     </div>
                   </td>
                   <td>${r.statusBadgeHtml}</td>
+                  <td>${renderFdaCrisisStatusCell(r)}</td>
                   <td>
                     ${meshList.length > 0 ? `
                       <div style="display:flex; flex-direction:column; gap:4px;">
@@ -1996,6 +2179,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <tr>
               <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
               <th>FDA Kriz Durumu</th>
+              <th style="min-width:145px;">EMA Kriz Durumu</th>
               <th>Terapötik Kategori</th>
               <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
               <th>Bulunabilirlik (Stok)</th>
@@ -2011,6 +2195,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
                 ${renderDrugCell(r)}
                 <td>${r.statusBadgeHtml}</td>
+                <td>${renderEmaCrisisStatusCell(r)}</td>
                 <td>
                   ${r.therapeuticCategory ? `
                     <span class="category-pill">${esc(r.therapeuticCategory)}</span>
@@ -2054,7 +2239,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <th>Kaynak</th>
             <th>Üretici / Tedarikçi</th>
             <th>NDC / Kod</th>
-            <th>Tedarik Durumu</th>
+            <th>FDA Kriz Durumu</th>
+            <th style="min-width:145px;">EMA Kriz Durumu</th>
             <th style="min-width:180px;">Sıkıntı Nedeni</th>
             <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
             <th>İşlem</th>
@@ -2068,6 +2254,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <td><div style="font-weight:700; font-size:12px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div></td>
               <td><code style="font-size:11px;">${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
+              <td>${renderEmaCrisisStatusCell(r)}</td>
               <td>${renderReasonCell(r)}</td>
               <td>${renderActionCell(r)}</td>
               <td><button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
@@ -2236,6 +2423,12 @@ async function shortagePageV2(
           }
         }
         v2FdaRecordsCache = allRows;
+        if (!v2EmaRecordsCache) {
+          fetch('ema_medicine_shortages.json?v=1.0.25')
+            .then(r => r.json())
+            .then(d => { if (Array.isArray(d)) v2EmaRecordsCache = d; })
+            .catch(() => {});
+        }
       } else {
         const [ov, sm] = await Promise.all([
           api('/api/overview'),
