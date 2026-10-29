@@ -1935,13 +1935,27 @@ async function shortagePageV2(
   const gSearch = document.querySelector('#globalSearch');
   if (gSearch && gSearch.value !== query) gSearch.value = query;
 
-  const guide = guideBanner(
-    "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
-    "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
-    "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
-  );
+  const guide = source === 'EMA Shortages'
+    ? guideBanner(
+        "Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğundaki 85 ilacın güncel kriz verilerini, etken maddelerini ve alternatif bulunabilirlik durumlarını sunar.",
+        "EMA kriz durumları (Shortage ongoing, Shortage resolved, Medicine discontinued), MeSH terapötik alanları, farmasötik formları ve beklenen çözüm tarihlerini içerir.",
+        "Alternatif bulunabilirliği olmayan ilaçlar 'Monopol Tedarik Riski' olarak işaretlenmiş olup doğrudan resmi EMA duyuru sayfasına bağlantı içerir."
+      )
+    : guideBanner(
+        "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
+        "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
+        "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
+      );
 
-  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + '<div class="empty glass">FDA resmi kriz kayıtları yükleniyor…</div>';
+  const headerSub = source === 'EMA Shortages'
+    ? 'Avrupa İlaç Ajansı (EMA) 85 resmi kriz kaydı, MeSH tıbbi alanları, monopol analizleri ve alternatif kararları.'
+    : 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.';
+
+  const loadingMsg = source === 'EMA Shortages'
+    ? 'EMA Avrupa resmi kriz kayıtları yükleniyor…'
+    : 'FDA resmi kriz kayıtları yükleniyor…';
+
+  page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', headerSub) + guide + `<div class="empty glass">${loadingMsg}</div>`;
 
   try {
     let overview;
@@ -2063,37 +2077,49 @@ async function shortagePageV2(
       };
     } else if (source === 'EMA Shortages') {
       // 🇪🇺 EMA Resmi Kriz Kataloğu (85 kayıt)
-      if (!v2EmaRecordsCache || v2EmaRecordsCache.length === 0) {
-        const [ov, sm, dt] = await Promise.all([
-          api('/api/overview'),
-          api('/api/analytics/shortages'),
-          api('/api/records?source=EMA%20Shortages&limit=2000').catch(() => api('/api/ema-shortages'))
+      if (!v2EmaRecordsCache || v2EmaRecordsCache.length === 0 || v2EmaRecordsCache[0]?.source !== 'EMA Shortages') {
+        const [ov, sm] = await Promise.all([
+          api('/api/overview').catch(() => null),
+          api('/api/analytics/shortages').catch(() => null)
         ]);
         overview = ov;
         summary = sm;
-        let allRows = (dt && Array.isArray(dt.rows)) ? dt.rows : [];
+        let allRows = [];
+        // 1. Doğrudan public/ema_medicine_shortages.json dosyasından 85 kaydı anında çek
+        try {
+          const staticRes = await fetch('ema_medicine_shortages.json?v=1.0.22').then(r => r.json());
+          if (Array.isArray(staticRes) && staticRes.length > 0) {
+            allRows = staticRes.map((r, idx) => ({
+              id: 900000 + idx + 1,
+              source: 'EMA Shortages',
+              generic_name: r.international_non_proprietary_name_inn_or_common_name || '',
+              brand_name: r.medicine_affected || '',
+              shortage_status: r.supply_shortage_status || '',
+              shortage_reason: `Alternatif: ${r.availability_of_alternatives || 'Belirtilmemiş'} | Terapötik Alan: ${r.therapeutic_area_mesh || 'Genel'}`,
+              search_text: `${r.medicine_affected || ''} ${r.international_non_proprietary_name_inn_or_common_name || ''} ${r.therapeutic_area_mesh || ''} ${r.pharmaceutical_forms_affected || ''} ${r.supply_shortage_status || ''}`,
+              raw_json: r
+            }));
+          }
+        } catch (e) {
+          console.warn('EMA static fetch failed:', e);
+        }
+
+        // 2. Fallback: API endpointleri
         if (allRows.length === 0) {
           try {
-            const fallback = await api('/api/ema-shortages');
-            allRows = (fallback && Array.isArray(fallback.rows)) ? fallback.rows : [];
+            const apiRes = await api('/api/ema-shortages');
+            if (apiRes && Array.isArray(apiRes.rows) && apiRes.rows.length > 0) {
+              allRows = apiRes.rows;
+            }
           } catch {}
-          if (allRows.length === 0) {
-            try {
-              const staticRes = await fetch('ema_medicine_shortages.json').then(r => r.json());
-              if (Array.isArray(staticRes)) {
-                allRows = staticRes.map((r, idx) => ({
-                  id: 900000 + idx + 1,
-                  source: 'EMA Shortages',
-                  generic_name: r.international_non_proprietary_name_inn_or_common_name || '',
-                  brand_name: r.medicine_affected || '',
-                  shortage_status: r.supply_shortage_status || '',
-                  shortage_reason: `Alternatif: ${r.availability_of_alternatives || 'Belirtilmemiş'} | Terapötik Alan: ${r.therapeutic_area_mesh || 'Genel'}`,
-                  search_text: `${r.medicine_affected || ''} ${r.international_non_proprietary_name_inn_or_common_name || ''} ${r.therapeutic_area_mesh || ''} ${r.pharmaceutical_forms_affected || ''} ${r.supply_shortage_status || ''}`,
-                  raw_json: r
-                }));
-              }
-            } catch {}
-          }
+        }
+        if (allRows.length === 0) {
+          try {
+            const dt = await api('/api/records?source=EMA%20Shortages&limit=2000');
+            if (dt && Array.isArray(dt.rows) && dt.rows.some(r => r.source === 'EMA Shortages')) {
+              allRows = dt.rows.filter(r => r.source === 'EMA Shortages');
+            }
+          } catch {}
         }
         v2EmaRecordsCache = allRows;
       } else {
@@ -2858,7 +2884,7 @@ async function shortagePageV2(
 
       <section class="glass panel" style="margin-top:18px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-          <h2 style="margin:0; font-size:15px; font-family:Outfit;">⚡ FDA Kriz Veri Kapsamı & Gelişmiş Süzgeçler</h2>
+          <h2 style="margin:0; font-size:15px; font-family:Outfit;">${source === 'EMA Shortages' ? '🇪🇺 EMA Avrupa Kriz Kataloğu & Süzgeçler' : '⚡ FDA Kriz Veri Kapsamı & Gelişmiş Süzgeçler'}</h2>
           <button class="button secondary" id="resetShortageV2Filters" style="padding:6px 14px; font-size:11px;">Filtreleri Sıfırla</button>
         </div>
 
