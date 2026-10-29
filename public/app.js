@@ -4407,13 +4407,17 @@ const defaultRiskCriteriaData = [
     nameEn: 'Financial, regulatory and information-flow risks',
     weight: 7,
     weightDec: 0.07,
-    score: 50,
+    score: 52.2,
     icon: '🏛️',
     color: '#d97706',
     colorBg: '#fffbeb',
     colorBorder: '#fcd34d',
     colorGradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_F', name: 'Finansal riskler (Üretici finansal kısıtları, kur baskısı, ekonomik sürdürülebilirlik)', weight: 35, score: 73.1, dataStatus: 'available' },
+      { id: 2, code: 'S_R', name: 'Düzenleyici riskler (Ruhsat onay gecikmeleri, mevzuat kotaları, bürokrasi)', weight: 25, score: 61.4, dataStatus: 'available' },
+      { id: 3, code: 'S_B', name: 'Bilgi akışı ve veri güvenilirliği (Veri güncelliği, iletişim şeffaflığı, belirsizlik uyarısı)', weight: 40, score: 28.2, dataStatus: 'available' }
+    ]
   }
 ];
 
@@ -6314,6 +6318,316 @@ function applyCollectiveR7ToCriterion() {
   }
 }
 
+// --------------------------------------------------------------------------
+// R8 - FİNANSAL, DÜZENLEYİCİ VE BİLGİ AKIŞI RİSKLERİ HESAPLAMA MOTORU
+// Formül: R_8 = 0.35 * S_F + 0.25 * S_R + 0.40 * S_B
+// 1. S_F: Finansal riskler (Üretici çekilmesi, döviz kuru baskısı, ekonomik sürdürülebilirlik) (%35)
+// 2. S_R: Düzenleyici riskler (Ruhsat onay gecikmeleri, mevzuat kotaları, bürokrasi) (%25)
+// 3. S_B: Bilgi akışı ve veri güvenilirliği (Veri güncelliği, iletişim şeffaflığı, belirsizlik uyarısı) (%40)
+// Kritik İlke: Bilgi kalitesi düşüklüğü doğrudan kıtlık riskini şişirmez; veri güvenilirliği uyarısı verir.
+// --------------------------------------------------------------------------
+
+function calculateDrugR8Score(r) {
+  if (!r) {
+    return {
+      score: 0,
+      rawScore: 0,
+      sF: 0,
+      sFLabel: 'Eksik Veri',
+      isMissingSf: true,
+      sR: 0,
+      sRLabel: 'Eksik Veri',
+      isMissingSr: true,
+      sB: 0,
+      sBLabel: 'Eksik Veri',
+      isMissingSb: true,
+      hasDataReliabilityWarning: true,
+      reliabilityWarningText: '⚠️ İlaç verisi eksik veya tanımsız.',
+      isFinancialExit: false,
+      isRegulatoryDelay: false,
+      isImport: false,
+      isHybrid: false,
+      isLocal: false,
+      level: 'Eksik Veri',
+      tierKey: 'dusuk',
+      color: '#64748b',
+      bg: '#f8fafc',
+      border: '#cbd5e1',
+      badgeBg: '#f1f5f9',
+      badgeColor: '#475569'
+    };
+  }
+
+  const raw = (r.shortage_reason || r.reasonText || '').toLowerCase();
+  const stat = (r.shortage_status || '').toLowerCase();
+  const isFinancialExit = raw.includes('discontinu') || stat.includes('discontinu') || raw.includes('piyasadan çekilme') || raw.includes('çekilme');
+  const isRegulatoryDelay = raw.includes('regulatory') || raw.includes('ruhsat') || raw.includes('mevzuat');
+  const isVague = !raw || raw.includes('other') || raw.includes('unknown') || raw === 'other' || raw.includes('belirtilmemiş');
+
+  const orig = (r.greenData && r.greenData.origin || '').toUpperCase();
+  const isLocal = orig === 'İMAL' || orig === 'IMAL';
+  const isHybrid = orig.includes('İMAL / İTHAL') || orig.includes('İTHAL / İMAL') || orig.includes('IMAL / ITHAL') || orig.includes('ITHAL / IMAL');
+  const isImport = orig === 'İTHAL' || orig === 'ITHAL' || (!isLocal && !isHybrid);
+
+  // 1. S_F: Finansal riskler (%35)
+  let sF = 75;
+  let sFLabel = 'İthalat Menşeli (Sabit SGK Kuru / Reel Döviz Kuru Makası & Kur Baskısı)';
+  let isMissingSf = false;
+  if (isFinancialExit) {
+    sF = 95;
+    sFLabel = '🚨 Ekonomik / Ticarî Çekilme (Maliyet Artışı Nedeniyle Üretim Terki)';
+  } else if (isLocal) {
+    sF = 25;
+    sFLabel = 'Yerli İmalat (Düşük Kur Riski & Finansal Sürdürülebilirlik)';
+  } else if (isHybrid) {
+    sF = 60;
+    sFLabel = 'Kısmi İthalat / Karma Üretim (Orta Kur Hassasiyeti)';
+  }
+
+  // 2. S_R: Düzenleyici riskler (%25)
+  let sR = 65;
+  let sRLabel = 'Uluslararası Yeşil Reçete Kota Rejimi (INCB / TİTCK İthal İzin Bürokrasisi)';
+  let isMissingSr = false;
+  if (isRegulatoryDelay) {
+    sR = 95;
+    sRLabel = '🚨 Aktif Ruhsat / Mevzuat Onay Gecikmesi';
+  } else if (isLocal) {
+    sR = 30;
+    sRLabel = 'Rutin Ulusal Kota Tahsisi & Yerli Ruhsat Rejimi';
+  } else if (isHybrid) {
+    sR = 50;
+    sRLabel = 'Karma Ruhsatlandırma & İthal/İmal Kota Rejimi';
+  }
+
+  // 3. S_B: Bilgi akışı ve veri güvenilirliği (%40)
+  // Kritik Kural: Bilgi kalitesi düşüklüğü tek başına kıtlık riskini doğrudan şişirmez; veri güvenilirliği uyarısı tetikler.
+  let sB = 25;
+  let sBLabel = 'Şeffaf Bilgi Akışı & Doğrulanmış Kök Neden';
+  let isMissingSb = false;
+  let hasDataReliabilityWarning = false;
+  let reliabilityWarningText = '';
+
+  if (isVague) {
+    sB = 65;
+    sBLabel = 'Muğlak Kriz Bildirimi ("Other/Unknown") [⚠️ Bilgi Belirsizliği]';
+    hasDataReliabilityWarning = true;
+    reliabilityWarningText = '⚠️ Düşük Bilgi Kalitesi / Muğlak Kök Neden: İlaç kriz gerekçesi veri tabanında muğlak ("Other/Unknown") bildirildiğinden bilgi akışı belirsizliği mevcuttur (Kıtlık riskini doğrudan şişirmez, veri güvenilirliği uyarısıdır).';
+  }
+
+  // Ağırlıklı Toplam: R8 = 0.35 SF + 0.25 SR + 0.40 SB
+  const rawScore = (0.35 * sF) + (0.25 * sR) + (0.40 * sB);
+  const score = Math.round(rawScore * 10) / 10;
+
+  let level = 'Orta Risk';
+  let tierKey = 'orta';
+  let color = '#d97706';
+  let bg = '#fffbeb';
+  let border = '#fcd34d';
+  let badgeBg = '#fef3c7';
+  let badgeColor = '#92400e';
+
+  if (score >= 80) {
+    level = 'Kritik Risk (80–100 Puan)';
+    tierKey = 'kritik';
+    color = '#be123c';
+    bg = '#fff1f2';
+    border = '#fecdd3';
+    badgeBg = '#fee2e2';
+    badgeColor = '#9f1239';
+  } else if (score >= 60) {
+    level = 'Çok Yüksek Risk (60–79.9 Puan)';
+    tierKey = 'cokYuksek';
+    color = '#ea580c';
+    bg = '#fff7ed';
+    border = '#fed7aa';
+    badgeBg = '#ffedd5';
+    badgeColor = '#9a3412';
+  } else if (score >= 40) {
+    level = 'Yüksek Risk (40–59.9 Puan)';
+    tierKey = 'yuksek';
+    color = '#d97706';
+    bg = '#fffbeb';
+    border = '#fde68a';
+    badgeBg = '#fef3c7';
+    badgeColor = '#b45309';
+  } else if (score >= 20) {
+    level = 'Orta Risk (20–39.9 Puan)';
+    tierKey = 'orta';
+    color = '#0284c7';
+    bg = '#f0f9ff';
+    border = '#bae6fd';
+    badgeBg = '#e0f2fe';
+    badgeColor = '#0369a1';
+  } else {
+    level = 'Düşük Risk (< 20 Puan)';
+    tierKey = 'dusuk';
+    color = '#16a34a';
+    bg = '#dcfce7';
+    border = '#86efac';
+    badgeBg = '#bbf7d0';
+    badgeColor = '#166534';
+  }
+
+  return {
+    score,
+    rawScore,
+    sF,
+    sFLabel,
+    isMissingSf,
+    sR,
+    sRLabel,
+    isMissingSr,
+    sB,
+    sBLabel,
+    isMissingSb,
+    hasDataReliabilityWarning,
+    reliabilityWarningText,
+    isFinancialExit,
+    isRegulatoryDelay,
+    isImport,
+    isHybrid,
+    isLocal,
+    level,
+    tierKey,
+    color,
+    bg,
+    border,
+    badgeBg,
+    badgeColor
+  };
+}
+
+let r8DrugFilterState = {
+  query: '',
+  tierFilter: 'all', // 'all', 'exit', 'reg', 'warning', 'kritik', 'cokYuksek', 'yuksek', 'orta', 'dusuk'
+  page: 1,
+  pageSize: 15
+};
+
+function getR8DistributionStats() {
+  const records = getV2Green400Records();
+  let sumF = 0;
+  let sumR = 0;
+  let sumB = 0;
+  let sumR8 = 0;
+  let exitCount = 0;
+  let regCount = 0;
+  let warningCount = 0;
+  let hybridCount = 0;
+  let importCount = 0;
+
+  const tiers = [
+    { key: 'kritik', label: 'Kritik Risk (80–100 Puan)', minScore: 80, maxScore: 100, count: 0, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+    { key: 'cokYuksek', label: 'Çok Yüksek (60–79.9 Puan)', minScore: 60, maxScore: 79.9, count: 0, color: '#ea580c', bg: '#ffedd5', border: '#fed7aa' },
+    { key: 'yuksek', label: 'Yüksek (40–59.9 Puan)', minScore: 40, maxScore: 59.9, count: 0, color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+    { key: 'orta', label: 'Orta (20–39.9 Puan)', minScore: 20, maxScore: 39.9, count: 0, color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+    { key: 'dusuk', label: 'Düşük (< 20 Puan)', minScore: 0, maxScore: 19.9, count: 0, color: '#16a34a', bg: '#dcfce7', border: '#86efac' }
+  ];
+
+  records.forEach(r => {
+    const res = calculateDrugR8Score(r);
+    sumF += res.sF;
+    sumR += res.sR;
+    sumB += res.sB;
+    sumR8 += res.score;
+    if (res.isFinancialExit) exitCount++;
+    if (res.isRegulatoryDelay) regCount++;
+    if (res.hasDataReliabilityWarning) warningCount++;
+    if (res.isHybrid) hybridCount++;
+    if (res.isImport) importCount++;
+
+    const t = tiers.find(item => item.key === res.tierKey);
+    if (t) t.count++;
+  });
+
+  const total = records.length || 400;
+  const avgF = Math.round((sumF / total) * 10) / 10;
+  const avgR = Math.round((sumR / total) * 10) / 10;
+  const avgB = Math.round((sumB / total) * 10) / 10;
+  const avgR8 = Math.round((sumR8 / total) * 10) / 10;
+
+  return {
+    total,
+    avgF,
+    avgR,
+    avgB,
+    avgR8,
+    exitCount,
+    regCount,
+    warningCount,
+    hybridCount,
+    importCount,
+    tiers
+  };
+}
+
+function handleR8DrugSearch(q) {
+  r8DrugFilterState.query = q;
+  r8DrugFilterState.page = 1;
+  const c = riskCriteriaState.criteria.find(item => item.id === 8);
+  if (c) renderCriterion8DetailPage(c);
+}
+
+function handleR8TierFilter(f) {
+  r8DrugFilterState.tierFilter = f;
+  r8DrugFilterState.page = 1;
+  const c = riskCriteriaState.criteria.find(item => item.id === 8);
+  if (c) renderCriterion8DetailPage(c);
+}
+
+function handleR8DrugPage(p) {
+  r8DrugFilterState.page = Math.max(1, p);
+  const c = riskCriteriaState.criteria.find(item => item.id === 8);
+  if (c) renderCriterion8DetailPage(c);
+}
+
+function applySingleDrugR8ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR8Score(d);
+  const c = riskCriteriaState.criteria.find(item => item.id === 8);
+  if (!c) return;
+
+  c.score = res.score;
+  if (c.subCriteria && c.subCriteria.length >= 3) {
+    c.subCriteria[0].score = res.sF;
+    c.subCriteria[0].dataStatus = 'available';
+    c.subCriteria[1].score = res.sR;
+    c.subCriteria[1].dataStatus = 'available';
+    c.subCriteria[2].score = res.sB;
+    c.subCriteria[2].dataStatus = res.hasDataReliabilityWarning ? 'warning' : 'available';
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  renderCriterion8DetailPage(c);
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının finansal, düzenleyici ve bilgi akışı riskleri (S_F: ${res.sF}, S_R: ${res.sR}, S_B: ${res.sB}) baz alınarak R₈ Puanı ${res.score}/100 (${res.level}) olarak atandı ve 3 alt göstergeye yansıtıldı.`);
+  }
+}
+
+function applyCollectiveR8ToCriterion() {
+  const stats = getR8DistributionStats();
+  const c = riskCriteriaState.criteria.find(item => item.id === 8);
+  if (!c) return;
+
+  c.score = stats.avgR8;
+  if (c.subCriteria && c.subCriteria.length >= 3) {
+    c.subCriteria[0].score = stats.avgF;
+    c.subCriteria[0].dataStatus = 'available';
+    c.subCriteria[1].score = stats.avgR;
+    c.subCriteria[1].dataStatus = 'available';
+    c.subCriteria[2].score = stats.avgB;
+    c.subCriteria[2].dataStatus = 'available';
+  }
+  renderCriterion8DetailPage(c);
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın kolektif ağırlıklı ortalama R₈ Puanı (${stats.avgR8}/100) ve 3 alt gösterge ortalamaları (S_F: ${stats.avgF}, S_R: ${stats.avgR}, S_B: ${stats.avgB}) Criterion 8'e başarıyla aktarıldı!`);
+  }
+}
+
 function getV2Green400Records() {
   if (!v2FdaRecordsCache || !Array.isArray(v2FdaRecordsCache)) return [];
   const enriched = v2FdaRecordsCache.map(enrichShortageRecord);
@@ -6384,10 +6698,9 @@ function applyDrugToRiskCriteria(drugId) {
   const r7Res = calculateDrugR7Score(d);
   const r7 = r7Res.score;
 
-  // R8: Finansal, yasal ve bilgi akışı riskleri (yeşil reçete kotası & kur hassasiyeti)
-  let r8 = 75;
-  const isImport = (d.greenData?.origin || '').includes('İTHAL');
-  if (isImport) r8 = 88;
+  // R8: Finansal, yasal ve bilgi akışı riskleri (3 alt bileşenli resmi formül: 0.35 SF + 0.25 SR + 0.40 SB)
+  const r8Res = calculateDrugR8Score(d);
+  const r8 = r8Res.score;
 
   const scoresMap = { 1: r1, 2: r2, 3: r3, 4: r4, 5: r5, 6: r6, 7: r7, 8: r8 };
   riskCriteriaState.criteria.forEach(c => {
@@ -6434,6 +6747,14 @@ function applyDrugToRiskCriteria(drugId) {
         c.subCriteria[1].dataStatus = r7Res.isMissingSd ? 'insufficient' : 'available';
         c.subCriteria[2].score = r7Res.sU;
         c.subCriteria[2].dataStatus = r7Res.isMissingSu ? 'insufficient' : 'available';
+      }
+      if (c.id === 8 && c.subCriteria && c.subCriteria.length >= 3) {
+        c.subCriteria[0].score = r8Res.sF;
+        c.subCriteria[0].dataStatus = 'available';
+        c.subCriteria[1].score = r8Res.sR;
+        c.subCriteria[1].dataStatus = 'available';
+        c.subCriteria[2].score = r8Res.sB;
+        c.subCriteria[2].dataStatus = r8Res.hasDataReliabilityWarning ? 'warning' : 'available';
       }
     }
   });
@@ -6635,6 +6956,7 @@ function renderRiskCriteriaDrugTableOnly() {
             const r4Drug = calculateDrugR4Score(r);
             const r5Drug = calculateDrugR5Score(r);
             const r7Drug = calculateDrugR7Score(r);
+            const r8Drug = calculateDrugR8Score(r);
             return `
               <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
                 <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
@@ -6689,6 +7011,9 @@ function renderRiskCriteriaDrugTableOnly() {
                     </span>
                     <span class="badge" style="background:${r7Drug.badgeBg}; color:${r7Drug.badgeColor}; border:1px solid ${r7Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R7 Ürün Özellikleri & İkame: S_F: ${r7Drug.sF}, S_D: ${r7Drug.sD}, S_U: ${r7Drug.sU}">
                       🔄 R₇: ${r7Drug.score}/100 (${r7Drug.level})
+                    </span>
+                    <span class="badge" style="background:${r8Drug.badgeBg}; color:${r8Drug.badgeColor}; border:1px solid ${r8Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R8 Finansal, Düzenleyici & Bilgi Akışı: S_F: ${r8Drug.sF}, S_R: ${r8Drug.sR}, S_B: ${r8Drug.sB}${r8Drug.hasDataReliabilityWarning ? ' [⚠️ Veri Belirsizliği]' : ''}">
+                      🏛️ R₈: ${r8Drug.score}/100 (${r8Drug.level})
                     </span>
                   </div>
                   ${(r.ndc || r.application_no) ? `
@@ -7013,6 +7338,15 @@ window.handleR7DrugPage = handleR7DrugPage;
 window.applySingleDrugR7ToCriterion = applySingleDrugR7ToCriterion;
 window.applyCollectiveR7ToCriterion = applyCollectiveR7ToCriterion;
 window.renderCriterion7DetailPage = renderCriterion7DetailPage;
+
+window.calculateDrugR8Score = calculateDrugR8Score;
+window.getR8DistributionStats = getR8DistributionStats;
+window.handleR8DrugSearch = handleR8DrugSearch;
+window.handleR8TierFilter = handleR8TierFilter;
+window.handleR8DrugPage = handleR8DrugPage;
+window.applySingleDrugR8ToCriterion = applySingleDrugR8ToCriterion;
+window.applyCollectiveR8ToCriterion = applyCollectiveR8ToCriterion;
+window.renderCriterion8DetailPage = renderCriterion8DetailPage;
 
 function renderCriterion1DetailPage(c) {
   if (!c.subCriteria || c.subCriteria.length === 0) {
@@ -10635,6 +10969,567 @@ function renderCriterion7DetailPage(c) {
   `;
 }
 
+function renderCriterion8DetailPage(c) {
+  const stats = getR8DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR8Drugs = allDrugs.map(r => {
+    const res = calculateDrugR8Score(r);
+    return {
+      record: r,
+      r8Score: res.score,
+      sF: res.sF,
+      sFLabel: res.sFLabel,
+      isMissingSf: res.isMissingSf,
+      sR: res.sR,
+      sRLabel: res.sRLabel,
+      isMissingSr: res.isMissingSr,
+      sB: res.sB,
+      sBLabel: res.sBLabel,
+      isMissingSb: res.isMissingSb,
+      hasDataReliabilityWarning: res.hasDataReliabilityWarning,
+      reliabilityWarningText: res.reliabilityWarningText,
+      isFinancialExit: res.isFinancialExit,
+      isRegulatoryDelay: res.isRegulatoryDelay,
+      isImport: res.isImport,
+      isHybrid: res.isHybrid,
+      isLocal: res.isLocal,
+      level: res.level,
+      tierKey: res.tierKey,
+      color: res.color,
+      bg: res.bg,
+      border: res.border,
+      badgeBg: res.badgeBg,
+      badgeColor: res.badgeColor
+    };
+  });
+
+  if (r8DrugFilterState.query) {
+    const q = r8DrugFilterState.query.toLowerCase().trim();
+    filteredR8Drugs = filteredR8Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const sr = (r.shortage_reason || r.reasonText || '').toLowerCase();
+      const st = (r.shortage_status || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || sr.includes(q) || st.includes(q);
+    });
+  }
+
+  if (r8DrugFilterState.tierFilter !== 'all') {
+    if (r8DrugFilterState.tierFilter === 'exit') {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.isFinancialExit);
+    } else if (r8DrugFilterState.tierFilter === 'reg') {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.isRegulatoryDelay);
+    } else if (r8DrugFilterState.tierFilter === 'warning') {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.hasDataReliabilityWarning);
+    } else if (r8DrugFilterState.tierFilter === 'import') {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.isImport);
+    } else if (r8DrugFilterState.tierFilter === 'hybrid') {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.isHybrid);
+    } else {
+      filteredR8Drugs = filteredR8Drugs.filter(item => item.tierKey === r8DrugFilterState.tierFilter);
+    }
+  }
+
+  const totalFiltered = filteredR8Drugs.length;
+  const pageSize = r8DrugFilterState.pageSize || 15;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  if (r8DrugFilterState.page > totalPages) r8DrugFilterState.page = totalPages;
+  const startIdx = (r8DrugFilterState.page - 1) * pageSize;
+  const pageItems = filteredR8Drugs.slice(startIdx, startIdx + pageSize);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  const page = document.querySelector('#page') || document.body;
+
+  page.innerHTML = `
+    <!-- Geri Dön Butonu -->
+    <div style="margin-bottom: 18px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #fcd34d; background:#fffbeb; color:#92400e;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+    </div>
+
+    <!-- Kriter Başlık Bandı (Amber Theme) -->
+    <section class="glass panel" style="border-left: 6px solid #d97706; border-color:#fcd34d; padding: 24px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, #fffbeb 100%); box-shadow: 0 4px 18px rgba(217, 119, 6, 0.08);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:14px;">
+            <div class="dsrds-crit-badge" style="width:54px; height:54px; font-size:22px; background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color:#fff; box-shadow:0 4px 14px rgba(217, 119, 6, 0.4); display:flex; align-items:center; justify-content:center; border-radius:12px; font-weight:800;">
+              ${c.symbol}
+            </div>
+            <div>
+              <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+                <span>${c.icon}</span> ${esc(c.name)}
+              </h1>
+              <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+                ${esc(c.nameEn)} · Değişken Kodu: <b style="color:#d97706;">${c.code}</b>
+              </p>
+            </div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:11.5px; font-weight:700; padding:4px 10px;">
+              Ana Model Ağırlığı: <b>%${c.weight}</b> (w₈ = ${c.weightDec})
+            </span>
+            <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-size:11.5px; font-weight:700; padding:4px 10px;">
+              3 Alt Gösterge: <b>S_F (%35), S_R (%25), S_B (%40)</b>
+            </span>
+            <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-size:11.5px; font-weight:700; padding:4px 10px;">
+              Kapsam: <b>400 Yeşil Reçeteli İlaç</b>
+            </span>
+          </div>
+        </div>
+
+        <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+          <div style="font-size:11px; text-transform:uppercase; font-weight:800; color:#92400e; letter-spacing:0.5px;">Mevcut Kriter Risk Puanı (R₈)</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="number" min="0" max="100" step="0.1" value="${c.score}" style="font-size:24px; font-weight:900; width:100px; text-align:center; padding:6px 8px; border-radius:10px; border:2px solid #fcd34d; color:#92400e; background:#fff;" onchange="updateMainCriterionScore(8, this.value)">
+            <span style="font-size:16px; font-weight:800; color:#94a3b8;">/ 100</span>
+          </div>
+          ${(() => {
+            const t = getCriteriaRiskTier(c.score);
+            return `<span class="badge" style="background:${t.bg}; color:${t.color}; border:1.5px solid ${t.border}; font-weight:800; font-size:11px; padding:3px 10px;">${t.label}</span>`;
+          })()}
+        </div>
+      </div>
+    </section>
+
+    <!-- 1. BÖLÜM: METODOLOJİ, 3 ALT BİLEŞEN VE BİLGİ GÜVENİLİRLİĞİ İLKESİ -->
+    <section class="glass panel" style="padding: 22px; margin-bottom: 22px; border-radius:14px; border:1.5px solid #fcd34d; background:#ffffff;">
+      <h3 style="margin:0 0 12px; font-size:16.5px; font-family:Outfit; color:#92400e; display:flex; align-items:center; gap:8px;">
+        <span>📐</span> 1. Metodoloji, 3 Alt Bileşen ve Gerekçeli Puanlama Matrisi
+      </h3>
+      <p style="font-size:13px; color:#475569; line-height:1.6; margin:0 0 14px;">
+        <b>R₈ (Finansal, Düzenleyici ve Bilgi Akışı Riskleri)</b> kriteri; üreticinin ekonomik sürdürülebilirliğini, kamu geri ödeme sabit kur baskısını, psikotropik/narkotik yeşil reçete ilaçlarına özgü uluslararası kotaları (INCB/TİTCK) ve kriz bildirimlerindeki bilgi şeffaflığını ölçer. 
+        Kullanıcı tarafından belirlenen 3 alt bileşen ve iç ağırlıklar şu şekildedir:
+      </p>
+
+      <!-- KRİTİK METODOLOJİK AYRIM UYARISI -->
+      <div style="background:#fffbeb; border-left:5px solid #d97706; padding:14px 16px; border-radius:8px; margin-bottom:18px; border-top:1px solid #fde68a; border-right:1px solid #fde68a; border-bottom:1px solid #fde68a;">
+        <div style="font-weight:800; color:#92400e; font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+          <span>⚠️</span> Önemli Metodolojik İlke: Bilgi Akışı ve Veri Güvenilirliği Ayrımı
+        </div>
+        <div style="font-size:12.5px; color:#78350f; line-height:1.55;">
+          Verinin eksik veya muğlak olması, <b>tek başına ilacın bulunamayacağı veya tedarik krizinin kaçınılmaz olduğu anlamına gelmez</b>; karar verici için bilgi belirsizliğini artırır. 
+          Bu nedenle bilgi kalitesi düştüğünde (örneğin kriz nedeni veri tabanında muğlak olarak <i>"Other / Unknown"</i> bildirildiğinde), doğrudan yapay olarak kıtlık riski puanı tavan yaptırılmaz; 
+          sistemde ayrı bir <b>"⚠️ Düşük Bilgi Güvenilirliği / Veri Belirsizliği Uyarısı"</b> tetiklenir ve karar verici ek teyit almaya yönlendirilir.
+        </div>
+      </div>
+
+      <!-- 3 Alt Bileşen Puanlama Kuralları Matrisi Tablosu -->
+      <div style="overflow-x:auto;">
+        <table class="dsrds-drug-table" style="width:100%; border-collapse:collapse; font-size:12.5px;">
+          <thead>
+            <tr style="background:#fef3c7; color:#92400e;">
+              <th style="padding:10px 12px; text-align:left; border:1px solid #fde68a;">Alt Gösterge</th>
+              <th style="padding:10px 12px; text-align:center; border:1px solid #fde68a; width:80px;">Ağırlık</th>
+              <th style="padding:10px 12px; text-align:center; border:1px solid #fde68a; width:70px;">Puan</th>
+              <th style="padding:10px 12px; text-align:left; border:1px solid #fde68a;">Gerekçeli Değerlendirme Kuralı & Göstergeler</th>
+              <th style="padding:10px 12px; text-align:center; border:1px solid #fde68a; width:110px;">400 İlaç Dağılımı</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td rowspan="3" style="font-weight:800; color:#0f2942; border:1px solid #fde68a; vertical-align:top; padding:10px 12px; background:#fffdf5;">
+                <span style="color:#d97706;">S_F</span><br>Finansal Riskler
+              </td>
+              <td rowspan="3" style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#d97706; vertical-align:top; padding:10px 12px;">%35</td>
+              <td style="text-align:center; font-weight:800; color:#dc2626; border:1px solid #fde68a;">95</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Ticarî / Ekonomik Üretim Terki (Discontinuation / Çekilme):</b> Üretici maliyet enflasyonu veya kârsızlık nedeniyle ürünü piyasadan çekmiş ya da üretimi durdurmuş.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#dc2626;">28 İlaç</td>
+            </tr>
+            <tr>
+              <td style="text-align:center; font-weight:800; color:#ea580c; border:1px solid #fde68a;">75</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>%100 Dışa Bağımlı İthal İlaçlar (Döviz Kuru Baskısı):</b> SGK sabit kamu euro kuru ile reel serbest piyasa kuru makası nedeniyle ithalatçı firmanın maliyet zararı ve tedarik kısıtı riski.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#ea580c;">283 İlaç</td>
+            </tr>
+            <tr>
+              <td style="text-align:center; font-weight:800; color:#0284c7; border:1px solid #fde68a;">60 / 25</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Karma / Yerli İmalat (Düşük-Orta Kur Riski):</b> Kısmi ithalat/imalat (60 puan) veya tamamen yerli üretim (25 puan) kanalları sayesinde finansal sürdürülebilirliği yüksek olan ürünler.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#0284c7;">89 İlaç</td>
+            </tr>
+
+            <tr style="border-top:2px solid #fcd34d;">
+              <td rowspan="3" style="font-weight:800; color:#0f2942; border:1px solid #fde68a; vertical-align:top; padding:10px 12px; background:#fffdf5;">
+                <span style="color:#d97706;">S_R</span><br>Düzenleyici Riskler
+              </td>
+              <td rowspan="3" style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#d97706; vertical-align:top; padding:10px 12px;">%25</td>
+              <td style="text-align:center; font-weight:800; color:#dc2626; border:1px solid #fde68a;">95</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Aktif Ruhsat / Mevzuat Onay Gecikmesi (Regulatory Delay):</b> Kriz bildirim gerekçesinde doğrudan ruhsat yenileme, mevzuat değişikliği veya onay gecikmesi belirtilmiş.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#dc2626;">6 İlaç</td>
+            </tr>
+            <tr>
+              <td style="text-align:center; font-weight:800; color:#ea580c; border:1px solid #fde68a;">65</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Uluslararası Yeşil Reçete Kota Rejimi:</b> INCB (Uluslararası Narkotik Kontrol Kurulu) ve TİTCK psikotrop/narkotik yıllık ithalat kota tahsisleri ve sıkı izin bürokrasisi.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#ea580c;">283 İlaç</td>
+            </tr>
+            <tr>
+              <td style="text-align:center; font-weight:800; color:#0284c7; border:1px solid #fde68a;">50 / 30</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Karma / Yerli Ruhsat Rejimi:</b> Karma ithal/imal izinleri (50 puan) veya rutin ulusal kota tahsisi ve denetimi altındaki yerli ruhsatlar (30 puan).
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#0284c7;">111 İlaç</td>
+            </tr>
+
+            <tr style="border-top:2px solid #fcd34d;">
+              <td rowspan="2" style="font-weight:800; color:#0f2942; border:1px solid #fde68a; vertical-align:top; padding:10px 12px; background:#fffdf5;">
+                <span style="color:#d97706;">S_B</span><br>Bilgi Akışı & Güvenilirlik
+              </td>
+              <td rowspan="2" style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#d97706; vertical-align:top; padding:10px 12px;">%40</td>
+              <td style="text-align:center; font-weight:800; color:#16a34a; border:1px solid #fde68a;">25</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Şeffaf Bilgi Akışı & Doğrulanmış Kök Neden:</b> Doğrulanmış üretici iletişim kanalı (telefon/e-posta) ve net tanımlanmış kriz gerekçesi mevcut.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#16a34a;">368 İlaç</td>
+            </tr>
+            <tr>
+              <td style="text-align:center; font-weight:800; color:#b45309; border:1px solid #fde68a;">65</td>
+              <td style="border:1px solid #fde68a; padding:8px 12px;">
+                <b>Muğlak Kriz Bildirimi ("Other/Unknown") [⚠️ Veri Belirsizliği]:</b> Kriz nedeni muğlak olduğundan bilgi kalitesi düşüktür; <u>kıtlık riskini doğrudan tavan yaptırmaz, veri güvenilirliği uyarısı tetikler</u>.
+              </td>
+              <td style="text-align:center; font-weight:800; border:1px solid #fde68a; color:#b45309;">32 İlaç ⚠️</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 2. BÖLÜM: 400 YEŞİL REÇETELİ İLAÇ İSTATİSTİK ÖZETİ & KOLEKTİF PUAN -->
+    <section class="glass panel" style="padding: 22px; margin-bottom: 22px; border-radius:14px; border:1.5px solid #fcd34d; background:#ffffff;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+        <div>
+          <h3 style="margin:0 0 4px; font-size:16.5px; font-family:Outfit; color:#92400e; display:flex; align-items:center; gap:8px;">
+            <span>📊</span> 2. 400 Yeşil Reçeteli İlaç İstatistik Özeti & Kolektif R₈ Puanı
+          </h3>
+          <p style="margin:0; font-size:12.5px; color:#64748b;">
+            400 yeşil reçeteli ilacın finansal sürdürülebilirlik, düzenleyici kota rejimleri ve bilgi güvenilirliği dağılımı:
+          </p>
+        </div>
+        <button type="button" class="button" style="background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color:#ffffff; font-weight:800; padding:10px 20px; border-radius:8px; border:none; cursor:pointer; font-size:12.5px; box-shadow:0 4px 12px rgba(217, 119, 6, 0.3); display:inline-flex; align-items:center; gap:8px;" onclick="applyCollectiveR8ToCriterion()">
+          <span>🎯</span> 400 İlacın Kolektif Risk Puanını (${stats.avgR8}) Kriter 8'e Ata
+        </button>
+      </div>
+
+      <!-- 5 KPI Kartı -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; margin-bottom:18px;">
+        <div style="background:#fffbeb; border:1.5px solid #fde68a; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; font-weight:700; color:#b45309; text-transform:uppercase;">Ort. Finansal Risk (S_F)</div>
+          <div style="font-size:24px; font-weight:900; color:#92400e; margin:4px 0 2px;">${stats.avgF} <span style="font-size:13px; font-weight:600; color:#b45309;">/ 100</span></div>
+          <div style="font-size:11px; color:#78350f;">Ağırlık: %35 · Kur & Maliyet Baskısı</div>
+        </div>
+
+        <div style="background:#fffbeb; border:1.5px solid #fde68a; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; font-weight:700; color:#b45309; text-transform:uppercase;">Ort. Düzenleyici Risk (S_R)</div>
+          <div style="font-size:24px; font-weight:900; color:#92400e; margin:4px 0 2px;">${stats.avgR} <span style="font-size:13px; font-weight:600; color:#b45309;">/ 100</span></div>
+          <div style="font-size:11px; color:#78350f;">Ağırlık: %25 · INCB & Kota Rejimi</div>
+        </div>
+
+        <div style="background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; font-weight:700; color:#15803d; text-transform:uppercase;">Ort. Bilgi Akışı (S_B)</div>
+          <div style="font-size:24px; font-weight:900; color:#166534; margin:4px 0 2px;">${stats.avgB} <span style="font-size:13px; font-weight:600; color:#15803d;">/ 100</span></div>
+          <div style="font-size:11px; color:#14532d;">Ağırlık: %40 · %92 Doğrulanmış</div>
+        </div>
+
+        <div style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border:2px solid #f59e0b; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; font-weight:800; color:#78350f; text-transform:uppercase;">Kolektif Ağırlıklı R₈</div>
+          <div style="font-size:26px; font-weight:900; color:#92400e; margin:4px 0 2px;">${stats.avgR8} <span style="font-size:14px; font-weight:700; color:#78350f;">/ 100</span></div>
+          <div style="font-size:11.5px; font-weight:800; color:#b45309;">0.35S_F + 0.25S_R + 0.40S_B</div>
+        </div>
+
+        <div style="background:#fff7ed; border:1.5px solid #fed7aa; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; font-weight:700; color:#c2410c; text-transform:uppercase;">Veri Güvenilirliği Uyarısı</div>
+          <div style="font-size:24px; font-weight:900; color:#9a3412; margin:4px 0 2px;">${stats.warningCount} <span style="font-size:13px; font-weight:600; color:#c2410c;">İlaç (⚠️)</span></div>
+          <div style="font-size:11px; color:#7c2d12;">Muğlak Kriz Nedeni ("Other")</div>
+        </div>
+      </div>
+
+      <!-- Filtre Çipleri -->
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <span style="font-size:12px; font-weight:700; color:#64748b;">Hızlı Filtre:</span>
+        <button type="button" class="button secondary" style="font-size:11px; padding:4px 10px; border-radius:20px; ${r8DrugFilterState.tierFilter === 'all' ? 'background:#d97706; color:#fff; border-color:#d97706;' : ''}" onclick="handleR8TierFilter('all')">
+          Tümü (${stats.total})
+        </button>
+        <button type="button" class="button secondary" style="font-size:11px; padding:4px 10px; border-radius:20px; ${r8DrugFilterState.tierFilter === 'exit' ? 'background:#dc2626; color:#fff; border-color:#dc2626;' : 'border-color:#fca5a5; color:#991b1b; background:#fee2e2;'}" onclick="handleR8TierFilter('exit')">
+          🚨 Ekonomik Çekilme (${stats.exitCount})
+        </button>
+        <button type="button" class="button secondary" style="font-size:11px; padding:4px 10px; border-radius:20px; ${r8DrugFilterState.tierFilter === 'reg' ? 'background:#ea580c; color:#fff; border-color:#ea580c;' : 'border-color:#fed7aa; color:#9a3412; background:#ffedd5;'}" onclick="handleR8TierFilter('reg')">
+          ⚖️ Mevzuat Gecikmesi (${stats.regCount})
+        </button>
+        <button type="button" class="button secondary" style="font-size:11px; padding:4px 10px; border-radius:20px; ${r8DrugFilterState.tierFilter === 'warning' ? 'background:#b45309; color:#fff; border-color:#b45309;' : 'border-color:#fde68a; color:#78350f; background:#fffbeb;'}" onclick="handleR8TierFilter('warning')">
+          ⚠️ Veri Güvenilirliği Uyarısı (${stats.warningCount})
+        </button>
+        ${stats.tiers.map(t => `
+          <button type="button" class="button secondary" style="font-size:11px; padding:4px 10px; border-radius:20px; ${r8DrugFilterState.tierFilter === t.key ? `background:${t.color}; color:#fff; border-color:${t.color};` : `background:${t.bg}; color:${t.color}; border-color:${t.border};`}" onclick="handleR8TierFilter('${t.key}')">
+            ${t.label.split(' ')[0]} (${t.count})
+          </button>
+        `).join('')}
+      </div>
+    </section>
+
+    <!-- 3. BÖLÜM: 400 İLAÇ BAZINDA 3 ALT GÖSTERGE VE NİHAİ R8 TABLOSU -->
+    <section class="glass panel" style="padding: 22px; margin-bottom: 22px; border-radius:14px; border:1.5px solid #fcd34d; background:#ffffff;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+        <div>
+          <h3 style="margin:0 0 4px; font-size:16.5px; font-family:Outfit; color:#92400e; display:flex; align-items:center; gap:8px;">
+            <span>📋</span> 3. 400 Yeşil Reçeteli İlaç İçin Finansal & Düzenleyici Riskler Tablosu
+          </h3>
+          <p style="margin:0; font-size:12.5px; color:#64748b;">
+            Listelenen: <b>${totalFiltered} / ${allDrugs.length} İlaç</b> · Sayfa: <b>${r8DrugFilterState.page} / ${totalPages}</b>
+          </p>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="text" placeholder="İlaç adı, üretici veya gerekçe ara..." value="${esc(r8DrugFilterState.query)}" style="padding:8px 14px; border-radius:8px; border:1.5px solid #fcd34d; font-size:12.5px; width:260px;" oninput="handleR8DrugSearch(this.value)">
+        </div>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="dsrds-drug-table" style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:#fef3c7; color:#92400e;">
+              <th style="padding:10px 8px; text-align:center; width:40px; border:1px solid #fde68a;">#</th>
+              <th style="padding:10px 12px; text-align:left; min-width:200px; border:1px solid #fde68a;">İlaç / Etkin Madde & Marka</th>
+              <th style="padding:10px 12px; text-align:left; min-width:180px; border:1px solid #fde68a;">Üretici Firma & Menşe Durumu</th>
+              <th style="padding:10px 10px; text-align:center; min-width:150px; border:1px solid #fde68a;">Finansal Risk (S_F, %35)</th>
+              <th style="padding:10px 10px; text-align:center; min-width:150px; border:1px solid #fde68a;">Düzenleyici Risk (S_R, %25)</th>
+              <th style="padding:10px 10px; text-align:center; min-width:160px; border:1px solid #fde68a;">Bilgi Akışı (S_B, %40)</th>
+              <th style="padding:10px 10px; text-align:center; min-width:120px; border:1px solid #fde68a;">Nihai R₈ Skoru</th>
+              <th style="padding:10px 10px; text-align:center; width:130px; border:1px solid #fde68a;">İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pageItems.map((item, idx) => {
+              const r = item.record;
+              const seq = startIdx + idx + 1;
+              const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+              const drugName = r.generic_name || r.brand_name || 'İsimsiz İlaç';
+              const orig = (r.greenData && r.greenData.origin || 'İTHAL').toUpperCase();
+              return `
+                <tr style="background:${isSelected ? '#fffbeb' : (idx % 2 === 0 ? '#ffffff' : '#fffdf5')}; border-bottom:1px solid #fef3c7;">
+                  <td style="text-align:center; font-weight:700; color:#64748b; padding:10px 8px; border:1px solid #fde68a;">
+                    ${seq}
+                  </td>
+                  <td style="padding:10px 12px; border:1px solid #fde68a;">
+                    <div style="font-weight:800; color:#0f2942; font-size:13px;">${esc(drugName)}</div>
+                    ${r.brand_name && r.brand_name !== r.generic_name ? `<div style="font-size:11px; color:#5a7590;">Marka: ${esc(r.brand_name)}</div>` : ''}
+                    <div style="font-size:10.5px; color:#64748b; margin-top:2px;">
+                      Durum: <b style="color:${r.shortage_status === 'Discontinued' ? '#dc2626' : '#d97706'};">${esc(r.shortage_status || 'Current')}</b>
+                    </div>
+                  </td>
+                  <td style="padding:10px 12px; border:1px solid #fde68a;">
+                    <div style="font-weight:700; color:#334155; font-size:12px;">${esc(r.manufacturer || r.vendor || 'Bilinmiyor')}</div>
+                    <div style="margin-top:3px; display:inline-block;">
+                      <span class="badge" style="background:${orig === 'İMAL' ? '#dcfce7' : (orig.includes('İMAL') ? '#e0f2fe' : '#ffedd5')}; color:${orig === 'İMAL' ? '#166534' : (orig.includes('İMAL') ? '#0369a1' : '#9a3412')}; border:1px solid ${orig === 'İMAL' ? '#86efac' : (orig.includes('İMAL') ? '#bae6fd' : '#fed7aa')}; font-size:10px; font-weight:800; padding:2px 6px;">
+                        ${orig}
+                      </span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <span style="font-size:14px; font-weight:900; color:${item.sF >= 80 ? '#dc2626' : (item.sF >= 60 ? '#ea580c' : '#16a34a')};">
+                      ${item.sF}
+                    </span>
+                    <span style="font-size:11px; color:#94a3b8;">/100</span>
+                    <div style="font-size:10px; color:#64748b; margin-top:2px; max-width:140px; margin-left:auto; margin-right:auto; line-height:1.25;">
+                      ${item.isFinancialExit ? '<span style="color:#dc2626; font-weight:700;">🚨 Ekonomik Çekilme</span>' : item.isLocal ? '<span style="color:#16a34a; font-weight:700;">Yerli Üretim</span>' : '<span style="color:#ea580c; font-weight:700;">İthal Kur Riski</span>'}
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <span style="font-size:14px; font-weight:900; color:${item.sR >= 80 ? '#dc2626' : (item.sR >= 60 ? '#ea580c' : '#16a34a')};">
+                      ${item.sR}
+                    </span>
+                    <span style="font-size:11px; color:#94a3b8;">/100</span>
+                    <div style="font-size:10px; color:#64748b; margin-top:2px; max-width:140px; margin-left:auto; margin-right:auto; line-height:1.25;">
+                      ${item.isRegulatoryDelay ? '<span style="color:#dc2626; font-weight:700;">🚨 Mevzuat Gecikmesi</span>' : '<span style="color:#ea580c; font-weight:700;">INCB/TİTCK Kota</span>'}
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <span style="font-size:14px; font-weight:900; color:${item.sB >= 60 ? '#b45309' : '#16a34a'};">
+                      ${item.sB}
+                    </span>
+                    <span style="font-size:11px; color:#94a3b8;">/100</span>
+                    <div style="margin-top:2px;">
+                      ${item.hasDataReliabilityWarning ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-size:9.5px; font-weight:800; padding:1px 5px;" title="${esc(item.reliabilityWarningText)}">
+                          ⚠️ Veri Belirsizliği
+                        </span>
+                      ` : `
+                        <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-size:9.5px; font-weight:800; padding:1px 5px;">
+                          ✓ Doğrulanmış
+                        </span>
+                      `}
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <span style="font-size:16px; font-weight:900; color:${item.color}; font-family:Outfit;">
+                      ${item.r8Score}
+                    </span>
+                    <span style="font-size:11px; color:#94a3b8;">/100</span>
+                    <div>
+                      <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-size:9.5px; font-weight:800; padding:1px 6px;">
+                        ${item.level.split(' ')[0]}
+                      </span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <button type="button" class="button secondary" style="font-size:11px; padding:5px 10px; font-weight:700; width:100%; border-color:#fcd34d; background:#fff; color:#92400e;" onclick="applySingleDrugR8ToCriterion('${r.id}')">
+                      🎯 Kriter 8'e Aktar
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Sayfalama -->
+      ${totalPages > 1 ? `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:10px;">
+          <div style="font-size:12px; color:#64748b;">
+            Toplam <b>${totalFiltered}</b> ilaçtan <b>${startIdx + 1}–${Math.min(startIdx + pageSize, totalFiltered)}</b> arası gösteriliyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11.5px; padding:4px 10px;" ${r8DrugFilterState.page <= 1 ? 'disabled' : ''} onclick="handleR8DrugPage(${r8DrugFilterState.page - 1})">
+              ‹ Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; color:#0f2942; padding:0 8px;">
+              ${r8DrugFilterState.page} / ${totalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11.5px; padding:4px 10px;" ${r8DrugFilterState.page >= totalPages ? 'disabled' : ''} onclick="handleR8DrugPage(${r8DrugFilterState.page + 1})">
+              Sonraki ›
+            </button>
+          </div>
+        </div>
+      ` : ''}
+    </section>
+
+    <!-- 4. BÖLÜM: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ VE MATEMATİKSEL DENKLEM -->
+    <section class="glass panel" style="padding: 22px; border-radius:14px; border:1.5px solid #fcd34d; background:#ffffff;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+        <div>
+          <h3 style="margin:0 0 4px; font-size:16.5px; font-family:Outfit; color:#92400e; display:flex; align-items:center; gap:8px;">
+            <span>🧮</span> 4. Kriter İçi Alt Gösterge Sistemi ve Matematiksel Denklem
+          </h3>
+          <p style="margin:0; font-size:12.5px; color:#64748b;">
+            Kullanıcının belirlediği iç ağırlık modeliyle hesaplanan formül ve dinamik katsayı kontrolü:
+          </p>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="button secondary" style="font-size:11px; padding:6px 12px; font-weight:700; border-color:#fcd34d;" onclick="distributeSubWeightsEqually(8, true)">
+            ⚖️ Alt Ağırlıkları Eşit Dağıt
+          </button>
+          <button type="button" class="button" style="font-size:11px; padding:6px 12px; font-weight:700; background:#d97706; color:#fff; border:none;" onclick="addSubCriterion(8)">
+            + Alt Gösterge Ekle
+          </button>
+        </div>
+      </div>
+
+      <!-- LaTeX Formül Kutusu -->
+      <div style="background:#fffbeb; border:1.5px solid #fde68a; border-radius:10px; padding:14px 18px; margin-bottom:16px; font-family:'DM Mono', monospace; font-size:13px; color:#78350f;">
+        <div style="font-weight:800; margin-bottom:6px; color:#92400e;">Matematiksel Eşitlik:</div>
+        <div style="font-size:14px; font-weight:700; color:#0f2942;">
+          R₈ = 0.35 · S_F + 0.25 · S_R + 0.40 · S_B
+        </div>
+        <div style="font-size:11.5px; color:#64748b; margin-top:4px;">
+          Burada: S_F = Finansal Riskler (%35), S_R = Düzenleyici Riskler (%25), S_B = Bilgi Akışı & Güvenilirlik (%40).
+        </div>
+      </div>
+
+      <!-- Alt Göstergeler Tablosu -->
+      <div style="overflow-x:auto;">
+        <table class="dsrds-subcrit-table" style="width:100%; border-collapse:collapse; font-size:12.5px;">
+          <thead>
+            <tr style="background:#fef3c7; color:#92400e;">
+              <th style="padding:10px 8px; text-align:center; width:45px; border:1px solid #fde68a;">#</th>
+              <th style="padding:10px 12px; text-align:left; border:1px solid #fde68a;">Alt Gösterge Tanımı</th>
+              <th style="padding:10px 10px; text-align:center; width:120px; border:1px solid #fde68a;">Veri Durumu</th>
+              <th style="padding:10px 10px; text-align:center; width:100px; border:1px solid #fde68a;">İç Ağırlık (%)</th>
+              <th style="padding:10px 10px; text-align:center; width:130px; border:1px solid #fde68a;">Risk Puanı (0–100)</th>
+              <th style="padding:10px 10px; text-align:center; width:110px; border:1px solid #fde68a;">Kriter Katkısı</th>
+              <th style="padding:10px 8px; text-align:center; width:50px; border:1px solid #fde68a;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              return `
+                <tr style="border-bottom:1px solid #fef3c7;">
+                  <td style="text-align:center; font-weight:800; color:#64748b; padding:10px 8px; border:1px solid #fde68a;">
+                    S_{8,${idx + 1}}
+                  </td>
+                  <td style="padding:10px 12px; border:1px solid #fde68a;">
+                    <input type="text" value="${esc(sub.name)}" style="width:100%; padding:6px 10px; border-radius:6px; border:1.5px solid #fcd34d; font-size:12.5px; font-weight:600;" onchange="updateSubCriterionName(8, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <span class="badge" style="background:${sub.dataStatus === 'warning' ? '#fffbeb' : '#ecfdf5'}; color:${sub.dataStatus === 'warning' ? '#b45309' : '#065f46'}; border:1px solid ${sub.dataStatus === 'warning' ? '#fde68a' : '#a7f3d0'}; font-weight:800; font-size:10.5px; padding:3px 8px;">
+                      ${sub.dataStatus === 'warning' ? '⚠️ Belirsizlik' : '✓ Mevcut'}
+                    </span>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="width:60px; text-align:center; padding:5px 6px; border-radius:6px; border:1.5px solid #fcd34d; font-weight:700;" onchange="updateSubCriterionWeight(8, ${sub.id}, this.value)">
+                      <span style="font-weight:700; color:#64748b;">%</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
+                      <input type="number" min="0" max="100" step="0.1" value="${sub.score}" style="width:70px; text-align:center; padding:5px 6px; border-radius:6px; border:1.5px solid #fcd34d; font-weight:800; color:#d97706;" onchange="updateSubCriterionScore(8, ${sub.id}, this.value)">
+                      <span style="font-size:11px; color:#94a3b8;">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#d97706; padding:10px 8px; border:1px solid #fde68a;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center; padding:10px 8px; border:1px solid #fde68a;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(8, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#fffbeb; font-weight:800; border-top:2px solid #fcd34d;">
+              <td colspan="3" style="padding:10px 12px; color:#92400e;">
+                Alt Ağırlıklı Ortalama Risk Skoru (R₈):
+              </td>
+              <td style="text-align:center; color:${subWeightSum === 100 ? '#16a34a' : '#dc2626'}; font-size:13px; padding:10px 8px; border:1px solid #fde68a;">
+                ${subWeightSum}% ${subWeightSum === 100 ? '✓' : '⚠️'}
+              </td>
+              <td style="text-align:center; font-size:15px; color:#d97706; padding:10px 8px; border:1px solid #fde68a;">
+                ${subScore.toFixed(2)} / 100
+              </td>
+              <td style="text-align:center; color:#d97706; font-family:'DM Mono', monospace; padding:10px 8px; border:1px solid #fde68a;">
+                ${subScore.toFixed(2)}
+              </td>
+              <td style="border:1px solid #fde68a;"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function riskCriteriaPage() {
   const { totalWeightPercent, totalWeightDecimal, rTotal, isBalanced } = calculateOverallRiskScores();
   const tier = getCriteriaRiskTier(rTotal);
@@ -10670,6 +11565,10 @@ function riskCriteriaPage() {
     }
     if (c.id === 7) {
       renderCriterion7DetailPage(c);
+      return;
+    }
+    if (c.id === 8) {
+      renderCriterion8DetailPage(c);
       return;
     }
     const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
