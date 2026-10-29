@@ -64,6 +64,13 @@
         "Psychiatry"
       ],
       "sample_ndc": "0378-6860-77"
+    },
+    "medicare_data": {
+      "claims": 2446459,
+      "spending": 250686808.98000002,
+      "benes": 575145,
+      "claims_display": "2.4M Reçete",
+      "spending_display": "$250.7 Milyon"
     }
   },
   {
@@ -119,6 +126,13 @@
         "Neurology"
       ],
       "sample_ndc": "50242-085-27"
+    },
+    "medicare_data": {
+      "claims": 0,
+      "spending": 0.0,
+      "benes": 0,
+      "claims_display": "Part B / Yatarak",
+      "spending_display": "Hastane Protokolü"
     }
   },
   {
@@ -173,6 +187,13 @@
         "Gastroenterology"
       ],
       "sample_ndc": "0006-3066-03"
+    },
+    "medicare_data": {
+      "claims": 20575,
+      "spending": 13237880.540000001,
+      "benes": 8909,
+      "claims_display": "20.6K Reçete",
+      "spending_display": "$13.2 Milyon"
     }
   },
   {
@@ -226,6 +247,13 @@
         "Oncology"
       ],
       "sample_ndc": "63323-637-10"
+    },
+    "medicare_data": {
+      "claims": 0,
+      "spending": 0.0,
+      "benes": 0,
+      "claims_display": "Part B / Yatarak",
+      "spending_display": "Hastane Protokolü"
     }
   },
   {
@@ -278,6 +306,13 @@
         "Reproductive"
       ],
       "sample_ndc": "0480-5795-08"
+    },
+    "medicare_data": {
+      "claims": 0,
+      "spending": 0.0,
+      "benes": 0,
+      "claims_display": "Part B / Yatarak",
+      "spending_display": "Hastane Protokolü"
     }
   },
   {
@@ -332,6 +367,13 @@
         "Oncology"
       ],
       "sample_ndc": "50742-431-08"
+    },
+    "medicare_data": {
+      "claims": 3499,
+      "spending": 1833445.04,
+      "benes": 1101,
+      "claims_display": "3.5K Reçete",
+      "spending_display": "$1.8 Milyon"
     }
   },
   {
@@ -386,6 +428,13 @@
         "Other"
       ],
       "sample_ndc": "50633-310-11"
+    },
+    "medicare_data": {
+      "claims": 0,
+      "spending": 0.0,
+      "benes": 0,
+      "claims_display": "Part B / Yatarak",
+      "spending_display": "Hastane Protokolü"
     }
   },
   {
@@ -446,6 +495,13 @@
         "Pediatric"
       ],
       "sample_ndc": "0338-3991-01"
+    },
+    "medicare_data": {
+      "claims": 12,
+      "spending": 2564.52,
+      "benes": 0,
+      "claims_display": "12 Reçete",
+      "spending_display": "$2.6 Bin"
     }
   },
   {
@@ -516,6 +572,13 @@
         "Endocrinology/Metabolism"
       ],
       "sample_ndc": "0002-8235-99"
+    },
+    "medicare_data": {
+      "claims": 29477382,
+      "spending": 9144142982.839996,
+      "benes": 10911929,
+      "claims_display": "29.5M Reçete",
+      "spending_display": "$9.14 Milyar"
     }
   },
   {
@@ -580,6 +643,13 @@
         "Endocrinology/Metabolism"
       ],
       "sample_ndc": "71288-563-84"
+    },
+    "medicare_data": {
+      "claims": 296865,
+      "spending": 193321957.3,
+      "benes": 97880,
+      "claims_display": "296.9K Reçete",
+      "spending_display": "$193.3 Milyon"
     }
   },
   {
@@ -640,6 +710,13 @@
         "Rheumatology"
       ],
       "sample_ndc": "63323-123-10"
+    },
+    "medicare_data": {
+      "claims": 3223654,
+      "spending": 109833041.09000002,
+      "benes": 1028195,
+      "claims_display": "3.2M Reçete",
+      "spending_display": "$109.8 Milyon"
     }
   },
   {
@@ -699,6 +776,13 @@
         "Neurology"
       ],
       "sample_ndc": "0409-2596-05"
+    },
+    "medicare_data": {
+      "claims": 131602,
+      "spending": 59325150.54,
+      "benes": 93730,
+      "claims_display": "131.6K Reçete",
+      "spending_display": "$59.3 Milyon"
     }
   },
   {
@@ -753,6 +837,13 @@
         "Antiviral"
       ],
       "sample_ndc": "82154-0451-4"
+    },
+    "medicare_data": {
+      "claims": 9470,
+      "spending": 36482518.12,
+      "benes": 1789,
+      "claims_display": "9.5K Reçete",
+      "spending_display": "$36.5 Milyon"
     }
   },
   {
@@ -808,6 +899,13 @@
         "Endocrinology/Metabolism"
       ],
       "sample_ndc": "0169-4314-30"
+    },
+    "medicare_data": {
+      "claims": 17721322,
+      "spending": 23969808738.26,
+      "benes": 4166242,
+      "claims_display": "17.7M Reçete",
+      "spending_display": "$23.97 Milyar"
     }
   },
   {
@@ -863,6 +961,13 @@
         "Endocrinology/Metabolism"
       ],
       "sample_ndc": "0169-7703-21"
+    },
+    "medicare_data": {
+      "claims": 39052,
+      "spending": 233879251.28,
+      "benes": 7267,
+      "claims_display": "39.1K Reçete",
+      "spending_display": "$233.9 Milyon"
     }
   },
   {
@@ -914,6 +1019,13 @@
         "Anti-Infective"
       ],
       "sample_ndc": "65219-434-20"
+    },
+    "medicare_data": {
+      "claims": 105407,
+      "spending": 48476182.49,
+      "benes": 36131,
+      "claims_display": "105.4K Reçete",
+      "spending_display": "$48.5 Milyon"
     }
   },
   {
@@ -969,6 +1081,13 @@
         "Antiviral"
       ],
       "sample_ndc": "0049-3190-01"
+    },
+    "medicare_data": {
+      "claims": 51642,
+      "spending": 14154087.23,
+      "benes": 19065,
+      "claims_display": "51.6K Reçete",
+      "spending_display": "$14.2 Milyon"
     }
   }
 ]

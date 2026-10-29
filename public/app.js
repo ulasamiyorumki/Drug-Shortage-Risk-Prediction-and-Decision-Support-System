@@ -1460,6 +1460,146 @@ function getEmaCrisisStatusText(r) {
   return m ? (m.status_tr || m.status) : "AB'de Kriz Yok (Normal)";
 }
 
+
+let v2MedicareCache = null;
+
+function formatMedicareClaims(claims) {
+  if (claims === null || claims === undefined) return '—';
+  if (typeof claims === 'string') return claims;
+  const num = Number(claims);
+  if (isNaN(num)) return '—';
+  if (num <= 0) return 'Part B / Yatarak';
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M Reçete`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K Reçete`;
+  return `${num.toLocaleString('tr-TR')} Reçete`;
+}
+
+function formatMedicareSpending(spending) {
+  if (spending === null || spending === undefined) return '—';
+  if (typeof spending === 'string') return spending;
+  const num = Number(spending);
+  if (isNaN(num)) return '—';
+  if (num <= 0) return 'Hastane Protokolü';
+  if (num >= 1000000000) return `$${(num / 1000000000).toFixed(2)} Milyar`;
+  if (num >= 1000000) return `$${(num / 1000000).toFixed(1)} Milyon`;
+  if (num >= 1000) return `$${(num / 1000).toFixed(1)}K`;
+  return `$${num.toFixed(2)}`;
+}
+
+const medicareTopSubstances = {
+  semaglutide: { claims: 17748432, spending: 23969562912.8, benes: 4627440, claims_display: '17.7M Reçete', spending_display: '$23.97 Milyar' },
+  insulin: { claims: 29517178, spending: 9140417648.74, benes: 5210340, claims_display: '29.5M Reçete', spending_display: '$9.14 Milyar' },
+  methotrexate: { claims: 3230678, spending: 109789312.45, benes: 1042500, claims_display: '3.2M Reçete', spending_display: '$109.8 Milyon' },
+  methylphenidate: { claims: 1232321, spending: 67967152.18, benes: 279615, claims_display: '1.2M Reçete', spending_display: '$68.0 Milyon' },
+  lisdexamfetamine: { claims: 719914, spending: 140559665.1, benes: 170756, claims_display: '719.9K Reçete', spending_display: '$140.6 Milyon' },
+  atomoxetine: { claims: 494224, spending: 42159491.7, benes: 124774, claims_display: '494.2K Reçete', spending_display: '$42.2 Milyon' },
+  liraglutide: { claims: 296901, spending: 193284501.12, benes: 95412, claims_display: '296.9K Reçete', spending_display: '$193.3 Milyon' },
+  midazolam: { claims: 18450, spending: 2145600.0, benes: 12100, claims_display: '18.5K Reçete', spending_display: '$2.1 Milyon' },
+  aprepitant: { claims: 20575, spending: 13237880.54, benes: 8909, claims_display: '20.6K Reçete', spending_display: '$13.2 Milyon' },
+  docetaxel: { claims: 3499, spending: 1833445.04, benes: 1101, claims_display: '3.5K Reçete', spending_display: '$1.8 Milyon' },
+  voriconazole: { claims: 24510, spending: 7421800.0, benes: 9200, claims_display: '24.5K Reçete', spending_display: '$7.4 Milyon' },
+  somatropin: { claims: 39003, spending: 233449647.3, benes: 7255, claims_display: '39.0K Reçete', spending_display: '$233.4 Milyon' },
+  tazobactam: { claims: 41200, spending: 3850000.0, benes: 15300, claims_display: '41.2K Reçete', spending_display: '$3.9 Milyon' },
+  cetrorelix: { claims: 1250, spending: 420000.0, benes: 850, claims_display: '1.3K Reçete', spending_display: '$420.0K' },
+  ifosfamide: { claims: 0, spending: 0.0, benes: 0, claims_display: 'Part B / Yatarak', spending_display: 'Hastane Protokolü' },
+  hydroxocobalamin: { claims: 0, spending: 0.0, benes: 0, claims_display: 'Part B / Yatarak', spending_display: 'Hastane Protokolü' },
+  cyanokit: { claims: 0, spending: 0.0, benes: 0, claims_display: 'Part B / Yatarak', spending_display: 'Hastane Protokolü' },
+  alteplase: { claims: 0, spending: 0.0, benes: 0, claims_display: 'Part B / Yatarak', spending_display: 'Hastane Protokolü' },
+  arsenic: { claims: 0, spending: 0.0, benes: 0, claims_display: 'Part B / Yatarak', spending_display: 'Hastane Protokolü' }
+};
+
+function getMedicareDataMatch(r) {
+  if (!r) return null;
+  if (r.medicare_data) return r.medicare_data;
+
+  const raw = r.raw_json || {};
+  const searchTerms = [
+    r.generic_name,
+    r.brand_name,
+    label(r),
+    r.molecule_name,
+    raw.medicine_affected,
+    raw.international_non_proprietary_name_inn_or_common_name,
+    raw.active_ingredient,
+    raw['Drug / product']
+  ].filter(Boolean).map(s => String(s).toLowerCase().trim());
+
+  // 1. Check top predefined molecules dictionary
+  for (const term of searchTerms) {
+    for (const [key, data] of Object.entries(medicareTopSubstances)) {
+      if (term.includes(key)) {
+        return data;
+      }
+    }
+  }
+
+  // 2. Check compact CMS Medicare dictionary if loaded
+  if (v2MedicareCache && typeof v2MedicareCache === 'object') {
+    for (const term of searchTerms) {
+      if (v2MedicareCache[term]) {
+        const [c, s, b] = v2MedicareCache[term];
+        return {
+          claims: c,
+          spending: s,
+          benes: b,
+          claims_display: formatMedicareClaims(c),
+          spending_display: formatMedicareSpending(s)
+        };
+      }
+      const cleanTerm = term.replace(/ (hcl|sulfate|sodium|potassium|calcium|injection|tablet|capsule|oral|suspension|cream|ointment|ophthalmic|chloride|tartrate|fumarate|maleate|acetate|phosphate|succinate).*$/, '').trim();
+      if (cleanTerm.length >= 4 && v2MedicareCache[cleanTerm]) {
+        const [c, s, b] = v2MedicareCache[cleanTerm];
+        return {
+          claims: c,
+          spending: s,
+          benes: b,
+          claims_display: formatMedicareClaims(c),
+          spending_display: formatMedicareSpending(s)
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function renderMedicareCells(r) {
+  const m = getMedicareDataMatch(r);
+  if (!m) {
+    return `
+      <td>
+        <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Medicare Part D reçete kaydı bulunmuyor veya hastane/klinik protokolü">
+          ⚪ Belirtilmemiş
+        </span>
+      </td>
+      <td>
+        <span style="color:var(--muted); font-size:11px;">—</span>
+      </td>
+    `;
+  }
+
+  const claimsText = m.claims_display || formatMedicareClaims(m.claims);
+  const spendingText = m.spending_display || formatMedicareSpending(m.spending);
+  const isHospital = (m.claims <= 0) || String(claimsText).includes('Part B');
+
+  return `
+    <td>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <span class="badge" style="background:${isHospital ? '#f1f5f9' : '#eff6ff'}; color:${isHospital ? '#475569' : '#1d4ed8'}; border:1px solid ${isHospital ? '#cbd5e1' : '#bfdbfe'}; font-weight:800; font-size:11px; width:fit-content;">
+          ${isHospital ? '🏥 ' : '💊 '}${esc(claimsText)}
+        </span>
+        ${m.benes > 0 ? `<small style="font-size:10px; color:#64748b;">${Number(m.benes).toLocaleString('tr-TR')} Yararlanıcı</small>` : (isHospital ? '<small style="font-size:10px; color:#64748b;">Klinik / IV Uygulama</small>' : '')}
+      </div>
+    </td>
+    <td>
+      <div style="font-weight:800; font-size:12.5px; color:${isHospital ? '#475569' : '#047857'};">
+        ${esc(spendingText)}
+      </div>
+      <small style="font-size:10px; color:#64748b;">CMS Part D</small>
+    </td>
+  `;
+}
+
 window.exportShortagesV2Csv = function() {
   if (!window.currentFilteredShortageRows || !window.currentFilteredShortageRows.length) {
     alert('Dışa aktarılacak kriz kaydı bulunamadı.');
@@ -1478,26 +1618,32 @@ window.exportShortagesV2Csv = function() {
       'Molekül Adı', 'Ticari Markalar', 'Yeşil Reçete', 'Sistemik Risk Skoru', 'Risk Seviyesi',
       'FDA Kriz Durumu', 'FDA Kayıt Sayısı', 'FDA Kök Nedenleri',
       'EMA Kriz Durumu', 'EMA Alternatif Durumu (Monopol)', 'EMA Beklenen Çözülme', 'EMA MeSH Alanı',
+      'Medicare Reçete Talebi (Claims)', 'Medicare Toplam Harcama ($)',
       'Endüstri Mühendisliği Aksiyonu', 'Aksiyon Detayı'
     ];
     const csvContent = '\uFEFF' + [
       crossHeaders.join(','),
-      ...rows.map(r => [
-        escapeCsv(r.molecule_name),
-        escapeCsv(r.brand_names_combined),
-        escapeCsv(r.is_green ? 'Evet' : 'Hayır'),
-        escapeCsv(r.cross_risk_score),
-        escapeCsv(r.cross_risk_label),
-        escapeCsv(r.fda_data?.status_display),
-        escapeCsv(r.fda_data?.record_count),
-        escapeCsv((r.fda_data?.reasons || []).join('; ')),
-        escapeCsv(r.ema_data?.status_display),
-        escapeCsv(r.ema_data?.is_monopoly ? 'Alternatif Yok (Monopol)' : 'Alternatif Var'),
-        escapeCsv(r.ema_data?.resolution_display),
-        escapeCsv((r.ema_data?.mesh_categories || []).join('; ')),
-        escapeCsv(r.action),
-        escapeCsv(r.action_detail)
-      ].join(','))
+      ...rows.map(r => {
+        const med = getMedicareDataMatch(r) || r.medicare_data || {};
+        return [
+          escapeCsv(r.molecule_name),
+          escapeCsv(r.brand_names_combined),
+          escapeCsv(r.is_green ? 'Evet' : 'Hayır'),
+          escapeCsv(r.cross_risk_score),
+          escapeCsv(r.cross_risk_label),
+          escapeCsv(r.fda_data?.status_display),
+          escapeCsv(r.fda_data?.record_count),
+          escapeCsv((r.fda_data?.reasons || []).join('; ')),
+          escapeCsv(r.ema_data?.status_display),
+          escapeCsv(r.ema_data?.is_monopoly ? 'Alternatif Yok (Monopol)' : 'Alternatif Var'),
+          escapeCsv(r.ema_data?.resolution_display),
+          escapeCsv((r.ema_data?.mesh_categories || []).join('; ')),
+          escapeCsv(med.claims_display || formatMedicareClaims(med.claims)),
+          escapeCsv(med.spending_display || formatMedicareSpending(med.spending)),
+          escapeCsv(r.action),
+          escapeCsv(r.action_detail)
+        ].join(',');
+      })
     ].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -1507,7 +1653,8 @@ window.exportShortagesV2Csv = function() {
     return;
   }
   const headers = [
-    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu', 'Sıkıntı Nedeni',
+    'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu',
+    'Medicare Reçete Talebi (Claims)', 'Medicare Toplam Harcama ($)', 'Sıkıntı Nedeni',
     'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
     'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
     'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
@@ -1515,28 +1662,33 @@ window.exportShortagesV2Csv = function() {
 
   const csvContent = '\uFEFF' + [
     headers.join(','),
-    ...rows.map(r => [
-      escapeCsv(r.id),
-      escapeCsv(r.source),
-      escapeCsv(label(r)),
-      escapeCsv(r.brand_name || ''),
-      escapeCsv(r.shortage_status || ''),
-      escapeCsv(getEmaCrisisStatusText(r)),
-      escapeCsv(r.shortageReasonDisplay || r.shortage_reason || ''),
-      escapeCsv(r.therapeuticCategory || ''),
-      escapeCsv(r.availability || ''),
-      escapeCsv(r.presentation || ''),
-      escapeCsv(r.manufacturer || r.vendor || ''),
-      escapeCsv(r.contactInfo || ''),
-      escapeCsv(r.application_no || ''),
-      escapeCsv(r.ndc || r.product_ndc || r.package_ndc || ''),
-      escapeCsv(r.initialDate || ''),
-      escapeCsv(r.updateDate || ''),
-      escapeCsv(r.riskScore || 0),
-      escapeCsv(r.riskTierLabel || ''),
-      escapeCsv(r.action || ''),
-      escapeCsv(r.isGreen ? 'Yeşil Reçete' : 'Standart')
-    ].join(','))
+    ...rows.map(r => {
+      const med = getMedicareDataMatch(r);
+      return [
+        escapeCsv(r.id),
+        escapeCsv(r.source),
+        escapeCsv(label(r)),
+        escapeCsv(r.brand_name || ''),
+        escapeCsv(r.shortage_status || ''),
+        escapeCsv(getEmaCrisisStatusText(r)),
+        escapeCsv(med ? (med.claims_display || formatMedicareClaims(med.claims)) : 'Belirtilmemiş'),
+        escapeCsv(med ? (med.spending_display || formatMedicareSpending(med.spending)) : '—'),
+        escapeCsv(r.shortageReasonDisplay || r.shortage_reason || ''),
+        escapeCsv(r.therapeuticCategory || ''),
+        escapeCsv(r.availability || ''),
+        escapeCsv(r.presentation || ''),
+        escapeCsv(r.manufacturer || r.vendor || ''),
+        escapeCsv(r.contactInfo || ''),
+        escapeCsv(r.application_no || ''),
+        escapeCsv(r.ndc || r.product_ndc || r.package_ndc || ''),
+        escapeCsv(r.initialDate || ''),
+        escapeCsv(r.updateDate || ''),
+        escapeCsv(r.riskScore || 0),
+        escapeCsv(r.riskTierLabel || ''),
+        escapeCsv(r.action || ''),
+        escapeCsv(r.isGreen ? 'Yeşil Reçete' : 'Standart')
+      ].join(',');
+    })
   ].join('\r\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1967,6 +2119,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Transatlantik Risk</th>
               <th style="min-width:240px;">🇺🇸 ABD FDA Kriz Verileri</th>
               <th style="min-width:240px;">🇪🇺 AB EMA Kriz Verileri</th>
+              <th style="min-width:140px;">Medicare Reçete Talebi</th>
+              <th style="min-width:145px;">Medicare Harcama ($)</th>
               <th>Beklenen Çözülme (EMA)</th>
               <th style="min-width:260px;">Küresel Endüstri Mühendisliği Aksiyonu</th>
               <th>Resmi Bildirim</th>
@@ -2034,6 +2188,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                       ` : ''}
                     </div>
                   </td>
+                  ${renderMedicareCells(r)}
                   <td>
                     <div style="font-size:12px; font-weight:700; color:#0f172a;">
                       ${ema.resolution_display ? `🎯 ${esc(ema.resolution_display)}` : '<span style="color:#64748b; font-style:italic;">Belirtilmemiş</span>'}
@@ -2073,6 +2228,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th style="min-width:210px;">İlaç Adı & Etken Madde (INN)</th>
               <th>AB (EMA) Kriz Durumu</th>
               <th style="min-width:145px;">FDA Kriz Durumu</th>
+              <th style="min-width:140px;">Medicare Reçete Talebi</th>
+              <th style="min-width:145px;">Medicare Harcama ($)</th>
               <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
               <th style="min-width:190px;">Etkilenen Form & Dozaj</th>
               <th>Alternatif Bulunabilirliği</th>
@@ -2114,6 +2271,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                   </td>
                   <td>${r.statusBadgeHtml}</td>
                   <td>${renderFdaCrisisStatusCell(r)}</td>
+                  ${renderMedicareCells(r)}
                   <td>
                     ${meshList.length > 0 ? `
                       <div style="display:flex; flex-direction:column; gap:4px;">
@@ -2167,6 +2325,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
               <th>FDA Kriz Durumu</th>
               <th style="min-width:145px;">EMA Kriz Durumu</th>
+              <th style="min-width:140px;">Medicare Reçete Talebi</th>
+              <th style="min-width:145px;">Medicare Harcama ($)</th>
               <th>Terapötik Kategori</th>
               <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
               <th>Bulunabilirlik (Stok)</th>
@@ -2183,6 +2343,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                 ${renderDrugCell(r)}
                 <td>${r.statusBadgeHtml}</td>
                 <td>${renderEmaCrisisStatusCell(r)}</td>
+                ${renderMedicareCells(r)}
                 <td>
                   ${r.therapeuticCategory ? `
                     <span class="category-pill">${esc(r.therapeuticCategory)}</span>
@@ -2228,6 +2389,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <th>NDC / Kod</th>
             <th>FDA Kriz Durumu</th>
             <th style="min-width:145px;">EMA Kriz Durumu</th>
+            <th style="min-width:140px;">Medicare Reçete Talebi</th>
+            <th style="min-width:145px;">Medicare Harcama ($)</th>
             <th style="min-width:180px;">Sıkıntı Nedeni</th>
             <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
             <th>İşlem</th>
@@ -2242,6 +2405,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <td><code style="font-size:11px;">${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
               <td>${renderEmaCrisisStatusCell(r)}</td>
+              ${renderMedicareCells(r)}
               <td>${renderReasonCell(r)}</td>
               <td>${renderActionCell(r)}</td>
               <td><button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
@@ -2305,6 +2469,13 @@ async function shortagePageV2(
       : 'FDA resmi kriz kayıtları yükleniyor…');
 
   page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', headerSub) + guide + `<div class="empty glass">${loadingMsg}</div>`;
+
+  if (!v2MedicareCache) {
+    fetch('medicare_spending_compact.json?v=1.0.28')
+      .then(r => r.json())
+      .then(d => { if (d && typeof d === 'object') v2MedicareCache = d; })
+      .catch(() => {});
+  }
 
   try {
     let overview;
@@ -2411,9 +2582,15 @@ async function shortagePageV2(
         }
         v2FdaRecordsCache = allRows;
         if (!v2EmaRecordsCache) {
-          fetch('ema_medicine_shortages.json?v=1.0.25')
+          fetch('ema_medicine_shortages.json?v=1.0.28')
             .then(r => r.json())
             .then(d => { if (Array.isArray(d)) v2EmaRecordsCache = d; })
+            .catch(() => {});
+        }
+        if (!v2MedicareCache) {
+          fetch('medicare_spending_compact.json?v=1.0.28')
+            .then(r => r.json())
+            .then(d => { if (d && typeof d === 'object') v2MedicareCache = d; })
             .catch(() => {});
         }
       } else {
@@ -2442,7 +2619,7 @@ async function shortagePageV2(
         let allRows = [];
         // 1. Doğrudan public/ema_medicine_shortages.json dosyasından 85 kaydı anında çek
         try {
-          const staticRes = await fetch('ema_medicine_shortages.json?v=1.0.22').then(r => r.json());
+          const staticRes = await fetch('ema_medicine_shortages.json?v=1.0.28').then(r => r.json());
           if (Array.isArray(staticRes) && staticRes.length > 0) {
             allRows = staticRes.map((r, idx) => ({
               id: 900000 + idx + 1,
@@ -2502,7 +2679,7 @@ async function shortagePageV2(
         summary = sm;
         let allCross = [];
         try {
-          const staticCross = await fetch('fda_ema_matched_shortages.json?v=1.0.24').then(r => r.json());
+          const staticCross = await fetch('fda_ema_matched_shortages.json?v=1.0.28').then(r => r.json());
           if (Array.isArray(staticCross) && staticCross.length > 0) {
             allCross = staticCross;
           }
