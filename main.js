@@ -64,6 +64,24 @@ function getCrossShortages() {
   return crossJsonCache;
 }
 
+let fdaJsonCache = null;
+function getFdaShortages() {
+  if (!fdaJsonCache) {
+    try {
+      let p = path.join(root, 'public', 'fda_shortages_records.json');
+      if (!fs.existsSync(p)) p = path.join(root, 'Datasets', 'DrugsFDA', 'drug-shortages.json');
+      if (fs.existsSync(p)) {
+        fdaJsonCache = JSON.parse(fs.readFileSync(p, 'utf8'));
+      } else {
+        fdaJsonCache = [];
+      }
+    } catch {
+      fdaJsonCache = [];
+    }
+  }
+  return fdaJsonCache;
+}
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost', port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
@@ -97,6 +115,13 @@ app.get('/api/overview', async (_req, res, next) => {
     } catch {
       // Dev/fallback mode if DB pool is offline
     }
+    const fdaList = getFdaShortages();
+    if (!counts.some(x => x.source === 'Drug Shortages') && fdaList.length > 0) {
+      counts.push({ source: 'Drug Shortages', count: fdaList.length });
+      if (!currentShortages) {
+        currentShortages = fdaList.filter(x => (x.shortage_status || '').toLowerCase() === 'current').length;
+      }
+    }
     const emaList = getEmaShortages();
     if (!counts.some(x => x.source === 'EMA Shortages') && emaList.length > 0) {
       counts.push({ source: 'EMA Shortages', count: emaList.length });
@@ -106,12 +131,17 @@ app.get('/api/overview', async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/ema-shortages', (req, res) => {
+app.get('/api/fda-shortages', (_req, res) => {
+  const fdaRows = getFdaShortages();
+  res.json({ total: fdaRows.length, rows: fdaRows });
+});
+
+app.get('/api/ema-shortages', (_req, res) => {
   const emaRows = getEmaShortages();
   res.json({ total: emaRows.length, rows: emaRows });
 });
 
-app.get('/api/cross-shortages', (req, res) => {
+app.get('/api/cross-shortages', (_req, res) => {
   const crossRows = getCrossShortages();
   res.json({ total: crossRows.length, rows: crossRows });
 });
@@ -256,7 +286,27 @@ app.get('/api/records', async (req, res, next) => {
     END, id DESC`;
     const [rows] = await pool.query(`SELECT id, source, report_year, generic_name, brand_name, manufacturer, vendor, ndc, product_ndc, package_ndc, application_no, shortage_status, shortage_reason, raw_json FROM drug_records ${where} ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, (page - 1) * limit]);
     res.json({ total: total.count, page, limit, rows: rows.map(parse) });
-  } catch (error) { next(error); }
+  } catch (error) {
+    if (safeSource(req.query.source) === 'Drug Shortages' || !req.query.source) {
+      let fdaRows = getFdaShortages();
+      if (fdaRows.length > 0) {
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 2000);
+        const q = String(req.query.q || '').trim().toLowerCase();
+        if (q) {
+          fdaRows = fdaRows.filter(r => (r.search_text || '').toLowerCase().includes(q));
+        }
+        if (req.query.status) {
+          const stLow = String(req.query.status).toLowerCase();
+          fdaRows = fdaRows.filter(r => (r.shortage_status || '').toLowerCase() === stLow);
+        }
+        const total = fdaRows.length;
+        const paginated = fdaRows.slice((page - 1) * limit, page * limit);
+        return res.json({ total, page, limit, rows: paginated });
+      }
+    }
+    next(error);
+  }
 });
 
 app.get('/api/records/:id', async (req, res, next) => {
@@ -266,45 +316,58 @@ app.get('/api/records/:id', async (req, res, next) => {
       const rec = emaList.find(x => x.id === Number(req.params.id));
       if (rec) return res.json({ record: rec, related: [] });
     }
-    const [[record]] = await pool.query('SELECT * FROM drug_records WHERE id = ?', [req.params.id]);
+    const fdaList = getFdaShortages();
+    const fdaRec = fdaList.find(x => String(x.id) === String(req.params.id));
+
+    let record = null;
+    let related = [];
+    try {
+      const [[dbRecord]] = await pool.query('SELECT * FROM drug_records WHERE id = ?', [req.params.id]);
+      record = dbRecord ? parse(dbRecord) : null;
+    } catch {}
+
+    if (!record && fdaRec) {
+      record = fdaRec;
+    }
     if (!record) return res.status(404).json({ message: 'Kayıt bulunamadı.' });
-    
+
     const rawKeys = [record.ndc, record.product_ndc, record.package_ndc, record.application_no].filter(k => k && k !== '|' && k !== '-');
     const nameStr = (record.generic_name || record.brand_name || '');
     const firstWord = nameStr.split(/[\s|,/]+/)[0].trim();
-    
+
     const clauses = [];
     const relatedParams = [];
-    
+
     if (firstWord && firstWord.length >= 3) {
       clauses.push('(generic_name LIKE ? OR brand_name LIKE ?)');
       relatedParams.push(`${firstWord}%`, `${firstWord}%`);
     }
-    
+
     for (const k of rawKeys) {
       clauses.push('(ndc = ? OR product_ndc = ? OR package_ndc = ? OR application_no = ?)');
       relatedParams.push(k, k, k, k);
     }
-    
-    let related = [];
+
     if (clauses.length) {
-      const [rows] = await pool.query(
-        `SELECT id, source, report_year, generic_name, brand_name, manufacturer, vendor, ndc, product_ndc, package_ndc, application_no, shortage_status, shortage_reason, raw_json 
-         FROM drug_records 
-         WHERE id <> ? AND (${clauses.join(' OR ')}) 
-         ORDER BY CASE 
-           WHEN source = 'Drug Shortages' THEN 1 
-           WHEN source = 'FDA Drugs' THEN 2 
-           WHEN source = 'VA Contracts' THEN 3 
-           WHEN source = 'CMS Medicare Part D' THEN 4 
-           ELSE 5 
-         END, id DESC 
-         LIMIT 250`, 
-        [record.id, ...relatedParams]
-      );
-      related = rows;
+      try {
+        const [rows] = await pool.query(
+          `SELECT id, source, report_year, generic_name, brand_name, manufacturer, vendor, ndc, product_ndc, package_ndc, application_no, shortage_status, shortage_reason, raw_json 
+           FROM drug_records 
+           WHERE id <> ? AND (${clauses.join(' OR ')}) 
+           ORDER BY CASE 
+             WHEN source = 'Drug Shortages' THEN 1 
+             WHEN source = 'FDA Drugs' THEN 2 
+             WHEN source = 'VA Contracts' THEN 3 
+             WHEN source = 'CMS Medicare Part D' THEN 4 
+             ELSE 5 
+           END, id DESC 
+           LIMIT 250`, 
+          [record.id, ...relatedParams]
+        );
+        related = rows.map(parse);
+      } catch {}
     }
-    res.json({ record: parse(record), related: related.map(parse) });
+    res.json({ record, related });
   } catch (error) { next(error); }
 });
 
@@ -312,31 +375,50 @@ app.get('/api/analytics/:view', async (req, res, next) => {
   try {
     const view = req.params.view;
     if (view === 'shortages') {
-      const [status] = await pool.query("SELECT COALESCE(shortage_status, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'Drug Shortages' GROUP BY shortage_status ORDER BY value DESC");
-      const [reasons] = await pool.query(`
-        SELECT 
-          CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END label, 
-          COUNT(*) value 
-        FROM drug_records 
-        WHERE source = 'Drug Shortages' 
-        GROUP BY CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END 
-        ORDER BY value DESC 
-        LIMIT 15
-      `);
-      const [topCompanies] = await pool.query(`
-        SELECT manufacturer label, COUNT(*) value 
-        FROM drug_records 
-        WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> '' 
-        GROUP BY manufacturer 
-        ORDER BY value DESC 
-        LIMIT 10
-      `);
-      const [[companiesCount]] = await pool.query(`
-        SELECT COUNT(DISTINCT manufacturer) count 
-        FROM drug_records 
-        WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> ''
-      `);
-      return res.json({ status, reasons, topCompanies, totalCompanies: companiesCount?.count || 0 });
+      try {
+        const [status] = await pool.query("SELECT COALESCE(shortage_status, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'Drug Shortages' GROUP BY shortage_status ORDER BY value DESC");
+        const [reasons] = await pool.query(`
+          SELECT 
+            CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END label, 
+            COUNT(*) value 
+          FROM drug_records 
+          WHERE source = 'Drug Shortages' 
+          GROUP BY CASE WHEN shortage_reason IS NULL OR TRIM(shortage_reason) = '' THEN 'Belirtilmemiş' ELSE TRIM(shortage_reason) END 
+          ORDER BY value DESC 
+          LIMIT 15
+        `);
+        const [topCompanies] = await pool.query(`
+          SELECT manufacturer label, COUNT(*) value 
+          FROM drug_records 
+          WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> '' 
+          GROUP BY manufacturer 
+          ORDER BY value DESC 
+          LIMIT 10
+        `);
+        const [[companiesCount]] = await pool.query(`
+          SELECT COUNT(DISTINCT manufacturer) count 
+          FROM drug_records 
+          WHERE source = 'Drug Shortages' AND manufacturer IS NOT NULL AND manufacturer <> ''
+        `);
+        return res.json({ status, reasons, topCompanies, totalCompanies: companiesCount?.count || 0 });
+      } catch {
+        const fdaList = getFdaShortages();
+        const statusMap = {};
+        const reasonMap = {};
+        const companyMap = {};
+        for (const r of fdaList) {
+          const st = r.shortage_status || 'Not available';
+          statusMap[st] = (statusMap[st] || 0) + 1;
+          const re = r.shortage_reason?.trim() || 'Belirtilmemiş';
+          reasonMap[re] = (reasonMap[re] || 0) + 1;
+          const co = r.manufacturer?.trim();
+          if (co) companyMap[co] = (companyMap[co] || 0) + 1;
+        }
+        const status = Object.entries(statusMap).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+        const reasons = Object.entries(reasonMap).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 15);
+        const topCompanies = Object.entries(companyMap).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+        return res.json({ status, reasons, topCompanies, totalCompanies: Object.keys(companyMap).length });
+      }
     }
     if (view === 'suppliers') {
       const [vendors] = await pool.query("SELECT COALESCE(vendor, 'Not available') label, COUNT(*) value FROM drug_records WHERE source = 'VA Contracts' GROUP BY vendor ORDER BY value DESC LIMIT 12");

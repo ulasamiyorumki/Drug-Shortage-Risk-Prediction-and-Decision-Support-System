@@ -2623,50 +2623,68 @@ async function shortagePageV2(
     } else if (source === 'Drug Shortages') {
       // ⚡ FDA Resmi Kriz Veri Tabanı (1.587 kayıt)
       // FDA kriz veri tabanındaki 1.587 kaydın tümü yüklenir ve önbelleğe alınır.
-      // Sunucu yanıtı 100 kayıtla sınırlasa dahi tüm sayfalar paralel çekilerek 1.587 kaydın tamamı eksiksiz alınır.
+      // 1. Önce doğrudan public/fda_shortages_records.json dosyasından 1.587 kaydı sıfır gecikmeyle çek
       if (!v2FdaRecordsCache || v2FdaRecordsCache.length < 1500) {
-        const [ov, sm, dt] = await Promise.all([
-          api('/api/overview'),
-          api('/api/analytics/shortages'),
-          api('/api/records?source=Drug%20Shortages&limit=2000')
+        let allRows = [];
+        try {
+          const staticRes = await fetch('fda_shortages_records.json?v=1.0.31').then(r => r.json());
+          if (Array.isArray(staticRes) && staticRes.length >= 1500) {
+            allRows = staticRes;
+          }
+        } catch (e) {
+          console.warn('FDA static fetch failed, falling back to API:', e);
+        }
+
+        const [ov, sm] = await Promise.all([
+          api('/api/overview').catch(() => null),
+          api('/api/analytics/shortages').catch(() => null)
         ]);
         overview = ov;
         summary = sm;
-        let allRows = (dt && Array.isArray(dt.rows)) ? dt.rows : [];
-        const expectedTotal = Number(dt?.total || overview?.counts?.find(x => x.source === 'Drug Shortages')?.count || 1587);
 
-        // Sunucu 100 kayıtlık sayfalama yapıyorsa, kalan sayfalar paralel getirilerek 1.587 kaydın tümü birleştirilir
-        if (expectedTotal > allRows.length && allRows.length > 0) {
-          const pageSize = allRows.length;
-          const totalPages = Math.ceil(expectedTotal / pageSize);
-          const pagePromises = [];
-          for (let p = 2; p <= totalPages; p++) {
-            pagePromises.push(api(`/api/records?source=Drug%20Shortages&limit=${pageSize}&page=${p}`));
-          }
-          const pageResults = await Promise.all(pagePromises);
-          for (const pr of pageResults) {
-            if (pr && Array.isArray(pr.rows)) {
-              allRows = allRows.concat(pr.rows);
+        // 2. Statik dosya eksikse veya boşsa API'den çekmeyi dene
+        if (allRows.length < 1500) {
+          try {
+            const dt = await api('/api/records?source=Drug%20Shortages&limit=2000');
+            allRows = (dt && Array.isArray(dt.rows)) ? dt.rows : [];
+            const expectedTotal = Number(dt?.total || overview?.counts?.find(x => x.source === 'Drug Shortages')?.count || 1587);
+
+            // Sunucu 100 kayıtlık sayfalama yapıyorsa, kalan sayfalar paralel getirilerek 1.587 kaydın tümü birleştirilir
+            if (expectedTotal > allRows.length && allRows.length > 0) {
+              const pageSize = allRows.length;
+              const totalPages = Math.ceil(expectedTotal / pageSize);
+              const pagePromises = [];
+              for (let p = 2; p <= totalPages; p++) {
+                pagePromises.push(api(`/api/records?source=Drug%20Shortages&limit=${pageSize}&page=${p}`).catch(() => null));
+              }
+              const pageResults = await Promise.all(pagePromises);
+              for (const pr of pageResults) {
+                if (pr && Array.isArray(pr.rows)) {
+                  allRows = allRows.concat(pr.rows);
+                }
+              }
             }
+          } catch (e) {
+            console.warn('API fetch failed:', e);
           }
         }
         v2FdaRecordsCache = allRows;
         if (!v2EmaRecordsCache) {
-          fetch('ema_medicine_shortages.json?v=1.0.28')
+          fetch('ema_medicine_shortages.json?v=1.0.31')
             .then(r => r.json())
             .then(d => { if (Array.isArray(d)) v2EmaRecordsCache = d; })
             .catch(() => {});
         }
         if (!v2MedicareCache) {
-          fetch('medicare_spending_compact.json?v=1.0.28')
+          fetch('medicare_spending_compact.json?v=1.0.31')
             .then(r => r.json())
             .then(d => { if (d && typeof d === 'object') v2MedicareCache = d; })
             .catch(() => {});
         }
       } else {
         const [ov, sm] = await Promise.all([
-          api('/api/overview'),
-          api('/api/analytics/shortages')
+          api('/api/overview').catch(() => null),
+          api('/api/analytics/shortages').catch(() => null)
         ]);
         overview = ov;
         summary = sm;
@@ -2888,7 +2906,19 @@ async function shortagePageV2(
       }
     }
 
-    const count = Object.fromEntries(overview.counts.map(x => [x.source, x.count]));
+    const count = Object.fromEntries(
+      overview?.counts
+        ? overview.counts.map(x => [x.source, x.count])
+        : [
+            ['Drug Shortages', v2FdaRecordsCache?.length || 1587],
+            ['EMA Shortages', v2EmaRecordsCache?.length || 85],
+            ['FDA Drugs', 0],
+            ['NDC Products', 0],
+            ['NDC Packages', 0],
+            ['CMS Medicare Part D', 0],
+            ['VA Contracts', 0]
+          ]
+    );
     const totalAllDrugs = Object.values(count).reduce((a, b) => a + Number(b), 0);
     const enriched = data.rows.map(enrichShortageRecord);
 
@@ -3111,10 +3141,10 @@ async function shortagePageV2(
     const filteredGreenCount = filtered.filter(r => r.isGreen).length;
     const filteredZeroEquivCount = filtered.filter(r => r.isGreen && (r.greenData?.localEquivCount === 0 || (r.shortage_status || '').includes('0 Muadil'))).length;
 
-    const currentCount = Number(overview.currentShortages || 0);
-    const totalShortages = Number(count['Drug Shortages'] || 0);
-    const discontinuedCount = Number(summary?.status?.find(s => s.label === 'To Be Discontinued')?.value || 427);
-    const resolvedCount = Number(summary?.status?.find(s => s.label === 'Resolved')?.value || 19);
+    const currentCount = Number(overview?.currentShortages || (v2FdaRecordsCache ? v2FdaRecordsCache.filter(r => (r.shortage_status || '').toLowerCase() === 'current').length : 1141));
+    const totalShortages = Number(count['Drug Shortages'] || (v2FdaRecordsCache?.length || 1587));
+    const discontinuedCount = Number(summary?.status?.find(s => s.label === 'To Be Discontinued')?.value || (v2FdaRecordsCache ? v2FdaRecordsCache.filter(r => (r.shortage_status || '').toLowerCase().includes('discontinued')).length : 427));
+    const resolvedCount = Number(summary?.status?.find(s => s.label === 'Resolved')?.value || (v2FdaRecordsCache ? v2FdaRecordsCache.filter(r => (r.shortage_status || '').toLowerCase() === 'resolved').length : 19));
     const totalCompanies = Number(summary?.totalCompanies || 142);
     const isFdaSource = source === 'Drug Shortages';
     const isEmaSource = source === 'EMA Shortages';
