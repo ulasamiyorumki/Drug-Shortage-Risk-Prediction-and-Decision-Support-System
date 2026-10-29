@@ -1700,6 +1700,15 @@ function enrichShortageRecord(r) {
   };
 }
 
+const crossSubstancesRegex = /\b(methylphenidate|lisdexamfetamine|atomoxetine|liraglutide|ifosfamide|methotrexate|midazolam|hydroxocobalamin|insulin|semaglutide|alteplase|docetaxel|voriconazole|arsenic trioxide|somatropin|peginterferon|cetrorelix|tazobactam|aprepitant)\b/i;
+
+function hasCrossShortage(r) {
+  if (!r) return false;
+  if (r.has_cross_match) return true;
+  const text = `${r.generic_name || ''} ${r.brand_name || ''} ${r.medicine_affected || ''} ${r.product_name || ''} ${r.name || ''}`;
+  return crossSubstancesRegex.test(text);
+}
+
 function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Source) {
   if (!rows.length) return '<p class="empty notice" style="font-size:13px; font-weight:600; padding:32px;">🔍 Seçili filtrelere veya arama kriterine uygun kriz kaydı bulunamadı. Lütfen filtreleri gevşetmeyi veya sıfırlamayı deneyin.</p>';
 
@@ -1739,10 +1748,18 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
   };
 
   const renderDrugCell = (r) => {
+    const isCross = hasCrossShortage(r);
     return `
       <td class="drug-cell">
         <b style="font-size:13px; color:#0f172a; line-height:1.35;">${esc(label(r))}</b>
         <small style="font-size:11px; color:#64748b; margin-top:2px;">${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
+        ${isCross ? `
+          <div style="margin-top:4px;">
+            <span class="cross-tag-both" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu molekül hem FDA hem EMA kriz listesinde! Birleşik küresel analizi görmek için tıkla.">
+              🌐 EMA'da da Krizde! (Transatlantik) →
+            </span>
+          </div>
+        ` : ''}
         ${r.greenData ? `
           <div class="green-rx-meta">
             <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10.5px; width:fit-content; font-weight:700;">
@@ -1917,6 +1934,11 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     </div>
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
                       <span class="ema-source-badge">🇪🇺 EMA</span>
+                      ${hasCrossShortage(r) ? `
+                        <span class="cross-tag-both" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu molekül hem FDA hem EMA kriz listesinde! Birleşik analizi görmek için tıkla.">
+                          🌐 FDA'da da Krizde! →
+                        </span>
+                      ` : ''}
                       ${r.isGreen ? '<span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">🟢 Yeşil Reçete</span>' : ''}
                       <span class="badge" style="background:#f1f5f9; color:#475569; font-size:10px;">${esc(raw.category || 'Human')}</span>
                     </div>
@@ -2787,6 +2809,38 @@ async function shortagePageV2(
               <span class="v2-filter-remove-btn" onclick="${f.onRemove}" title="${f.label} filtresini kaldır">✕</span>
             </span>
           `).join('')}
+        </div>
+      </div>
+
+      <!-- 🌐 KÜRESEL ÇAPRAZ KRİZ (FDA ∩ EMA ORTAK 17 MOLEKÜL) TRANSATLANTİK BANNER -->
+      <div class="glass panel" style="margin-top:14px; background:linear-gradient(135deg, rgba(2, 132, 199, 0.08), rgba(99, 102, 241, 0.08)); border:1.5px solid #38bdf8; border-radius:14px; padding:16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+          <div style="flex:1; min-width:300px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:24px;">🌐</span>
+              <h2 style="margin:0; font-size:16px; font-family:Outfit; color:#0369a1; font-weight:800;">
+                Küresel Çapraz Kriz Entegrasyonu: FDA ∩ EMA Ortak 17 Molekül (Tek Kalemde Birleşik)
+              </h2>
+              <span class="badge" style="background:#0284c7; color:#fff; font-size:11px; font-weight:800; padding:2px 8px;">
+                Transatlantik Kriz Analizi
+              </span>
+            </div>
+            <div style="font-size:12.5px; color:#334155; margin-top:6px; line-height:1.5;">
+              Amerikan FDA (1.587 kayıt) ve Avrupa EMA (85 kayıt) veri tabanları taranarak <b>17 ortak kritik molekül</b> (22 EMA bildirimi ve 243 FDA kriz kaydı) tek kalemde birleştirilmiştir.
+              <b>3 molekülde çift taraflı aktif kritik kriz (Risk 95)</b>, <b>4 molekülde kısmi aktif kriz</b> tespit edilmiş olup tüm formülasyon ve monopol durumları eşleştirilmiştir.
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="button" onclick="setShortageV2Source('cross_fda_ema'); setShortageV2GreenFilter('');" style="background:linear-gradient(135deg, #0284c7, #0369a1); border-color:#0284c7; color:#fff; font-weight:700; padding:10px 20px; font-size:12.5px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 3px 10px rgba(2,132,199,0.35); border-radius:10px; cursor:pointer;" title="Tıkla: FDA ve EMA ortak krizindeki 17 molekülün birleşik tablosunu aç">
+              🌐 KÜRESEL ÇAPRAZ KRİZ ANALİZİNE GEÇ (17 Molekül) →
+            </button>
+            <a href="/fda_ema_matched_shortages.json" target="_blank" download="fda_ema_matched_shortages.json" class="button secondary" style="padding:9px 14px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:6px;" title="Birleşik JSON veri setini indir">
+              📥 JSON İndir
+            </a>
+            <a href="/fda_ema_matched_shortages.csv" target="_blank" download="fda_ema_matched_shortages.csv" class="button secondary" style="padding:9px 14px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:6px;" title="Birleşik CSV veri setini indir">
+              📊 CSV İndir
+            </a>
+          </div>
         </div>
       </div>
 
