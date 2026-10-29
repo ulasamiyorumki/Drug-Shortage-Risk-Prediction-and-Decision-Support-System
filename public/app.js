@@ -4713,6 +4713,254 @@ function applyCollectiveR3ToCriterion() {
   }
 }
 
+// ==========================================================================
+// R6 (İLİŞKİLİ TERAPÖTİK GRUPTAKI KITLIKLAR) RESMİ LOGARİTMİK RİSK PUANLAMA SİSTEMİ
+// S_g = 100 * [ ln(1 + N_g) ] / [ ln(1 + N_max) ], N_max = 259 (Psychiatry)
+// R_6 = ( ∑ S_g ) / k
+// ==========================================================================
+const THERAPEUTIC_CLASS_SCORES = {
+  'Psychiatry': {
+    name: 'Psychiatry',
+    nameTr: 'Psikiyatri / Ruh Sağlığı',
+    ng: 259,
+    sg: 100.0,
+    color: '#8b5cf6',
+    bg: '#f5f3ff',
+    border: '#c4b5fd',
+    badgeBg: '#ede9fe',
+    badgeColor: '#6d28d9',
+    desc: 'Yeşil reçeteli kriz havuzunda en yoğun grup (Antipsikotik, sedatif, anksiyolitik vb.)'
+  },
+  'Analgesia/Addiction': {
+    name: 'Analgesia/Addiction',
+    nameTr: 'Analjezi ve Bağımlılık Tedavisi',
+    ng: 96,
+    sg: 78.5,
+    color: '#ea580c',
+    bg: '#fff7ed',
+    border: '#fed7aa',
+    badgeBg: '#ffedd5',
+    badgeColor: '#9a3412',
+    desc: 'Opioid analjezikler ve bağımlılık ikame ilaçları (Kritik ağrı yönetimi)'
+  },
+  'Neurology': {
+    name: 'Neurology',
+    nameTr: 'Nöroloji',
+    ng: 91,
+    sg: 77.5,
+    color: '#0284c7',
+    bg: '#f0f9ff',
+    border: '#bae6fd',
+    badgeBg: '#e0f2fe',
+    badgeColor: '#0369a1',
+    desc: 'Antiepileptik ve nörolojik kriz ilaçları'
+  },
+  'Pediatric': {
+    name: 'Pediatric',
+    nameTr: 'Pediatri / Çocuk Sağlığı',
+    ng: 59,
+    sg: 68.3,
+    color: '#db2777',
+    bg: '#fdf2f8',
+    border: '#fbcfe8',
+    badgeBg: '#fce7f3',
+    badgeColor: '#9d174d',
+    desc: 'Çocuk hastalar için özel dozaj ve formülasyonlar'
+  },
+  'Anesthesia': {
+    name: 'Anesthesia',
+    nameTr: 'Anestezi ve Reanimasyon',
+    ng: 28,
+    sg: 55.1,
+    color: '#059669',
+    bg: '#f0fdf4',
+    border: '#bbf7d0',
+    badgeBg: '#dcfce7',
+    badgeColor: '#166534',
+    desc: 'Ameliyathane ve yoğun bakım anestezik/sedatif ajanları'
+  },
+  'Oncology': {
+    name: 'Oncology',
+    nameTr: 'Onkoloji',
+    ng: 1,
+    sg: 12.6,
+    color: '#dc2626',
+    bg: '#fef2f2',
+    border: '#fecaca',
+    badgeBg: '#fee2e2',
+    badgeColor: '#991b1b',
+    desc: 'Kanser tedavisi destek ilaçları'
+  }
+};
+
+function getDrugTherapeuticCategories(r) {
+  let rawCat = '';
+  if (r.raw_json && r.raw_json.therapeutic_category) {
+    rawCat = r.raw_json.therapeutic_category;
+  } else if (r.therapeutic_category) {
+    rawCat = r.therapeutic_category;
+  } else if (r.therapeuticCategory) {
+    rawCat = r.therapeuticCategory;
+  }
+
+  let cats = [];
+  if (Array.isArray(rawCat)) {
+    cats = rawCat;
+  } else if (typeof rawCat === 'string') {
+    cats = rawCat.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  return cats.filter(c => THERAPEUTIC_CLASS_SCORES[c] !== undefined);
+}
+
+function calculateDrugR6Score(r) {
+  const cats = getDrugTherapeuticCategories(r);
+  if (cats.length === 0) {
+    return {
+      score: 50.0,
+      rawScore: 50.0,
+      k: 0,
+      classes: [],
+      level: 'Orta',
+      color: '#d97706',
+      bg: '#fef3c7',
+      border: '#fde68a'
+    };
+  }
+
+  const matchedClasses = cats.map(c => THERAPEUTIC_CLASS_SCORES[c]).filter(Boolean);
+  const sumSg = matchedClasses.reduce((sum, item) => sum + item.sg, 0);
+  const k = matchedClasses.length;
+  const rawScore = k > 0 ? (sumSg / k) : 50.0;
+  const score = Math.round(rawScore * 10) / 10;
+
+  let level = 'Düşük';
+  let color = '#059669';
+  let bg = '#f0fdf4';
+  let border = '#86efac';
+  if (score >= 85) {
+    level = 'Kritik';
+    color = '#dc2626';
+    bg = '#fee2e2';
+    border = '#fca5a5';
+  } else if (score >= 70) {
+    level = 'Çok Yüksek';
+    color = '#ea580c';
+    bg = '#ffedd5';
+    border = '#fed7aa';
+  } else if (score >= 45) {
+    level = 'Yüksek';
+    color = '#d97706';
+    bg = '#fef3c7';
+    border = '#fde68a';
+  }
+
+  return {
+    score,
+    rawScore,
+    k,
+    classes: matchedClasses,
+    level,
+    color,
+    bg,
+    border
+  };
+}
+
+let r6DrugFilterState = {
+  query: '',
+  classFilter: 'all',
+  page: 1,
+  pageSize: 15
+};
+
+function getR6DistributionStats() {
+  const records = getV2Green400Records();
+  let totalScoreSum = 0;
+  let singleCount = 0;
+  let multiCount = 0;
+
+  const classCounts = {};
+  Object.keys(THERAPEUTIC_CLASS_SCORES).forEach(k => {
+    classCounts[k] = 0;
+  });
+
+  records.forEach(r => {
+    const res = calculateDrugR6Score(r);
+    totalScoreSum += res.rawScore;
+    if (res.k === 1) singleCount++;
+    else if (res.k > 1) multiCount++;
+
+    res.classes.forEach(c => {
+      if (classCounts[c.name] !== undefined) {
+        classCounts[c.name]++;
+      }
+    });
+  });
+
+  const total = records.length;
+  const weightedAvg = total > 0 ? (totalScoreSum / total) : 0;
+
+  return {
+    total,
+    classScores: THERAPEUTIC_CLASS_SCORES,
+    classCounts,
+    singleCount,
+    multiCount,
+    weightedAvg,
+    roundedAvg: Math.round(weightedAvg * 10) / 10
+  };
+}
+
+function handleR6DrugSearch(val) {
+  r6DrugFilterState.query = val;
+  r6DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR6ClassFilter(cls) {
+  r6DrugFilterState.classFilter = cls;
+  r6DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR6DrugPage(p) {
+  r6DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR6ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const r6Info = calculateDrugR6Score(d);
+  const c6 = riskCriteriaState.criteria.find(item => item.id === 6);
+  if (c6) {
+    c6.score = r6Info.score;
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  const classesStr = r6Info.classes.map(c => `${c.name} (${c.sg.toFixed(1)})`).join(', ') || 'Belirtilmemiş';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının terapötik sınıfları [${classesStr}] (k=${r6Info.k}) baz alınarak R₆ Puanı ${r6Info.score}/100 (${r6Info.level}) olarak atandı ve ana denkleme aktarıldı.`);
+  }
+}
+
+function applyCollectiveR6ToCriterion() {
+  const stats = getR6DistributionStats();
+  const c6 = riskCriteriaState.criteria.find(item => item.id === 6);
+  if (c6) {
+    c6.score = stats.roundedAvg;
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın terapötik sınıf dağılımına dayalı ağırlıklı ortalama R₆ Puanı (${stats.roundedAvg}/100) ana denkleme başarıyla aktarıldı!`);
+  }
+}
+
 function getV2Green400Records() {
   if (!v2FdaRecordsCache || !Array.isArray(v2FdaRecordsCache)) return [];
   const enriched = v2FdaRecordsCache.map(enrichShortageRecord);
@@ -4794,8 +5042,9 @@ function applyDrugToRiskCriteria(drugId) {
     r5 = Math.min(100, r5 + 10);
   }
 
-  // R6: İlişkili terapötik gruptaki kıtlıklar (Psikotrop / Narkotik yeşil reçete yoğunluğu)
-  let r6 = 80;
+  // R6: İlişkili terapötik gruptaki kıtlıklar (Terapötik sınıf logaritmik normalizasyon ve ortalama)
+  const r6Info = calculateDrugR6Score(d);
+  const r6 = r6Info.score;
 
   // R7: Ürün özellikleri ve ikame edilebilirlik (Türkiye yerli muadil sayısı)
   let r7 = 50;
@@ -4994,7 +5243,7 @@ function renderRiskCriteriaDrugTableOnly() {
               <div style="font-weight:700;">5. Medicare Harcama ($) (CMS)</div>
               <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
             </th>
-            <th title="Veri Seti: ABD FDA Drug Shortages Terapötik Sınıflandırma">6. Terapötik Kategori (FDA)</th>
+            <th style="min-width:190px;" title="Veri Seti: ABD FDA Drug Shortages Terapötik Sınıflandırma ve R₆ Puanlaması">6. Terapötik Kategori & R₆ Skoru (FDA)</th>
             <th style="min-width:180px;" title="Veri Seti: ABD FDA Kriz Bildirim Gerekçesi & Kök Neden">7. Sıkıntı Nedeni & Kök Neden (FDA)</th>
             <th title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi">8. Bulunabilirlik (Stok) (FDA)</th>
             <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">9. Sunum & Dozaj Formu (FDA)</th>
@@ -5019,9 +5268,20 @@ function renderRiskCriteriaDrugTableOnly() {
                 <td style="vertical-align:top; padding:14px 12px;">${renderEmaCrisisStatusCell(r)}</td>
                 ${renderMedicareCells(r)}
                 <td style="vertical-align:top; padding:14px 12px;">
-                  ${r.therapeuticCategory ? `
-                    <span class="category-pill">${esc(r.therapeuticCategory)}</span>
-                  ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                  ${(() => {
+                    const r6Drug = calculateDrugR6Score(r);
+                    return `
+                      <div style="display:flex; flex-direction:column; gap:5px;">
+                        ${r.therapeuticCategory ? `
+                          <span class="category-pill" style="font-weight:700;">${esc(r.therapeuticCategory)}</span>
+                        ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
+                        <div style="margin-top:2px; display:inline-flex; align-items:center; gap:5px; background:${r6Drug.bg}; border:1px solid ${r6Drug.border}; padding:3px 7px; border-radius:6px; width:fit-content;">
+                          <span style="font-size:10.5px; font-weight:800; color:${r6Drug.color};">💊 R₆: ${r6Drug.score.toFixed(1)}</span>
+                          <span style="font-size:9.5px; font-weight:700; color:${r6Drug.color};">(${r6Drug.level})</span>
+                        </div>
+                      </div>
+                    `;
+                  })()}
                 </td>
                 <td style="vertical-align:top; padding:14px 12px;">${renderReasonCell(r)}</td>
                 <td style="vertical-align:top; padding:14px 12px;">${r.availBadgeHtml}</td>
@@ -5261,6 +5521,8 @@ window.applySubScoreToMainCriterion = applySubScoreToMainCriterion;
 window.clearSubCriteriaOfCriterion = clearSubCriteriaOfCriterion;
 window.resetAllCriteriaWeightsToDefault = resetAllCriteriaWeightsToDefault;
 window.setAllCriteriaScoresValue = setAllCriteriaScoresValue;
+window.riskCriteriaState = riskCriteriaState;
+window.getV2Green400Records = getV2Green400Records;
 window.exportRiskCriteriaMatrixCSV = exportRiskCriteriaMatrixCSV;
 
 window.handleRiskCriteriaDrugSearch = handleRiskCriteriaDrugSearch;
@@ -5281,6 +5543,18 @@ window.handleR3TierFilter = handleR3TierFilter;
 window.handleR3DrugPage = handleR3DrugPage;
 window.applySingleDrugR3ToCriterion = applySingleDrugR3ToCriterion;
 window.applyCollectiveR3ToCriterion = applyCollectiveR3ToCriterion;
+
+window.calculateDrugR6Score = calculateDrugR6Score;
+window.getDrugTherapeuticCategories = getDrugTherapeuticCategories;
+window.getR6DistributionStats = getR6DistributionStats;
+window.handleR6DrugSearch = handleR6DrugSearch;
+window.handleR6ClassFilter = handleR6ClassFilter;
+window.handleR6DrugPage = handleR6DrugPage;
+window.applySingleDrugR6ToCriterion = applySingleDrugR6ToCriterion;
+window.applyCollectiveR6ToCriterion = applyCollectiveR6ToCriterion;
+window.THERAPEUTIC_CLASS_SCORES = THERAPEUTIC_CLASS_SCORES;
+window.renderCriterion3DetailPage = renderCriterion3DetailPage;
+window.renderCriterion6DetailPage = renderCriterion6DetailPage;
 
 function renderCriterion3DetailPage(c) {
   const stats = getR3DistributionStats();
@@ -5719,6 +5993,489 @@ function renderCriterion3DetailPage(c) {
   `;
 }
 
+function renderCriterion6DetailPage(c) {
+  const stats = getR6DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR6Drugs = allDrugs.map(r => {
+    const res = calculateDrugR6Score(r);
+    return {
+      record: r,
+      r6Score: res.score,
+      rawScore: res.rawScore,
+      k: res.k,
+      classes: res.classes,
+      level: res.level,
+      color: res.color,
+      bg: res.bg,
+      border: res.border
+    };
+  });
+
+  if (r6DrugFilterState.query) {
+    const q = r6DrugFilterState.query.toLowerCase().trim();
+    filteredR6Drugs = filteredR6Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const tc = (r.therapeuticCategory || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || tc.includes(q);
+    });
+  }
+
+  if (r6DrugFilterState.classFilter !== 'all') {
+    if (r6DrugFilterState.classFilter === 'multi') {
+      filteredR6Drugs = filteredR6Drugs.filter(item => item.k >= 2);
+    } else {
+      filteredR6Drugs = filteredR6Drugs.filter(item => item.classes.some(cls => cls.name === r6DrugFilterState.classFilter));
+    }
+  }
+
+  const r6TotalFiltered = filteredR6Drugs.length;
+  const r6PageSize = r6DrugFilterState.pageSize || 15;
+  const r6TotalPages = Math.max(1, Math.ceil(r6TotalFiltered / r6PageSize));
+  if (r6DrugFilterState.page > r6TotalPages) r6DrugFilterState.page = r6TotalPages;
+  const r6StartIdx = (r6DrugFilterState.page - 1) * r6PageSize;
+  const r6EndIdx = Math.min(r6StartIdx + r6PageSize, r6TotalFiltered);
+  const r6PaginatedDrugs = filteredR6Drugs.slice(r6StartIdx, r6EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #bcdcfa;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#ecfdf5; color:#059669; border:1.5px solid #a7f3d0; font-weight:800; font-size:12px; padding:6px 14px;">
+          💊 R₆ Terapötik Grup Kıtlık Yükü & Logaritmik Normalizasyon
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #059669; border-color:#a7f3d0; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #ecfdf5 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow:0 4px 14px rgba(5, 150, 105, 0.35);">
+            R₆
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+              <span>💊</span> İlişkili Terapötik Gruptaki Kıtlıklar
+            </h1>
+            <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+              Related therapeutic-group shortages · Değişken Kodu: <b style="color:#059669;">R6</b> · Ana Denklem Ağırlığı: <b style="color:#059669;">%10 (0.10)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:12px; align-items:center; background:#ffffff; padding:10px 18px; border-radius:12px; border:1.5px solid #a7f3d0; box-shadow:0 4px 12px rgba(5,150,105,0.08);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₆):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateMainCriterionWeight(6, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">R₆ Risk Puanı:</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.score}" id="r6MainScoreInput" style="width:65px; height:32px; font-weight:800; text-align:center; border:2px solid #059669; border-radius:6px; color:#059669;" onchange="updateMainCriterionScore(6, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. BÖLÜM: AMAÇ VE MATEMATİKSEL LOGARİTMİK NORMALİZASYON FORMÜLÜ -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #a7f3d0; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(5, 150, 105, 0.05);">
+        <h3 style="margin:0 0 6px; font-size:17px; font-family:Outfit; color:#064e3b; display:flex; align-items:center; gap:8px;">
+          <span>🎯</span> 1. Amaç ve Kriter Metodolojisi
+        </h3>
+        <p style="margin:0 0 16px; font-size:13px; color:#334155; line-height:1.6;">
+          <b>R₆ kriterinin amacı</b>, yeşil reçeteli ilaç veri setimizde hangi terapötik gruplarda daha fazla kıtlık kaydı bulunan ilaç olduğunu belirlemek ve bu bilgiyi ilaçların toplam kıtlık risk puanına yansıtmaktır.<br>
+          Bir ilaç birden fazla terapötik sınıfa atanabildiği için <b>her sınıfı ayrı değerlendiriyoruz</b>. İlaç birden fazla sınıfa aitse bu sınıfların puanlarının <b>aritmetik ortalamasını</b> alıyoruz.
+        </p>
+
+        <!-- Formül Kutuları Grid -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px;">
+          <!-- Kutu A: Logaritmik Normalizasyon -->
+          <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:16px;">
+            <div style="font-size:11px; font-weight:800; color:#047857; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;">
+              2. Terapötik Sınıf Risk Puanı Formülü (Logaritmik Normalizasyon):
+            </div>
+            <div style="font-family:'DM Mono', monospace, Consolas; font-size:17px; font-weight:900; color:#065f46; background:#ffffff; padding:10px 14px; border-radius:8px; border:1px solid #a7f3d0; text-align:center; margin:8px 0;">
+              S<sub>g</sub> = 100 × [ ln(1 + N<sub>g</sub>) ] / [ ln(1 + N<sub>max</sub>) ]
+            </div>
+            <div style="font-size:12px; color:#334155; line-height:1.55; margin-top:6px;">
+              • <b>S<sub>g</sub></b>: İlgili terapötik sınıfın risk puanı (0–100).<br>
+              • <b>N<sub>g</sub></b>: İlgili sınıfta bulunan farklı yeşil reçeteli ilaç sayısı.<br>
+              • <b>N<sub>max</sub></b>: İlaç bulunan sınıflar arasındaki en yüksek ilaç sayısı (<b>N<sub>max</sub> = 259</b>, <i>Psychiatry</i> sınıfına aittir, ln(1+259) ≈ 5.5607).<br>
+              • <b>ln</b>: Doğal logaritma.<br>
+              <span style="color:#047857; font-weight:600; font-size:11.5px;">* Sınıflardaki ilaç sayıları birbirinden farklı olduğu için logaritmik normalizasyon kullanılır; bu yöntem en fazla ilaca sahip sınıfın diğer sınıflar üzerindeki oransal etkisini dengeler.</span>
+            </div>
+          </div>
+
+          <!-- Kutu B: Çoklu Sınıf Ortalama Formülü -->
+          <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:16px;">
+            <div style="font-size:11px; font-weight:800; color:#047857; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;">
+              4. Bir İlacın R₆ Puanının Hesaplanması (Çoklu Sınıf Ortalaması):
+            </div>
+            <div style="font-family:'DM Mono', monospace, Consolas; font-size:17px; font-weight:900; color:#065f46; background:#ffffff; padding:10px 14px; border-radius:8px; border:1px solid #a7f3d0; text-align:center; margin:8px 0;">
+              R₆ = [ ∑<sub>g=1</sub><sup>k</sup> S<sub>g</sub> ] / k
+            </div>
+            <div style="font-size:12px; color:#334155; line-height:1.55; margin-top:6px;">
+              • <b>R₆</b>: İlacın nihai terapötik grup risk puanı (0–100).<br>
+              • <b>S<sub>g</sub></b>: İlacın dahil olduğu her terapötik sınıfın risk puanı.<br>
+              • <b>k</b>: İlacın dahil olduğu toplam terapötik sınıf sayısı (Veri setimizde k = 1, 2 veya 3).<br>
+              <span style="color:#047857; font-weight:600; font-size:11.5px;">* Bir ilaç birden fazla terapötik sınıfa aitse, eşleştiği tüm sınıfların puanlarının aritmetik ortalaması tam eşit ağırlıkla hesaplanır.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. BÖLÜM: 6 TERAPÖTİK SINIF RESMİ RİSK PUANLAMA TABLOSU -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #a7f3d0; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(5, 150, 105, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#064e3b; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 3. Sınıflara Göre Hesaplanmış Resmi Puanlar Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              Logaritmik normalizasyon formülüne göre belirlenen terapötik sınıf risk puanları ve yeşil reçeteli ilaç sayıları:
+            </p>
+          </div>
+          <span class="badge" style="background:#ecfdf5; color:#059669; border:1px solid #a7f3d0; font-weight:800; font-size:11.5px; padding:4px 10px;">
+            Resmi Logaritmik Skala (N_max = 259)
+          </span>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="r6-class-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Terapötik Sınıf (Therapeutic Class)</th>
+                <th style="text-align:left;">Klinik Alan / Açıklama (TR)</th>
+                <th style="text-align:center;">İlaç Sayısı (N<sub>g</sub>)</th>
+                <th style="text-align:center;">ln(1 + N<sub>g</sub>)</th>
+                <th style="text-align:center;">Sınıf Risk Puanı (S<sub>g</sub>)</th>
+                <th style="text-align:center;">Risk Düzeyi</th>
+                <th style="text-align:center;">Filtrele</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.keys(THERAPEUTIC_CLASS_SCORES).map(key => {
+                const item = THERAPEUTIC_CLASS_SCORES[key];
+                const count = stats.classCounts[key] || item.ng;
+                const lnVal = Math.log(1 + item.ng).toFixed(4);
+                return `
+                  <tr style="background:${r6DrugFilterState.classFilter === key ? '#ecfdf5' : 'transparent'};">
+                    <td style="font-weight:800; font-size:13.5px; color:#0f172a;">
+                      <span class="r6-class-chip" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border};">
+                        ${esc(item.name)}
+                      </span>
+                    </td>
+                    <td style="font-size:12.5px; color:#334155; font-weight:600;">
+                      ${esc(item.nameTr)}
+                      <div style="font-size:11px; color:#64748b; font-weight:400; margin-top:2px;">${item.desc}</div>
+                    </td>
+                    <td style="text-align:center; font-weight:800; font-size:14px; color:#0f172a;">
+                      ${count} ilaç
+                    </td>
+                    <td style="text-align:center; font-family:monospace; font-size:12px; color:#64748b;">
+                      ${lnVal}
+                    </td>
+                    <td style="text-align:center;">
+                      <span style="font-size:16px; font-weight:900; color:${item.color}; font-family:Outfit;">
+                        ${item.sg.toFixed(1)}
+                      </span>
+                      <span style="font-size:11px; color:#64748b;">/100</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:800;">
+                        ${item.sg >= 85 ? 'Kritik' : item.sg >= 70 ? 'Çok Yüksek' : item.sg >= 50 ? 'Yüksek' : 'Düşük'}
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button secondary" style="font-size:10.5px; padding:3px 9px; font-weight:700;" onclick="handleR6ClassFilter('${key}')">
+                        İlaçları Gör (${count})
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:14px; padding:10px 14px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; font-size:12px; color:#475569; line-height:1.5;">
+          ℹ️ <i>Veri setinde yeşil reçeteli ilaç bulunmadığı için sıfır görünen diğer terapötik sınıflar (Cardiovascular, Dermatology vb.) hesaplamaya dahil edilmemiştir. Bu puanlar, veri setimizdeki terapötik grupların kıtlık yükünü karşılaştırır; tek başına gelecekte kıtlık yaşanma olasılığını göstermez.</i>
+        </div>
+      </div>
+
+      <!-- 3. BÖLÜM: KOLEKTİF R6 ANALİZİ VE HIZLI AKTARIM KARTI -->
+      <div style="background:linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%); border:2px solid #059669; border-radius:14px; padding:20px 24px; margin-bottom:24px; box-shadow:0 4px 16px rgba(5,150,105,0.12);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+          <div style="max-width:700px;">
+            <div style="font-size:11px; font-weight:800; color:#059669; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+              📊 400 Yeşil Reçeteli İlaç Kapsamında Kolektif R₆ Analiz Sonucu:
+            </div>
+            <div style="font-size:19px; font-weight:800; color:#0f172a; margin-bottom:4px; font-family:Outfit;">
+              Hesaplanan Kolektif R₆ Puanı: <span style="color:#059669; font-size:26px;">${stats.roundedAvg}</span> / 100
+              <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-size:12px; margin-left:8px; vertical-align:middle;">
+                Kritik Risk Düzeyi
+              </span>
+            </div>
+            <p style="font-size:12.5px; color:#475569; margin:0; line-height:1.55;">
+              Bu değer, 400 yeşil reçeteli ilacın dahil olduğu terapötik sınıfların risk puanları (Psychiatry: 100.0, Analgesia: 78.5, Neurology: 77.5, Pediatric: 68.3, Anesthesia: 55.1, Oncology: 12.6) üzerinden hesaplanan ağırlıklı ortalamadır.
+              Yeşil reçeteli ilaçların %64.8'i kıtlık yükünün en yüksek olduğu <b>Psychiatry</b> sınıfında kümelendiği için veri setinin genel terapötik risk seviyesi <b>89.3</b> olarak hesaplanmıştır.
+            </p>
+          </div>
+
+          <div>
+            <button type="button" class="button" style="font-size:13px; padding:12px 24px; font-weight:800; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:0; box-shadow:0 4px 14px rgba(5, 150, 105, 0.35); display:inline-flex; align-items:center; gap:8px;" onclick="applyCollectiveR6ToCriterion()">
+              🎯 400 İlacın Verilerinden R₆ Puanını (${stats.roundedAvg}) Ata
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. BÖLÜM: 400 İLAÇ BAZINDA BİREYSEL R6 RİSK ATAMA TABLOSU -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #cbd5e1; padding:22px; margin-bottom:24px; box-shadow:0 4px 14px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#0f172a; display:flex; align-items:center; gap:8px;">
+              <span>🔍</span> 400 Yeşil Reçeteli İlaç Bazında Terapötik Sınıf Eşleşmeleri & Bireysel R₆ Puanları
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              Aşağıda 400 ilacın her birine eşleştiği terapötik sınıfların ortalaması alınarak (<code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">R₆ = ∑ S_g / k</code>) atanmış resmi R₆ risk puanı gösterilmektedir. Dilediğiniz ilacın puanını tek tıkla ana denklemdeki R₆ puanı olarak atayabilirsiniz.
+            </p>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <input type="text" placeholder="İlaç adı, etken madde veya kategori ara..." value="${esc(r6DrugFilterState.query)}" style="padding:8px 14px; font-size:12.5px; border-radius:8px; border:1.5px solid #cbd5e1; width:280px;" oninput="handleR6DrugSearch(this.value)">
+          </div>
+        </div>
+
+        <!-- Terapötik Sınıf Filtre Butonları -->
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'all' ? 'active' : ''}" onclick="handleR6ClassFilter('all')">
+            Tümü (400)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Psychiatry' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Psychiatry' ? '' : 'color:#6d28d9; border-color:#c4b5fd;'}" onclick="handleR6ClassFilter('Psychiatry')">
+            🟣 Psychiatry (259)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Analgesia/Addiction' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Analgesia/Addiction' ? '' : 'color:#ea580c; border-color:#fed7aa;'}" onclick="handleR6ClassFilter('Analgesia/Addiction')">
+            🟠 Analgesia/Addiction (96)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Neurology' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Neurology' ? '' : 'color:#0284c7; border-color:#bae6fd;'}" onclick="handleR6ClassFilter('Neurology')">
+            🔵 Neurology (91)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Pediatric' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Pediatric' ? '' : 'color:#db2777; border-color:#fbcfe8;'}" onclick="handleR6ClassFilter('Pediatric')">
+            🌸 Pediatric (59)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Anesthesia' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Anesthesia' ? '' : 'color:#059669; border-color:#a7f3d0;'}" onclick="handleR6ClassFilter('Anesthesia')">
+            🟢 Anesthesia (28)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'Oncology' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'Oncology' ? '' : 'color:#dc2626; border-color:#fca5a5;'}" onclick="handleR6ClassFilter('Oncology')">
+            🔴 Oncology (1)
+          </button>
+          <button type="button" class="r6-filter-btn ${r6DrugFilterState.classFilter === 'multi' ? 'active' : ''}" style="${r6DrugFilterState.classFilter === 'multi' ? '' : 'color:#4338ca; border-color:#c7d2fe;'}" onclick="handleR6ClassFilter('multi')">
+            ⚡ Çoklu Sınıf (k ≥ 2) (94)
+          </button>
+        </div>
+
+        <!-- İlaç Tablosu -->
+        <div class="data-table" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+            <thead>
+              <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
+                <th style="width:40px; text-align:center; padding:10px 8px;">#</th>
+                <th style="min-width:230px; padding:10px 12px; text-align:left;">İlaç / Sunum Formu</th>
+                <th style="min-width:170px; padding:10px 12px; text-align:left;">Etkin Madde (FDA)</th>
+                <th style="min-width:240px; padding:10px 12px; text-align:left;">Eşleşen Terapötik Sınıflar & Puanlar (S<sub>g</sub>)</th>
+                <th style="width:80px; padding:10px 12px; text-align:center;">Sınıf (k)</th>
+                <th style="min-width:120px; padding:10px 12px; text-align:center;">Hesaplanan R₆ Puanı</th>
+                <th style="min-width:120px; padding:10px 12px; text-align:center;">Risk Düzeyi</th>
+                <th style="min-width:150px; padding:10px 12px; text-align:center;">Kriter Puanı Atama</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r6PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center; padding:30px; color:#64748b;">
+                    Arama kriterine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r6PaginatedDrugs.map((item, idx) => {
+                const seq = r6StartIdx + idx + 1;
+                const r = item.record;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#ecfdf5;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b; padding:10px 8px;">${seq}</td>
+                    <td style="padding:10px 12px;">
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td style="padding:10px 12px;">
+                      <span style="font-weight:600; color:#0369a1;">${esc(r.active_ingredient || r.molecule_name || '—')}</span>
+                    </td>
+                    <td style="padding:10px 12px;">
+                      <div style="display:flex; flex-wrap:wrap; gap:5px;">
+                        ${item.classes.map(cls => `
+                          <span class="r6-class-chip" style="background:${cls.badgeBg}; color:${cls.badgeColor}; border:1px solid ${cls.border};" title="${esc(cls.nameTr)}">
+                            <span>${esc(cls.name)}</span>
+                            <span style="font-weight:900; background:rgba(255,255,255,0.7); padding:1px 5px; border-radius:4px; margin-left:3px;">${cls.sg.toFixed(1)}</span>
+                          </span>
+                        `).join('')}
+                      </div>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <span class="badge" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; font-weight:800;">
+                        k = ${item.k}
+                      </span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <span style="font-size:16px; font-weight:900; color:${item.color}; font-family:Outfit;">
+                        ${item.r6Score.toFixed(1)}
+                      </span>
+                      <span style="font-size:11px; color:#64748b;">/100</span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <span class="badge" style="background:${item.bg}; color:${item.color}; border:1px solid ${item.border}; font-weight:800;">
+                        ${item.level}
+                      </span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <button type="button" class="dsrds-apply-btn" style="font-size:11px; padding:5px 12px; background:${isSelected ? '#047857' : '#059669'}; border-color:#047857;" onclick="applySingleDrugR6ToCriterion('${esc(r.id)}')">
+                        ${isSelected ? '✓ R₆ Atandı' : `🎯 Bu Puanı (${item.r6Score.toFixed(1)}) Ata`}
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r6TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r6StartIdx + 1} - ${r6EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR6DrugPage(${r6DrugFilterState.page - 1})" ${r6DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r6DrugFilterState.page} / ${r6TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR6DrugPage(${r6DrugFilterState.page + 1})" ${r6DrugFilterState.page >= r6TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 5: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ (OPSİYONEL / GENİŞLETİLEBİLİR) -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#a7f3d0;">
+        <div style="font-size:11px; font-weight:800; color:#059669; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#065f46; margin:8px 0; background:#ecfdf5; padding:12px 16px; border-radius:8px; border:1px solid #a7f3d0;">
+          R₆ = [ ∑<sub>j=1</sub><sup>n₆</sup> ( a₆<sub>j</sub> × S₆<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₆</sup> a₆<sub>j</sub> ]
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₆</b>: İlişkili terapötik gruptaki kıtlıklar kriterinin nihai risk puanı (0–100).<br>
+          • <b>n₆</b>: Kriterdeki alt gösterge sayısı (Şu an: <b>${c.subCriteria.length}</b>).<br>
+          • <b>a₆<sub>j</sub></b>: Alt göstergenin kriter içindeki ağırlık yüzdesi.<br>
+          • <b>S₆<sub>j</sub></b>: Alt göstergenin 0–100 arasındaki risk puanı.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#059669; border-color:#047857;" onclick="addSubCriterion(6)">
+          ➕ Yeni Alt Gösterge Ekle (S₆<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(6)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" onclick="applySubScoreToMainCriterion(6)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff1f2; color:#be123c; border-color:#fecdd3; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(6)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      ${c.subCriteria.length === 0 ? `
+        <div style="padding: 24px; text-align:center; background:rgba(255,255,255,0.7); border:1.5px dashed #a7f3d0; border-radius:12px;">
+          <p style="color:#64748b; font-size:13px; margin:0;">
+            İsteğe bağlı ek alt göstergeler (örn: Terapötik İkame Hızı, Tedavi Protokolü Hassasiyeti) tanımlamak isterseniz yukarıdaki <b>"➕ Yeni Alt Gösterge Ekle"</b> butonunu kullanabilirsiniz.
+          </p>
+        </div>
+      ` : `
+        <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #a7f3d0; overflow:hidden;">
+          <table class="sub-crit-table">
+            <thead>
+              <tr style="background: #ecfdf5;">
+                <th style="width:50px; text-align:center;">j</th>
+                <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+                <th style="width:150px; text-align:center;">Alt Ağırlık (a₆<sub>j</sub>, %)</th>
+                <th style="width:150px; text-align:center;">Risk Puanı (S₆<sub>j</sub>, 0-100)</th>
+                <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+                <th style="width:70px; text-align:center;">Sil</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${c.subCriteria.map((sub, idx) => {
+                const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+                return `
+                  <tr>
+                    <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                    <td>
+                      <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(6, ${sub.id}, this.value)" oninput="updateSubCriterionName(6, ${sub.id}, this.value)">
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(6, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.score}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionScore(6, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                      </div>
+                    </td>
+                    <td style="text-align:center; font-weight:700; color:#059669;">
+                      +${contrib}
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(6, ${sub.id})">
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+  `;
+}
+
 function riskCriteriaPage() {
   const { totalWeightPercent, totalWeightDecimal, rTotal, isBalanced } = calculateOverallRiskScores();
   const tier = getCriteriaRiskTier(rTotal);
@@ -5730,6 +6487,10 @@ function riskCriteriaPage() {
     const c = riskCriteriaState.criteria.find(item => item.id === riskCriteriaState.currentOpenCriterionId) || riskCriteriaState.criteria[0];
     if (c.id === 3) {
       renderCriterion3DetailPage(c);
+      return;
+    }
+    if (c.id === 6) {
+      renderCriterion6DetailPage(c);
       return;
     }
     const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);

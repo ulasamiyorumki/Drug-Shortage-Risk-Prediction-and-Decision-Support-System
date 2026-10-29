@@ -2146,3 +2146,71 @@ th:hover {
     box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
 }
 
+/* R6 Terapötik Grup Kıtlık Yoğunluğu & Logaritmik Normalizasyon Stilleri */
+.r6-class-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1.5px solid #a7f3d0;
+    background: #ffffff;
+}
+.r6-class-table th {
+    background: #ecfdf5;
+    color: #065f46;
+    font-weight: 800;
+    padding: 12px 14px;
+    border-bottom: 2px solid #a7f3d0;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.r6-class-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    vertical-align: middle;
+}
+.r6-class-table tr:last-child td {
+    border-bottom: none;
+}
+.r6-filter-btn {
+    font-size: 11.5px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1.5px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.r6-filter-btn:hover {
+    border-color: #059669;
+    color: #059669;
+    background: #ecfdf5;
+    transform: translateY(-1px);
+}
+.r6-filter-btn.active {
+    background: #059669 !important;
+    color: #ffffff !important;
+    border-color: #059669 !important;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+.r6-class-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+
