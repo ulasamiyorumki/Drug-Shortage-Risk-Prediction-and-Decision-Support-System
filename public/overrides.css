@@ -1701,6 +1701,17 @@ th:hover {
     box-shadow: 0 2px 6px rgba(239, 68, 68, 0.2);
 }
 
+/* V2 Table Cell Spacing & Readability */
+.data-table th {
+    white-space: nowrap;
+    vertical-align: middle;
+    letter-spacing: 0.2px;
+}
+
+.data-table td {
+    vertical-align: top !important;
+}
+
 
 
 

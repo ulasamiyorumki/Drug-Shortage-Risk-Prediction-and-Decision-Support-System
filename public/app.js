@@ -2231,7 +2231,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th style="min-width:140px;">Medicare Reçete Talebi</th>
               <th style="min-width:145px;">Medicare Harcama ($)</th>
               <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
-              <th style="min-width:190px;">Etkilenen Form & Dozaj</th>
+              <th style="min-width:240px; padding:12px 16px;">Etkilenen Form & Dozaj</th>
               <th>Alternatif Bulunabilirliği</th>
               <th>Tarihler & Beklenen Çözülme</th>
               <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
@@ -2280,12 +2280,12 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                       </div>
                     ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
                   </td>
-                  <td>
-                    <div style="font-size:12px; color:#1e293b; font-weight:600; line-height:1.3;">
+                  <td style="min-width:240px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                    <div style="font-size:12.5px; color:#1e293b; font-weight:600; line-height:1.5; word-break:break-word;">
                       ${esc(forms)}
                     </div>
                     ${strengths ? `
-                      <div style="margin-top:4px; font-size:11px; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; display:inline-block;">
+                      <div style="margin-top:8px; font-size:11px; color:#0369a1; background:#f0f9ff; padding:3px 8px; border-radius:5px; border:1px solid #bae6fd; display:inline-block; font-weight:600;">
                         Doz: ${esc(strengths)}
                       </div>
                     ` : ''}
@@ -2330,8 +2330,8 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Terapötik Kategori</th>
               <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
               <th>Bulunabilirlik (Stok)</th>
-              <th style="min-width:200px;">Sunum & Dozaj Formu</th>
-              <th>Üretici Firma & İletişim</th>
+              <th style="min-width:280px; padding:12px 16px;">Sunum & Dozaj Formu</th>
+              <th style="min-width:260px; padding:12px 16px;">Üretici Firma & İletişim</th>
               <th>Tarih</th>
               <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
               <th>İşlem</th>
@@ -2351,18 +2351,32 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                 </td>
                 <td>${renderReasonCell(r)}</td>
                 <td>${r.availBadgeHtml}</td>
-                <td>
-                  <div style="font-size:12px; color:#1e293b; max-width:240px; line-height:1.4;">
+                <td style="min-width:280px; max-width:340px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="font-size:12.5px; color:#1e293b; line-height:1.55; word-break:break-word; font-weight:500;">
                     ${esc(r.presentation)}
                   </div>
-                  <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
-                    ${r.ndc ? `<code style="font-size:10.5px; color:#475569; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block; border:1px solid #e2e8f0;">NDC: ${esc(r.ndc)}</code>` : ''}
-                    ${r.application_no ? `<code style="font-size:10.5px; color:#0369a1; background:#e0f2fe; padding:2px 6px; border-radius:4px; display:inline-block; font-weight:700; border:1px solid #bae6fd;">FDA: ${esc(r.application_no)}</code>` : ''}
-                  </div>
+                  ${(r.ndc || r.application_no) ? `
+                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                      ${r.ndc ? `<code style="font-size:10.5px; color:#475569; background:#f1f5f9; padding:3px 8px; border-radius:5px; border:1px solid #e2e8f0; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#94a3b8;">NDC:</span> ${esc(r.ndc)}</code>` : ''}
+                      ${r.application_no ? `<code style="font-size:10.5px; color:#0369a1; background:#e0f2fe; padding:3px 8px; border-radius:5px; font-weight:700; border:1px solid #bae6fd; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#0284c7;">FDA:</span> ${esc(r.application_no)}</code>` : ''}
+                    </div>
+                  ` : ''}
                 </td>
-                <td>
-                  <div style="font-weight:700; font-size:12px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div>
-                  ${r.contactInfo ? `<small style="font-size:11px; color:#0284c7; display:block; margin-top:3px; line-height:1.3;">📞 ${esc(r.contactInfo)}</small>` : ''}
+                <td style="min-width:260px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="font-weight:700; font-size:13px; color:#0f172a; line-height:1.45; word-break:break-word; display:flex; align-items:flex-start; gap:6px;">
+                    <span style="font-size:14px; flex-shrink:0; margin-top:1px;">🏢</span>
+                    <span>${esc(r.manufacturer || r.vendor || '—')}</span>
+                  </div>
+                  ${r.contactInfo ? `
+                    <div style="margin-top:10px; font-size:11.5px; color:#0369a1; background:#f0f9ff; padding:7px 11px; border-radius:7px; border:1px solid #bae6fd; line-height:1.45; word-break:break-word; box-shadow:0 1px 3px rgba(2,132,199,0.06);">
+                      <div style="font-weight:700; font-size:10.5px; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:3px; display:flex; align-items:center; gap:4px;">
+                        <span>📞</span> <span>İletişim & Tedarik:</span>
+                      </div>
+                      <div style="color:#0c4a6e; font-weight:500;">
+                        ${esc(r.contactInfo)}
+                      </div>
+                    </div>
+                  ` : ''}
                 </td>
                 <td>
                   <div style="font-size:12px; font-weight:700; color:#334155;">${esc(r.updateDate)}</div>
@@ -2385,7 +2399,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
           <tr>
             <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
             <th>Kaynak</th>
-            <th>Üretici / Tedarikçi</th>
+            <th style="min-width:250px; padding:12px 16px;">Üretici / Tedarikçi</th>
             <th>NDC / Kod</th>
             <th>FDA Kriz Durumu</th>
             <th style="min-width:145px;">EMA Kriz Durumu</th>
@@ -2401,7 +2415,11 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
               ${renderDrugCell(r)}
               <td><span class="source-tag">${esc(sourceLabel(r.source))}</span></td>
-              <td><div style="font-weight:700; font-size:12px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div></td>
+              <td style="min-width:250px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                <div style="font-weight:700; font-size:12.5px; color:#0f172a; line-height:1.45; word-break:break-word; display:flex; align-items:center; gap:6px;">
+                  <span>🏢</span> <span>${esc(r.manufacturer || r.vendor || '—')}</span>
+                </div>
+              </td>
               <td><code style="font-size:11px;">${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
               <td>${renderEmaCrisisStatusCell(r)}</td>
