@@ -1227,8 +1227,28 @@ const fdaReasonDescriptions = {
   'Regulatory delay': 'Mevzuat ve Ruhsatlandırma Gecikmesi',
   'Other': 'Diğer Operasyonel Nedenler',
   'Belirtilmemiş': 'Belirtilmemiş (Veri Bekleniyor)',
-  'Not available': 'Kayıtlarda Belirtilmemiş'
+  'Not available': 'Kayıtlarda Belirtilmemiş',
+  'Normal': 'Rutin Tedarik'
 };
+
+function getFdaReasonTr(reasonStr) {
+  if (!reasonStr || !reasonStr.trim()) return 'Belirtilmemiş (Veri Bekleniyor)';
+  const trimmed = reasonStr.trim();
+  if (fdaReasonDescriptions[trimmed]) return fdaReasonDescriptions[trimmed];
+  const low = trimmed.toLowerCase();
+  for (const [k, v] of Object.entries(fdaReasonDescriptions)) {
+    if (k.toLowerCase() === low) return v;
+  }
+  if (low.includes('demand')) return 'İlaç Talep Artışı / Kapasite Yetersizliği';
+  if (low.includes('active ingredient')) return 'Aktif Etken Madde (API) Tedarik Darboğazı';
+  if (low.includes('discontinu')) return 'Üretimin Durdurulması / Piyasadan Çekilme';
+  if (low.includes('shipping') || low.includes('delay') || low.includes('transit')) return 'Sevkiyat ve Lojistik Gecikmesi';
+  if (low.includes('good manufacturing') || low.includes('gmp') || low.includes('practices')) return 'GMP ve Fabrika Kalite Standartları Uyumsuzluğu';
+  if (low.includes('inactive')) return 'Yardımcı Madde / Flakon Eksikliği';
+  if (low.includes('regulatory')) return 'Mevzuat ve Ruhsatlandırma Gecikmesi';
+  return trimmed;
+}
+
 
 window.setShortageV2Source = function(src) {
   currentShortageV2Source = src;
@@ -1638,86 +1658,119 @@ function enrichShortageRecord(r) {
 }
 
 function shortageTableV2(rows, isFdaSource = true) {
-  if (!rows.length) return '<p class="empty notice">Filtrelere veya arama kriterine uygun ilaç kaydı bulunamadı.</p>';
+  if (!rows.length) return '<p class="empty notice" style="font-size:13px; font-weight:600; padding:32px;">🔍 Seçili filtrelere veya arama kriterine uygun kriz kaydı bulunamadı. Lütfen filtreleri gevşetmeyi veya sıfırlamayı deneyin.</p>';
+
+  const renderReasonCell = (r) => {
+    const rawReason = r.shortageReasonDisplay || r.shortage_reason || '';
+    if (!rawReason) return '<span style="color:var(--muted); font-size:11px;">—</span>';
+
+    const isZeroEquiv = r.greenData && r.greenData.localEquivCount === 0;
+    let trDesc = getFdaReasonTr(rawReason);
+    let enReason = rawReason;
+
+    if (rawReason.includes('İthal') || rawReason.includes('Muadil') || rawReason.includes('Kota') || rawReason.includes('Kontrole')) {
+      trDesc = rawReason;
+      enReason = isZeroEquiv ? '0 Muadil (Monopol İthalat)' : 'TİTCK / Ek-4/A Kontrolü';
+    }
+
+    return `
+      <div class="v2-reason-chip ${isZeroEquiv ? 'alert-zero' : ''}">
+        <span class="v2-reason-tr">${esc(trDesc)}</span>
+        ${enReason && enReason !== trDesc ? `<span class="v2-reason-en">FDA: ${esc(enReason)}</span>` : ''}
+      </div>
+    `;
+  };
+
+  const renderActionCell = (r) => {
+    return `
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></div>
+        <div class="v2-action-cell">
+          <div class="v2-action-title">
+            <span>⚡</span> <span>${esc(r.action || 'Rutin Tedarik İzleme')}</span>
+          </div>
+          ${r.actionDetail ? `<span class="v2-action-desc">${esc(r.actionDetail)}</span>` : ''}
+        </div>
+      </div>
+    `;
+  };
+
+  const renderDrugCell = (r) => {
+    return `
+      <td class="drug-cell">
+        <b style="font-size:13px; color:#0f172a; line-height:1.35;">${esc(label(r))}</b>
+        <small style="font-size:11px; color:#64748b; margin-top:2px;">${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
+        ${r.greenData ? `
+          <div class="green-rx-meta">
+            <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10.5px; width:fit-content; font-weight:700;">
+              🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
+            </span>
+            <div style="font-size:11px; color:#334155; margin-top:2px;">
+              ${r.greenData.localEquivCount > 0 
+                ? `<span style="color:#047857; font-weight:700;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
+                : `<span style="color:#b91c1c; font-weight:800; background:#fee2e2; padding:1px 6px; border-radius:4px; border:1px solid #fca5a5;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
+              <span style="color:var(--muted); margin-left:4px;">· SGK: ${esc(r.greenData.equivGroup)}</span>
+            </div>
+            ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
+              <span class="badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:10px; width:fit-content; font-weight:700;">
+                🏛️ SGK Yurt Dışı İlaç: ${esc(r.greenData.yurtDisiList)}
+              </span>
+            ` : ''}
+          </div>
+        ` : ''}
+      </td>
+    `;
+  };
+
   if (isFdaSource) {
     return `
       <div class="data-table">
         <table>
           <thead>
             <tr>
-              <th style="min-width:180px;">İlaç / Etkin Madde & Marka</th>
+              <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
               <th>FDA Kriz Durumu</th>
               <th>Terapötik Kategori</th>
-              <th style="min-width:160px;">Sıkıntı Nedeni</th>
+              <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
               <th>Bulunabilirlik (Stok)</th>
               <th style="min-width:200px;">Sunum & Dozaj Formu</th>
               <th>Üretici Firma & İletişim</th>
               <th>Tarih</th>
-              <th>Kırılganlık / EM Aksiyonu</th>
+              <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
               <th>İşlem</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map(r => `
               <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
-                <td class="drug-cell">
-                  <b>${esc(label(r))}</b>
-                  <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
-                  ${r.greenData ? `
-                    <div class="green-rx-meta">
-                      <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                        🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
-                      </span>
-                      <div style="font-size:10.5px; color:#334155; margin-top:1px;">
-                        ${r.greenData.localEquivCount > 0 
-                          ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
-                          : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
-                        <span style="color:var(--muted);">· SGK: ${esc(r.greenData.equivGroup)}</span>
-                      </div>
-                      ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
-                        <span class="badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:9.5px; width:fit-content;">
-                          🏛️ SGK Yurt Dışı İlaç: ${esc(r.greenData.yurtDisiList)}
-                        </span>
-                      ` : ''}
-                    </div>
-                  ` : ''}
-                </td>
+                ${renderDrugCell(r)}
                 <td>${r.statusBadgeHtml}</td>
                 <td>
                   ${r.therapeuticCategory ? `
                     <span class="category-pill">${esc(r.therapeuticCategory)}</span>
                   ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
                 </td>
-                <td>
-                  ${r.shortageReasonDisplay ? `
-                    <span class="reason-badge" style="font-weight:600; font-size:11px; white-space:normal; display:inline-block; max-width:230px; ${r.greenData && r.greenData.localEquivCount === 0 ? 'background:#fef2f2; color:#991b1b; border:1px solid #fecaca;' : ''}">
-                      ${esc(r.shortageReasonDisplay)}
-                    </span>
-                  ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
-                </td>
+                <td>${renderReasonCell(r)}</td>
                 <td>${r.availBadgeHtml}</td>
                 <td>
-                  <div style="font-size:11.5px; color:#1e293b; max-width:230px; line-height:1.35;">
+                  <div style="font-size:12px; color:#1e293b; max-width:240px; line-height:1.4;">
                     ${esc(r.presentation)}
                   </div>
-                  ${r.ndc ? `<code style="font-size:10px; color:var(--muted); display:inline-block; margin-top:2px;">NDC: ${esc(r.ndc)}</code>` : ''}
-                  ${r.application_no ? `<code style="font-size:10px; color:#0369a1; background:#e0f2fe; padding:1px 5px; border-radius:4px; display:inline-block; margin-top:2px; margin-left:4px; font-weight:600;">FDA: ${esc(r.application_no)}</code>` : ''}
-                </td>
-                <td>
-                  <div style="font-weight:600; font-size:11.5px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div>
-                  ${r.contactInfo ? `<small style="font-size:10.5px; color:#0284c7; display:block; margin-top:2px;">📞 ${esc(r.contactInfo)}</small>` : ''}
-                </td>
-                <td>
-                  <div style="font-size:11.5px; font-weight:600; color:#334155;">${esc(r.updateDate)}</div>
-                  ${r.initialDate ? `<small style="font-size:10px; color:var(--muted); display:block;">İlan: ${esc(r.initialDate)}</small>` : ''}
-                </td>
-                <td>
-                  <span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span>
-                  <div style="font-size:10.5px; font-weight:600; color:#0369a1; margin-top:3px; line-height:1.2;">
-                    ⚡ ${esc(r.action)}
+                  <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
+                    ${r.ndc ? `<code style="font-size:10.5px; color:#475569; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block; border:1px solid #e2e8f0;">NDC: ${esc(r.ndc)}</code>` : ''}
+                    ${r.application_no ? `<code style="font-size:10.5px; color:#0369a1; background:#e0f2fe; padding:2px 6px; border-radius:4px; display:inline-block; font-weight:700; border:1px solid #bae6fd;">FDA: ${esc(r.application_no)}</code>` : ''}
                   </div>
                 </td>
-                <td><button class="button" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
+                <td>
+                  <div style="font-weight:700; font-size:12px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div>
+                  ${r.contactInfo ? `<small style="font-size:11px; color:#0284c7; display:block; margin-top:3px; line-height:1.3;">📞 ${esc(r.contactInfo)}</small>` : ''}
+                </td>
+                <td>
+                  <div style="font-size:12px; font-weight:700; color:#334155;">${esc(r.updateDate)}</div>
+                  ${r.initialDate ? `<small style="font-size:10.5px; color:var(--muted); display:block; margin-top:2px;">İlan: ${esc(r.initialDate)}</small>` : ''}
+                </td>
+                <td>${renderActionCell(r)}</td>
+                <td><button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
               </tr>
             `).join('')}
           </tbody>
@@ -1725,71 +1778,33 @@ function shortageTableV2(rows, isFdaSource = true) {
       </div>
     `;
   }
+
   return `
     <div class="data-table">
       <table>
         <thead>
           <tr>
-            <th>İlaç / Etkin Madde & Marka</th>
+            <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
             <th>Kaynak</th>
             <th>Üretici / Tedarikçi</th>
             <th>NDC / Kod</th>
             <th>Tedarik Durumu</th>
-            <th>Sıkıntı Nedeni</th>
-            <th>Kırılganlık Riski</th>
-            <th>Önerilen Mühendislik Aksiyonu</th>
+            <th style="min-width:180px;">Sıkıntı Nedeni</th>
+            <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
             <th>İşlem</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(r => `
             <tr data-id="${r.id}" class="selectable" style="cursor:pointer">
-              <td class="drug-cell">
-                <b>${esc(label(r))}</b>
-                <small>${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
-                ${r.greenData ? `
-                  <div class="green-rx-meta">
-                    <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10px; width:fit-content; font-weight:700;">
-                      🟢 YEŞİL REÇETE (${esc(r.greenData.origin)}${r.greenData.deaSchedule ? ` · ${esc(r.greenData.deaSchedule)}` : ''}${r.greenData.name !== (r.generic_name || '').toUpperCase() ? ` · Etkin Madde: ${esc(r.greenData.name)}` : ''})
-                    </span>
-                    <div style="font-size:10.5px; color:#334155; margin-top:1px;">
-                      ${r.greenData.localEquivCount > 0 
-                        ? `<span style="color:#047857; font-weight:600;">● ${r.greenData.localEquivCount} Yerli Muadil (${esc(r.greenData.brand)})</span>` 
-                        : `<span style="color:#b91c1c; font-weight:700;">⚠ 0 Yerli Muadil (${esc(r.greenData.brand)} - Monopol)</span>`}
-                      <span style="color:var(--muted);">· SGK: ${esc(r.greenData.equivGroup)}</span>
-                    </div>
-                    ${r.greenData.yurtDisiList && r.greenData.yurtDisiList !== 'Hayır' ? `
-                      <span class="badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:9.5px; width:fit-content;">
-                        🏛️ SGK Yurt Dışı İlaç: ${esc(r.greenData.yurtDisiList)}
-                      </span>
-                    ` : ''}
-                  </div>
-                ` : ''}
-              </td>
+              ${renderDrugCell(r)}
               <td><span class="source-tag">${esc(sourceLabel(r.source))}</span></td>
-              <td>${esc(r.manufacturer || r.vendor || '—')}</td>
-              <td><code>${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
+              <td><div style="font-weight:700; font-size:12px; color:#0f172a;">${esc(r.manufacturer || r.vendor || '—')}</div></td>
+              <td><code style="font-size:11px;">${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
-              <td>
-                ${r.shortageReasonDisplay ? `
-                  <span class="reason-badge" style="font-weight:600; font-size:11px; white-space:normal; display:inline-block; max-width:240px; ${r.greenData && r.greenData.localEquivCount === 0 ? 'background:#fef2f2; color:#991b1b; border:1px solid #fecaca;' : ''}">
-                    ${esc(r.shortageReasonDisplay)}
-                  </span>
-                  ${r.categoryLabel && r.categoryKey !== 'normal' ? `
-                    <small style="color:#0284c7; font-weight:600; font-size:10px; display:block; margin-top:3px;">
-                      🏷 ${esc(r.categoryLabel)}
-                    </small>
-                  ` : ''}
-                ` : '<span style="color:var(--muted); font-size:11px;">—</span>'}
-              </td>
-              <td><span class="risk-pill ${r.riskTier}">${r.riskTierLabel} (${r.riskScore})</span></td>
-              <td>
-                <div style="font-size:11.5px; font-weight:600; color:#0369a1; line-height:1.3;">
-                  ⚡ ${esc(r.action)}
-                </div>
-                <small style="color:var(--muted); font-size:10px; display:block; margin-top:2px;">${esc(r.actionDetail)}</small>
-              </td>
-              <td><button class="button" style="padding:4px 10px; font-size:11px;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
+              <td>${renderReasonCell(r)}</td>
+              <td>${renderActionCell(r)}</td>
+              <td><button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -1797,6 +1812,7 @@ function shortageTableV2(rows, isFdaSource = true) {
     </div>
   `;
 }
+
 
 async function shortagePageV2(
   query = currentShortageV2Query,
@@ -2242,6 +2258,12 @@ async function shortagePageV2(
     const greenActiveCount = turkeyGreenMeds.filter(m => m.fdaShortage.includes('Active')).length;
     const greenLocalCount = turkeyGreenMeds.filter(m => m.origin.includes('İMAL')).length;
 
+    // Anlık filtrelenmiş analitik metrikler
+    const filteredCriticalCount = filtered.filter(r => r.riskScore >= 75).length;
+    const filteredCurrentCrisisCount = filtered.filter(r => (r.shortage_status || '').toLowerCase() === 'current').length;
+    const filteredGreenCount = filtered.filter(r => r.isGreen).length;
+    const filteredZeroEquivCount = filtered.filter(r => r.isGreen && (r.greenData?.localEquivCount === 0 || (r.shortage_status || '').includes('0 Muadil'))).length;
+
     const currentCount = Number(overview.currentShortages || 0);
     const totalShortages = Number(count['Drug Shortages'] || 0);
     const discontinuedCount = Number(summary?.status?.find(s => s.label === 'To Be Discontinued')?.value || 427);
@@ -2251,103 +2273,157 @@ async function shortagePageV2(
 
     page.innerHTML = header('Tedarik Sıkıntısı Analizi V2', 'FDA Drug Shortages kriz kayıtlarının tamamı, terapötik sınıflamalar ve Endüstri Mühendisliği karar destek motoru.') + guide + `
       <!-- 🔍 FİLTRELEME VE TOTAL BULUNAN İLAÇ SONUÇLARI BİLGİ KARTI (BAŞTA GÖSTERİM) -->
-      <div class="glass panel v2-results-summary-card" style="margin-bottom:14px; padding:18px 22px; border-left:5px solid #0284c7; background:linear-gradient(135deg, rgba(2, 132, 199, 0.09) 0%, rgba(240, 249, 255, 0.6) 100%); border-radius:14px; box-shadow:0 3px 12px rgba(2,132,199,0.08);">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+      <div class="glass panel v2-results-summary-card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
           <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-            <div style="width:46px; height:46px; border-radius:12px; background:linear-gradient(135deg, #0284c7, #0369a1); color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 4px 10px rgba(2,132,199,0.25);">
+            <div style="width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg, #0284c7, #0369a1); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 4px 12px rgba(2,132,199,0.28);">
               🔍
             </div>
             <div>
               <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#0369a1; display:flex; align-items:center; gap:6px;">
-                <span>V2 Tedarik Kriz Süzgeci</span>
-                <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; padding:1px 6px;">Canlı Sayım</span>
+                <span>V2 Tedarik Kriz Karar Destek Süzgeci</span>
+                <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; padding:1px 8px; font-weight:700;">Canlı Senkronize</span>
               </div>
-              <h3 style="margin:4px 0 0; font-size:20px; font-family:Outfit; color:#0f172a; font-weight:700;">
-                Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:24px; font-weight:800; background:#fff; padding:2px 12px; border-radius:8px; border:2px solid #38bdf8; box-shadow:0 2px 6px rgba(2,132,199,0.12); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ilaç bulundu.
+              <h3 style="margin:4px 0 0; font-size:21px; font-family:Outfit; color:#0f172a; font-weight:800;">
+                Filtreleme sonucunda toplam <span style="color:#0284c7; font-size:26px; font-weight:800; background:#fff; padding:2px 14px; border-radius:10px; border:2px solid #38bdf8; box-shadow:0 2px 8px rgba(2,132,199,0.14); display:inline-block;">${totalFound.toLocaleString('tr-TR')}</span> ilaç bulundu.
               </h3>
-              <div style="font-size:12px; color:#475569; margin-top:4px;">
+              <div style="font-size:12.5px; color:#475569; margin-top:5px; font-weight:500;">
                 ${isFdaSource 
                   ? (activeFilters.length > 0 
-                      ? `1.587 FDA kriz kaydı arasından seçili ${currentShortageV2GreenFilter ? 'yeşil reçete ve ' : ''}kriterlere uyan ilaçlar listeleniyor.` 
-                      : 'FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamı listeleniyor.')
+                      ? `1.587 FDA kriz kaydı içinden seçili kriterlere uyan kayıtlar listeleniyor.` 
+                      : 'FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamı eksiksiz listeleniyor.')
                   : (source === 'green_cases' ? `Türkiye ${turkeyGreenMeds.length} ulusal yeşil reçete molekülü listeleniyor.` : `${sourceNames[source] || source || 'Birleşik Katalog'} kayıtları listeleniyor.`)}
               </div>
             </div>
           </div>
 
-          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             <div style="text-align:right;">
               <div style="font-size:11px; color:#64748b; font-weight:600;">Görüntülenen İlaçlar</div>
-              <div style="font-size:13px; font-weight:700; color:#0f172a;">
+              <div style="font-size:14px; font-weight:800; color:#0f172a;">
                 ${totalFound === 0 ? '0' : `${((currentPage - 1) * pageSize) + 1}–${Math.min(currentPage * pageSize, totalFound)}`} / ${totalFound.toLocaleString('tr-TR')}
               </div>
             </div>
             ${activeFilters.length > 0 ? `
-              <button class="button secondary" onclick="resetAllShortageV2Filters()" style="padding:6px 14px; font-size:11.5px; color:#be123c; border-color:#fecdd3; display:inline-flex; align-items:center; gap:6px; font-weight:600;" title="Tüm filtreleri temizleyip varsayılan görünüme dön">
+              <button class="button secondary" onclick="resetAllShortageV2Filters()" style="padding:7px 16px; font-size:11.5px; color:#be123c; border-color:#fecdd3; display:inline-flex; align-items:center; gap:6px; font-weight:700;" title="Tüm filtreleri temizleyip varsayılan görünüme dön">
                 ✕ Filtreleri Sıfırla (${activeFilters.length})
               </button>
             ` : ''}
           </div>
         </div>
 
-        <!-- DAHİL EDİLEN FİLTRELERİN AYRINTILI LİSTESİ -->
+        <!-- Anlık Analitik Metrik Hapları -->
+        <div class="v2-metric-pills-row">
+          <span class="v2-metric-pill pill-total" title="Toplam filtrelenen ilaç sayısı">
+            📊 <b>${totalFound.toLocaleString('tr-TR')}</b> Toplam İlaç
+          </span>
+          <span class="v2-metric-pill pill-critical" onclick="setShortageV2Risk('high')" title="Tıkla: Sadece Kritik Riskli (Risk ≥ 75) ilaçları listele">
+            🚨 <b>${filteredCriticalCount.toLocaleString('tr-TR')}</b> Kritik Kırılganlık (Risk ≥ 75)
+          </span>
+          <span class="v2-metric-pill pill-active" onclick="setShortageV2Status('Current')" title="Tıkla: Devam eden aktif FDA krizlerini listele">
+            ⚡ <b>${filteredCurrentCrisisCount.toLocaleString('tr-TR')}</b> Aktif Kriz (Devam Eden)
+          </span>
+          <span class="v2-metric-pill pill-green" onclick="setShortageV2GreenFilter('green_only')" title="Tıkla: Yeşil reçeteli kontrole tabi ilaçları listele">
+            🟢 <b>${filteredGreenCount.toLocaleString('tr-TR')}</b> Kontrole Tabi (Yeşil Reçete)
+          </span>
+          ${filteredZeroEquivCount > 0 ? `
+            <span class="v2-metric-pill pill-zero" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: 0 yerli muadilli monopol ithal ilaçları listele">
+              ⚠ <b>${filteredZeroEquivCount.toLocaleString('tr-TR')}</b> 0 Yerli Muadil (Monopol)
+            </span>
+          ` : ''}
+        </div>
+
+        <!-- Dahil Edilen Filtrelerin Ayrıntılı Listesi -->
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(2, 132, 199, 0.15); display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
           <span style="font-size:12px; font-weight:700; color:#334155; display:inline-flex; align-items:center; gap:4px;">
             <span>🎯 Dahil Edilen Filtreler (${activeFilters.length}):</span>
           </span>
           ${activeFilters.length === 0 ? `
-            <span style="font-size:12px; color:#64748b; font-style:italic;">Filtre uygulanmadı — Seçili kaynak (${isFdaSource ? 'FDA Drug Shortages' : (source || 'Birleşik Katalog')}) kapsamındaki tüm kayıtlar listeleniyor.</span>
+            <span style="font-size:12px; color:#64748b; font-style:italic;">Filtre uygulanmadı — Seçili kaynak (${isFdaSource ? 'FDA Drug Shortages' : (source || 'Birleşik Katalog')}) kapsamındaki tüm 1.587 kayıt eksiksiz listeleniyor.</span>
           ` : activeFilters.map(f => `
-            <span class="badge" style="font-size:11px; padding:3px 8px; ${f.style || 'background:#fff; color:#0f172a; border:1px solid #cbd5e1;'} display:inline-flex; align-items:center; gap:5px;">
-              ${f.icon} <b>${f.label}:</b> ${esc(f.value)}
-              <span style="cursor:pointer; font-weight:bold; margin-left:3px; opacity:0.75;" onclick="${f.onRemove}" title="${f.label} filtresini kaldır">✕</span>
+            <span class="v2-active-filter-tag">
+              ${f.icon} <b>${f.label}:</b> <span>${esc(f.value)}</span>
+              <span class="v2-filter-remove-btn" onclick="${f.onRemove}" title="${f.label} filtresini kaldır">✕</span>
             </span>
           `).join('')}
         </div>
       </div>
+
       <!-- 🟢 TÜM YEŞİL REÇETELİLER MASTER FİLTRE & BİLGİ BANDI -->
-      <div class="glass panel green-master-banner" style="margin-bottom:14px; padding:16px 20px; border-left:5px solid #10b981; background:linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.05)); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
-        <div style="flex:1; min-width:280px;">
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:20px;">🟢</span>
-            <h2 style="margin:0; font-size:15px; font-family:Outfit; color:#065f46; font-weight:700;">
-              Resmi Yeşil Reçete & DEA Kontrollü İlaçlar İzleme Sistemi (${turkeyGreenMeds.length} Etkin Madde & Kombinasyonlar)
-            </h2>
-            <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10.5px; font-weight:700;">
-              DEA Schedule II-V & TİTCK Ek-4/A
-            </span>
+      <div class="glass panel green-master-banner">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+          <div style="flex:1; min-width:290px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:22px;">🟢</span>
+              <h2 style="margin:0; font-size:16px; font-family:Outfit; color:#065f46; font-weight:800;">
+                Resmi Yeşil Reçete & DEA Kontrollü İlaçlar İzleme Sistemi (${turkeyGreenMeds.length} Etkin Madde & Kombinasyonlar)
+              </h2>
+              <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:11px; font-weight:700;">
+                DEA Schedule II-V & TİTCK Ek-4/A
+              </span>
+            </div>
+            <div style="font-size:12.5px; color:#334155; margin-top:6px; line-height:1.5;">
+              Kritik merkezi sinir sistemi, anestezi ve psikotrop molekülleri (Fentanyl, Morphine, Oxycodone, Ketamine, Xanax, Contramal, Lyrica, Ritalin vb.) ile İsviçre kontrol listesi benzodiazepinleri ve müstahzarları tek merkezden izlenmektedir.
+            </div>
           </div>
-          <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.4;">
-            Önceki ve yeni eklenen tüm kontrollü moleküller (Fentanyl, Morphine, Oxycodone, Adderall, Ritalin, Suboxone, Ketamine, Xanax, Contramal, Lyrica vb.) ve bunları içeren tüm müstahzarlar/kombinasyonlar (Percocet, Vicodin vb.) tek merkezden izlenmektedir.
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="button" onclick="toggleShortageV2GreenOnly()" style="background:${currentShortageV2GreenFilter === 'green_only' ? '#047857' : '#059669'}; border-color:#047857; color:#fff; font-weight:700; padding:10px 20px; font-size:12.5px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 3px 10px rgba(16,185,129,0.35); border-radius:10px; cursor:pointer;" title="Tıkla: Tüm yeşil reçeteli ilaçları ve kombinasyonları filtrele">
+              ${currentShortageV2GreenFilter === 'green_only' ? '✓ TÜM YEŞİL REÇETELİLER SEÇİLİ (Filtreyi Kaldır)' : '🟢 TÜM YEŞİL REÇETELİLERİ FİLTRELE (Tek Tıkla Süz) →'}
+            </button>
+            ${currentShortageV2GreenFilter ? `
+              <button class="button secondary" onclick="setShortageV2GreenFilter('')" style="padding:9px 14px; font-size:12px; color:#e11d48; border-color:#fecdd3; font-weight:700;">
+                ✕ Yeşil Filtreyi Sıfırla
+              </button>
+            ` : ''}
           </div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <button class="button" onclick="toggleShortageV2GreenOnly()" style="background:${currentShortageV2GreenFilter === 'green_only' ? '#047857' : '#059669'}; border-color:#047857; color:#fff; font-weight:700; padding:9px 18px; font-size:12.5px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 2px 8px rgba(16,185,129,0.3); border-radius:10px; cursor:pointer;" title="Tıkla: Tüm yeşil reçeteli ilaçları ve kombinasyonları filtrele">
-            ${currentShortageV2GreenFilter === 'green_only' ? '✓ TÜM YEŞİL REÇETELİLER SEÇİLİ (Filtreyi Kaldır)' : '🟢 TÜM YEŞİL REÇETELİLERİ FİLTRELE (Tek Tıkla Süz) →'}
-          </button>
-          ${currentShortageV2GreenFilter ? `
-            <button class="button secondary" onclick="setShortageV2GreenFilter('')" style="padding:8px 12px; font-size:11.5px; color:#e11d48; border-color:#fecdd3;">
-              ✕ Yeşil Filtreyi Sıfırla
-            </button>
-          ` : ''}
+
+        <!-- 3 Hızlı Yeşil Reçete Kategori Kartı -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:10px; margin-top:14px;">
+          <div class="green-stat-card ${currentShortageV2GreenFilter === 'import_zero' ? 'active' : ''}" style="border-left:4px solid #e11d48;" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: İthal bağımlısı (0 muadil) yeşil reçeteleri filtrele">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11.5px; font-weight:700; color:#991b1b;">🔴 İthal Bağımlısı (0 Muadil)</span>
+              <span class="badge" style="background:#fee2e2; color:#991b1b; font-size:10px; font-weight:800;">Yüksek Kırılganlık</span>
+            </div>
+            <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">${greenImportZeroCount} İlaç</div>
+            <div style="font-size:11px; color:#64748b; margin-top:3px; line-height:1.35;">Alprazolam (Xanax), Klonazepam, Tianeptin vb.</div>
+          </div>
+          <div class="green-stat-card ${currentShortageV2GreenFilter === 'green_active' ? 'active' : ''}" style="border-left:4px solid #f59e0b;" onclick="setShortageV2GreenFilter('green_active')" title="Tıkla: Aktif FDA krizindeki yeşil reçeteleri filtrele">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11.5px; font-weight:700; color:#b45309;">⚡ Aktif Küresel Kriz (FDA)</span>
+              <span class="badge" style="background:#fef3c7; color:#b45309; font-size:10px; font-weight:800;">Küresel Darboğaz</span>
+            </div>
+            <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">${greenActiveCount} İlaç</div>
+            <div style="font-size:11px; color:#64748b; margin-top:3px; line-height:1.35;">Lorazepam (Ativan), Midazolam, Fentanyl vb.</div>
+          </div>
+          <div class="green-stat-card ${currentShortageV2GreenFilter === 'local_prod' ? 'active' : ''}" style="border-left:4px solid #10b981;" onclick="setShortageV2GreenFilter('local_prod')" title="Tıkla: Yerli imalat güvencesindeki yeşil reçeteleri filtrele">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11.5px; font-weight:700; color:#047857;">🟢 Yerli İmalat Güvencesi</span>
+              <span class="badge" style="background:#d1fae5; color:#047857; font-size:10px; font-weight:800;">Ulusal Güvence</span>
+            </div>
+            <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">${greenLocalCount} İlaç</div>
+            <div style="font-size:11px; color:#64748b; margin-top:3px; line-height:1.35;">Diazepam, Tramadol, Pregabalin, Biperiden vb.</div>
+          </div>
         </div>
       </div>
 
       <!-- FDA Resmi Veri Portalı Senkronizasyon Kartı -->
-      <div class="glass panel fda-sync-banner" style="margin-bottom:18px; padding:14px 20px; border-left:4px solid #0284c7; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-        <div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:16px;">🏛️</span>
-            <h2 style="margin:0; font-size:14px; font-family:Outfit; color:#0f172a;">ABD FDA Resmi Drug Shortages Portalı Veri Tabanı</h2>
-            <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10.5px;">✓ Tüm 1.587 Kriz Kaydı Entegre</span>
+      <div class="glass panel fda-sync-banner">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:18px;">🏛️</span>
+              <h2 style="margin:0; font-size:15px; font-family:Outfit; color:#0f172a; font-weight:700;">ABD FDA Resmi Drug Shortages Portalı Veri Tabanı</h2>
+              <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:11px; font-weight:700;">✓ Tüm 1.587 Kriz Kaydı Entegre</span>
+            </div>
+            <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.4;">
+              FDA'nın resmi veri tabanındaki (${totalShortages.toLocaleString('tr-TR')} kriz kaydı) tüm Terapötik Sınıflar, Dozaj/Sunum Formları, Stok Durumu ve İletişim verileriyle bu ekrana tam entegre olarak listelenmektedir.
+            </div>
           </div>
-          <div style="font-size:11.5px; color:#475569; margin-top:3px;">
-            FDA'nın resmi sitesindeki (${totalShortages.toLocaleString('tr-TR')} kriz kaydı) tüm Terapötik Kategoriler, Dozaj/Sunum Formları, Stok Durumu ve İletişim verileriyle bu ekrana tam entegre olarak listelenmektedir.
-          </div>
+          <a href="https://www.accessdata.fda.gov/scripts/drugshortages/" target="_blank" rel="noopener noreferrer" class="button" style="padding:8px 16px; font-size:11.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:700;">
+            FDA Resmi Portalı ↗
+          </a>
         </div>
-        <a href="https://www.accessdata.fda.gov/scripts/drugshortages/" target="_blank" rel="noopener noreferrer" class="button" style="padding:6px 14px; font-size:11px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
-          FDA Resmi Sitesi ↗
-        </a>
       </div>
 
       <section class="grid stats" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
@@ -2399,73 +2475,78 @@ async function shortagePageV2(
 
           <div style="margin-top:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span style="font-size:12px; font-weight:700; color:var(--ink); font-family:Outfit;">
+              <span style="font-size:12.5px; font-weight:700; color:var(--ink); font-family:Outfit;">
                 📋 FDA Veri Tabanı Kriz Nedenleri Sonuç Dağılımı (Filtrelemek İçin Tıklayın)
               </span>
               ${reasonFilter ? `
-                <button class="button secondary" onclick="setShortageV2Reason('')" style="padding:2px 8px; font-size:11px; color:#e11d48; border-color:#fecdd3;">
+                <button class="button secondary" onclick="setShortageV2Reason('')" style="padding:3px 10px; font-size:11px; color:#e11d48; border-color:#fecdd3; font-weight:700;">
                   ✕ Filtreyi Temizle
                 </button>
               ` : ''}
             </div>
 
             <div class="reason-results-list">
-              ${summary.reasons.map(r => {
-                const isSelected = reasonFilter === r.label;
-                const desc = fdaReasonDescriptions[r.label] || 'FDA Kriz Bildirimi';
-                return `
-                  <div class="reason-result-item ${isSelected ? 'active' : ''}" onclick="setShortageV2Reason('${esc(r.label)}')" title="Tıkla: Bu nedene ait ilaçları listele">
-                    <div class="reason-result-info">
-                      <div class="reason-result-title">
-                        <b>${esc(r.label)}</b>
-                        <span class="reason-tr">${esc(desc)}</span>
+              ${(() => {
+                const totalReasonsSum = summary.reasons.reduce((acc, curr) => acc + Number(curr.value || 0), 0) || 1;
+                return summary.reasons.map(r => {
+                  const isSelected = reasonFilter === r.label;
+                  const desc = getFdaReasonTr(r.label);
+                  const pct = Math.round((Number(r.value) / totalReasonsSum) * 100);
+                  return `
+                    <div class="reason-result-item ${isSelected ? 'active' : ''}" onclick="setShortageV2Reason('${esc(r.label)}')" title="Tıkla: Bu nedene ait ilaçları listele">
+                      <div class="reason-result-info">
+                        <div class="reason-result-title">
+                          <span class="reason-tr">${esc(desc)}</span>
+                          <span class="reason-en">FDA: ${esc(r.label)}</span>
+                        </div>
+                      </div>
+                      <div class="reason-result-stats">
+                        <span class="reason-count">${Number(r.value).toLocaleString('tr-TR')} kayıt</span>
+                        <span class="reason-pct">%${pct}</span>
+                        <span class="reason-badge-btn">${isSelected ? '✓ Seçili' : 'Filtrele →'}</span>
                       </div>
                     </div>
-                    <div class="reason-result-stats">
-                      <span class="reason-count">${Number(r.value).toLocaleString('tr-TR')} kayıt</span>
-                      <span class="reason-badge-btn">${isSelected ? '✓ Seçili' : 'Filtrele →'}</span>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
+                  `;
+                }).join('');
+              })()}
             </div>
           </div>
 
           <!-- 🇹🇷 Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı Paneli -->
-          <div style="margin-top:16px; padding:14px; border-radius:12px; background:linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.08)); border:1px solid rgba(16, 185, 129, 0.25);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+          <div style="margin-top:16px; padding:16px; border-radius:14px; background:linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.08)); border:1px solid rgba(16, 185, 129, 0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
               <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:16px;">🇹🇷</span>
-                <b style="font-size:13px; color:#065f46; font-family:Outfit;">Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı (${turkeyGreenMeds.length} Ulusal Molekül)</b>
+                <span style="font-size:18px;">🇹🇷</span>
+                <b style="font-size:13.5px; color:#065f46; font-family:Outfit;">Türkiye Yeşil Reçete & Ulusal Tedarik Kriz Dağılımı (${turkeyGreenMeds.length} Ulusal Molekül)</b>
               </div>
-              <button class="button" style="padding:4px 12px; font-size:11px;" onclick="setShortageV2GreenFilter('green_only')">
+              <button class="button" style="padding:5px 14px; font-size:11.5px; font-weight:700;" onclick="setShortageV2GreenFilter('green_only')">
                 🟢 ${turkeyGreenMeds.length} Yeşil Reçeteli İlacı Listele →
               </button>
             </div>
-            <div style="font-size:11.5px; color:#475569; margin-bottom:10px;">
+            <div style="font-size:12px; color:#334155; margin-bottom:12px; line-height:1.45;">
               T.C. Sağlık Bakanlığı TİTCK ve SGK Ek-4/A resmi yeşil reçete listesiyle: Türkiye'de yerli alternatifi olmayan (%100 ithal) yeşil reçete ilaçları, FDA krizinde olmasalar dahi ulusal seviyede <b>kritik tedarik kırılganlığına (0 Muadil)</b> sahiptir.
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
-              <div class="green-stat-card" style="border-left:3px solid #e11d48;" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: İthal bağımlısı (0 muadil) yeşil reçeteleri filtrele">
-                <div style="font-size:11px; font-weight:700; color:#991b1b;">🔴 İthal Bağımlısı (0 Muadil)</div>
-                <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenImportZeroCount} İlaç</div>
-                <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Alprazolam (Xanax), Klonazepam, Tianeptin, vb.</div>
+              <div class="green-stat-card ${currentShortageV2GreenFilter === 'import_zero' ? 'active' : ''}" style="border-left:4px solid #e11d48;" onclick="setShortageV2GreenFilter('import_zero')" title="Tıkla: İthal bağımlısı (0 muadil) yeşil reçeteleri filtrele">
+                <div style="font-size:11.5px; font-weight:700; color:#991b1b;">🔴 İthal Bağımlısı (0 Muadil)</div>
+                <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:2px;">${greenImportZeroCount} İlaç</div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">Alprazolam (Xanax), Klonazepam, Tianeptin, vb.</div>
               </div>
-              <div class="green-stat-card" style="border-left:3px solid #f59e0b;" onclick="setShortageV2GreenFilter('green_active')" title="Tıkla: Aktif FDA krizindeki yeşil reçeteleri filtrele">
-                <div style="font-size:11px; font-weight:700; color:#b45309;">⚡ Aktif Küresel Kriz (FDA)</div>
-                <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenActiveCount} İlaç</div>
-                <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Klonazepam (Rivotril), Lorazepam (Ativan), Midazolam, vb.</div>
+              <div class="green-stat-card ${currentShortageV2GreenFilter === 'green_active' ? 'active' : ''}" style="border-left:4px solid #f59e0b;" onclick="setShortageV2GreenFilter('green_active')" title="Tıkla: Aktif FDA krizindeki yeşil reçeteleri filtrele">
+                <div style="font-size:11.5px; font-weight:700; color:#b45309;">⚡ Aktif Küresel Kriz (FDA)</div>
+                <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:2px;">${greenActiveCount} İlaç</div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">Klonazepam (Rivotril), Lorazepam (Ativan), Midazolam, vb.</div>
               </div>
-              <div class="green-stat-card" style="border-left:3px solid #10b981;" onclick="setShortageV2GreenFilter('local_prod')" title="Tıkla: Yerli imalat güvencesindeki yeşil reçeteleri filtrele">
-                <div style="font-size:11px; font-weight:700; color:#047857;">🟢 Yerli İmalat Güvencesi</div>
-                <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${greenLocalCount} İlaç</div>
-                <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Diazepam, Tramadol, Pregabalin, Biperiden vb.</div>
+              <div class="green-stat-card ${currentShortageV2GreenFilter === 'local_prod' ? 'active' : ''}" style="border-left:4px solid #10b981;" onclick="setShortageV2GreenFilter('local_prod')" title="Tıkla: Yerli imalat güvencesindeki yeşil reçeteleri filtrele">
+                <div style="font-size:11.5px; font-weight:700; color:#047857;">🟢 Yerli İmalat Güvencesi</div>
+                <div style="font-size:20px; font-weight:800; color:#0f172a; margin-top:2px;">${greenLocalCount} İlaç</div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">Diazepam, Tramadol, Pregabalin, Biperiden vb.</div>
               </div>
             </div>
           </div>
 
-          <div class="notice" style="margin-top:12px;">
-            💡 <b>Sıkıntı Nedeni Analizi:</b> Yukarıdaki neden sonuçlarından herhangi birine tıklayarak tablodaki ilaçları doğrudan o kök nedene göre filtreleyebilir; ilgili mühendislik aksiyonunu (ikincil API, ROP tamponu, tayınlama) denetleyebilirsiniz.
+          <div class="notice" style="margin-top:14px; font-size:12px; line-height:1.45;">
+            💡 <b>Kök Neden Analizi & Karar Desteği:</b> Yukarıdaki neden sonuçlarından herhangi birine tıklayarak tablodaki ilaçları doğrudan o kök nedene göre filtreleyebilir; ilgili endüstri mühendisliği aksiyonunu (ikincil API, ROP tamponu, dinamik tayınlama) denetleyebilirsiniz.
           </div>
         </article>
 
@@ -2481,34 +2562,34 @@ async function shortagePageV2(
 
           <div class="status-stat-grid" style="margin-top:12px;">
             <div class="status-stat-item ${status === 'Current' ? 'active' : ''}" onclick="setShortageV2Status('Current')">
-              <div style="font-size:11px; font-weight:700; color:#b91c1c;">● Güncel (Aktif Kriz)</div>
-              <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:2px;">${currentCount.toLocaleString('tr-TR')}</div>
-              <small style="color:var(--muted); font-size:10px;">Kriz süreci devam ediyor</small>
+              <div style="font-size:11.5px; font-weight:700; color:#b91c1c;">● Güncel (Aktif Kriz)</div>
+              <div style="font-size:17px; font-weight:800; color:#0f172a; margin-top:2px;">${currentCount.toLocaleString('tr-TR')}</div>
+              <small style="color:var(--muted); font-size:10.5px;">Kriz süreci devam ediyor</small>
             </div>
             <div class="status-stat-item ${status === 'To Be Discontinued' ? 'active' : ''}" onclick="setShortageV2Status('To Be Discontinued')">
-              <div style="font-size:11px; font-weight:700; color:#d97706;">● Sonlandırılıyor</div>
-              <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:2px;">${discontinuedCount.toLocaleString('tr-TR')}</div>
-              <small style="color:var(--muted); font-size:10px;">Üretici piyasadan çekiliyor</small>
+              <div style="font-size:11.5px; font-weight:700; color:#d97706;">● Sonlandırılıyor</div>
+              <div style="font-size:17px; font-weight:800; color:#0f172a; margin-top:2px;">${discontinuedCount.toLocaleString('tr-TR')}</div>
+              <small style="color:var(--muted); font-size:10.5px;">Üretici piyasadan çekiliyor</small>
             </div>
             <div class="status-stat-item ${status === 'Resolved' ? 'active' : ''}" onclick="setShortageV2Status('Resolved')">
-              <div style="font-size:11px; font-weight:700; color:#047857;">● Çözüldü</div>
-              <div style="font-size:16px; font-weight:800; color:#0f172a; margin-top:2px;">${resolvedCount.toLocaleString('tr-TR')}</div>
-              <small style="color:var(--muted); font-size:10px;">Stok dengesi sağlandı</small>
+              <div style="font-size:11.5px; font-weight:700; color:#047857;">● Çözüldü</div>
+              <div style="font-size:17px; font-weight:800; color:#0f172a; margin-top:2px;">${resolvedCount.toLocaleString('tr-TR')}</div>
+              <small style="color:var(--muted); font-size:10.5px;">Stok dengesi sağlandı</small>
             </div>
           </div>
 
-          <!-- 🏭 En Çok Tedarik Sıkıntısı Bildirilen Üretici Firmalar (Eski Sistem Supplier Analizi) -->
+          <!-- 🏭 En Çok Tedarik Sıkıntısı Bildirilen Üretici Firmalar -->
           <div class="top-companies-container" style="margin-top:16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span style="font-size:12px; font-weight:700; color:var(--ink); font-family:Outfit;">
+              <span style="font-size:12.5px; font-weight:700; color:var(--ink); font-family:Outfit;">
                 🏭 En Çok Kriz Bildiren Üreticiler (Filtrelemek İçin Tıklayın)
               </span>
               ${currentShortageV2Manufacturer ? `
-                <button class="button secondary" onclick="setShortageV2Manufacturer('')" style="padding:2px 8px; font-size:10.5px; color:#e11d48;">✕ Firma Filtresini Sıfırla</button>
+                <button class="button secondary" onclick="setShortageV2Manufacturer('')" style="padding:2px 8px; font-size:11px; color:#e11d48; font-weight:700;">✕ Sıfırla</button>
               ` : ''}
             </div>
-            <div style="font-size:11px; color:var(--muted); margin-bottom:8px;">
-              Eski sistemin tedarikçi analizinden: FDA kriz veri tabanında en yoğun bildirim yapan ilaç firmaları:
+            <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">
+              FDA kriz veri tabanında en yoğun bildirim yapan ilk 10 uluslararası ilaç firması:
             </div>
             <div class="top-companies-grid">
               ${(summary.topCompanies && summary.topCompanies.length ? summary.topCompanies : [
@@ -2534,31 +2615,64 @@ async function shortagePageV2(
             </div>
           </div>
 
-          <div style="margin-top:16px;">
-            <div class="panel-head" style="margin-bottom:8px;">
+          <!-- 📊 Endüstri Mühendisliği Karar Destek & Müdahale Matrisi (IE Matrix) -->
+          <div style="margin-top:18px;">
+            <div class="panel-head" style="margin-bottom:6px;">
               <h2>Endüstri Mühendisliği Müdahale Matrisi</h2>
               <span class="source-tag">Karar Destek Çerçevesi</span>
             </div>
+            <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">
+              Krizin kök nedenine göre uygulanan stok optimizasyonu, tampon süresi ve operasyonel mühendislik kararları (Filtrelemek için karta tıklayın):
+            </div>
             <div class="ie-matrix-grid">
-              <div class="ie-matrix-card">
-                <b>🚨 Hammadde / API Krizi</b>
-                <small>Dual-Sourcing & Güvenlik Stoğu Artırımı (SS = Z · σ_L · D)</small>
+              <div class="ie-matrix-card ${reasonFilter === 'api' ? 'active' : ''}" onclick="setShortageV2Reason('api')" title="Tıkla: Hammadde/API sıkıntısı olan ilaçları filtrele">
+                <div class="ie-card-head">
+                  <b>🚨 Hammadde / API Darboğazı</b>
+                  <span class="badge" style="background:#fee2e2; color:#991b1b; font-size:9.5px; font-weight:800;">Tedarik Riski</span>
+                </div>
+                <div class="ie-card-formula">Emniyet Stoğu: SS = Z · σ_L · D (Z=2.33, %99 Servis Düzeyi)</div>
+                <div class="ie-card-desc">İkincil API üreticisi akreditasyonu hızlandırılır; emniyet stoğu ve sipariş partisi azamiye çıkarılır.</div>
+                <div class="ie-card-action">⚡ Dual-Sourcing & İkincil Kaynak Akreditasyonu →</div>
               </div>
-              <div class="ie-matrix-card">
-                <b>🚢 Lojistik & Boğaz Gecikmesi</b>
-                <small>Lead Time Tamponu (+21 Gün) & Sipariş Noktası (ROP) Revizyonu</small>
+
+              <div class="ie-matrix-card ${reasonFilter === 'logistics' ? 'active' : ''}" onclick="setShortageV2Reason('logistics')" title="Tıkla: Lojistik/Boğaz gecikmesi yaşayan ilaçları filtrele">
+                <div class="ie-card-head">
+                  <b>🚢 Lojistik & Boğaz Gecikmesi</b>
+                  <span class="badge" style="background:#fef3c7; color:#b45309; font-size:9.5px; font-weight:800;">Transit Gecikmesi</span>
+                </div>
+                <div class="ie-card-formula">Sipariş Noktası: ROP = d · (L + 21 Gün) + SS</div>
+                <div class="ie-card-desc">Süveyş ve boğaz sapmaları kaynaklı teslim süresi uzamasına karşı ROP öne çekilir; acil hava koridoru açılır.</div>
+                <div class="ie-card-action">⚡ Lead Time Tamponu (+21 Gün) & ROP Güncellemesi →</div>
               </div>
-              <div class="ie-matrix-card">
-                <b>⚙ GMP & Kalite Kesintisi</b>
-                <small>Eşdeğer Fason Tesis Lisans Transferi & Validasyon Hızlandırma</small>
+
+              <div class="ie-matrix-card ${reasonFilter === 'gmp' ? 'active' : ''}" onclick="setShortageV2Reason('gmp')" title="Tıkla: GMP/Kalite kaynaklı krizleri filtrele">
+                <div class="ie-card-head">
+                  <b>⚙️ GMP & Kalite Uyumsuzluğu</b>
+                  <span class="badge" style="background:#f3e8ff; color:#7e22ce; font-size:9.5px; font-weight:800;">Üretim Kesintisi</span>
+                </div>
+                <div class="ie-card-formula">Eşdeğer Fason Tesis Transferi & Hızlı Parti Salımı</div>
+                <div class="ie-card-desc">Hattı duran tesisteki lisans, onaylı alternatif fason üreticiye aktarılır; analitik parti salımı hızlandırılır.</div>
+                <div class="ie-card-action">⚡ Fason Tesis İkamesi & Validasyon Hızlandırma →</div>
               </div>
-              <div class="ie-matrix-card">
-                <b>📈 Talep Sıçraması</b>
-                <small>Dinamik Tayınlama (Rationing) & Spekülatif Stok Blokajı</small>
+
+              <div class="ie-matrix-card ${reasonFilter === 'demand' ? 'active' : ''}" onclick="setShortageV2Reason('demand')" title="Tıkla: Talep sıçraması kaynaklı krizleri filtrele">
+                <div class="ie-card-head">
+                  <b>📈 Talep Sıçraması & Kapasite</b>
+                  <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:9.5px; font-weight:800;">Kapasite Aşımı</span>
+                </div>
+                <div class="ie-card-formula">Dinamik Tayınlama Kotası: Q_i = Q_toplam · (T_i / ΣT)</div>
+                <div class="ie-card-desc">Hastanelerin ve eczanelerin geçmiş tüketim verilerine göre kotalı dağıtım uygulanarak panik stoklaması önlenir.</div>
+                <div class="ie-card-action">⚡ Dinamik Tayınlama & Spekülatif Stok Blokajı →</div>
               </div>
-              <div class="ie-matrix-card">
-                <b>🛑 Piyasadan Çekilme</b>
-                <small>SGK Eşdeğer Grubu Muadil Yönlendirmesi & TEB Ek-1 İthalat</small>
+
+              <div class="ie-matrix-card ${reasonFilter === 'discontinued' ? 'active' : ''}" onclick="setShortageV2Reason('discontinued')" title="Tıkla: Piyasadan çekilen/terk edilen ilaçları filtrele">
+                <div class="ie-card-head">
+                  <b>🛑 Piyasadan Çekilme / Terk</b>
+                  <span class="badge" style="background:#f1f5f9; color:#475569; font-size:9.5px; font-weight:800;">Pazar Terki</span>
+                </div>
+                <div class="ie-card-formula">Eşdeğer Geçiş Protokolü + TEB Ek-1 İthalat</div>
+                <div class="ie-card-desc">Reçeteler yerli eşdeğer ilaçlara yönlendirilir; yerli muadili yoksa TEB Ek-1 acil ithalat protokolü açılır.</div>
+                <div class="ie-card-action">⚡ SGK Eşdeğer Grubu Muadili & TEB Acil Temin →</div>
               </div>
             </div>
           </div>
