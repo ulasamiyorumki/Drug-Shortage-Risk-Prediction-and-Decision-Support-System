@@ -996,6 +996,7 @@ async function detail(id) {
     const greenMatch = getTurkeyGreenMed(r.generic_name || '') || getTurkeyGreenMed(r.brand_name || '');
     const groups = Object.groupBy(data.related, x => x.source);
     const isGreen = Boolean(greenMatch) || greenMeds.test(r.generic_name || '') || greenMeds.test(r.brand_name || '');
+    const alts = getAlternativeManufacturers(r);
     const greenBadge = '';
     page.innerHTML = header(`${label(r)}${greenBadge}`, 'FDA, NDC, tedarik sıkıntısı, CMS ve VA kaynaklarındaki mevcut kayıtlar.') + `
       ${greenMatch ? `
@@ -1023,6 +1024,7 @@ async function detail(id) {
           ${field('Marka Adı', r.brand_name, r.source)}
           ${field('Üretici', r.manufacturer, r.source)}
           ${field('Tedarikçi', r.vendor, r.source)}
+          ${alts.length ? field(`Alternatif Üreticiler (${alts.length})`, alts.join(' · '), r.source) : field('Alternatif Üretici', 'Yok (Aynı etken madde & dozaj formunda tek kaynak)', r.source)}
           ${field('NDC', r.ndc || r.product_ndc || r.package_ndc, r.source)}
           ${field('Başvuru Numarası', r.application_no, r.source)}
           ${field('Tedarik Sıkıntısı Durumu', r.shortage_status || (greenMatch ? (greenMatch.localEquivCount === 0 ? 'İthal Bağımlısı (0 Muadil)' : 'Kontrole Tabi') : ''), r.source)}
@@ -1609,6 +1611,104 @@ function renderMedicareCells(r) {
   `;
 }
 
+function getAlternativeManufacturers(r) {
+  if (Array.isArray(r.alternative_manufacturers)) {
+    return r.alternative_manufacturers;
+  }
+  const rj = typeof r.raw_json === 'object' && r.raw_json ? r.raw_json : {};
+  if (Array.isArray(rj.alternative_manufacturers)) {
+    return rj.alternative_manufacturers;
+  }
+
+  const currentMfg = (r.manufacturer || r.vendor || '').trim().toLowerCase();
+  const gn = (r.generic_name || r.molecule_name || '').toLowerCase().trim();
+
+  if (v2FdaRecordsCache && Array.isArray(v2FdaRecordsCache)) {
+    const alts = new Set();
+    const targetIng = (r.active_ingredient || '').toLowerCase().trim();
+    const targetForm = (r.dosage_form || '').toLowerCase().trim();
+
+    for (const item of v2FdaRecordsCache) {
+      const itemMfg = (item.manufacturer || item.vendor || '').trim();
+      if (!itemMfg || (currentMfg && itemMfg.toLowerCase() === currentMfg)) continue;
+
+      if (targetIng && targetForm && item.active_ingredient && item.dosage_form) {
+        if (item.active_ingredient.toLowerCase() === targetIng && item.dosage_form.toLowerCase() === targetForm) {
+          alts.add(itemMfg);
+        }
+      } else if (targetIng && item.active_ingredient && item.active_ingredient.toLowerCase() === targetIng) {
+        alts.add(itemMfg);
+      } else if (gn && item.generic_name) {
+        const itemGn = item.generic_name.toLowerCase();
+        if (itemGn === gn || (gn.length > 4 && itemGn.includes(gn)) || (itemGn.length > 4 && gn.includes(itemGn))) {
+          alts.add(itemMfg);
+        }
+      }
+    }
+    return Array.from(alts).sort();
+  }
+
+  return [];
+}
+
+function renderAlternativeManufacturersCell(r) {
+  const alts = getAlternativeManufacturers(r);
+  const count = alts.length;
+
+  if (count === 0) {
+    return `
+      <td style="min-width:200px; max-width:260px; vertical-align:top; padding:14px 16px; white-space:normal;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <span class="badge" style="background:#fef2f2; color:#991b1b; border:1px solid #fecaca; font-weight:800; font-size:11px; width:fit-content; display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
+            <span>✕</span> <span>Yok</span>
+          </span>
+          <small style="font-size:10px; color:#94a3b8; font-weight:500; line-height:1.35;">
+            Aynı etken madde & dozaj formunda farklı üretici yok (Tek Kaynak)
+          </small>
+        </div>
+      </td>
+    `;
+  }
+
+  const visibleAlts = alts.slice(0, 3);
+  const remainingAlts = alts.slice(3);
+
+  return `
+    <td style="min-width:240px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11px; width:fit-content; display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
+            <span>✓</span> <span>${count} Alternatif Üretici</span>
+          </span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
+          ${visibleAlts.map(m => `
+            <div style="font-size:11px; color:#0f172a; background:#f8fafc; padding:4px 8px; border-radius:6px; border:1px solid #e2e8f0; display:flex; align-items:flex-start; gap:5px; line-height:1.35; word-break:break-word;">
+              <span style="color:#0284c7; font-size:11.5px; flex-shrink:0; margin-top:1px;">🏢</span>
+              <span style="font-weight:600;">${esc(m)}</span>
+            </div>
+          `).join('')}
+          ${remainingAlts.length > 0 ? `
+            <details onclick="event.stopPropagation();" style="margin-top:2px;">
+              <summary style="font-size:10.5px; font-weight:700; color:#0284c7; cursor:pointer; padding:3px 8px; border-radius:5px; background:#f0f9ff; border:1px dashed #bae6fd; list-style:none; display:inline-flex; align-items:center; gap:4px;">
+                <span>▾ +${remainingAlts.length} Üretici Daha Göster</span>
+              </summary>
+              <div style="display:flex; flex-direction:column; gap:4px; margin-top:5px; max-height:150px; overflow-y:auto; padding-right:2px;">
+                ${remainingAlts.map(m => `
+                  <div style="font-size:11px; color:#0f172a; background:#f8fafc; padding:4px 8px; border-radius:6px; border:1px solid #e2e8f0; display:flex; align-items:flex-start; gap:5px; line-height:1.35; word-break:break-word;">
+                    <span style="color:#0284c7; font-size:11.5px; flex-shrink:0; margin-top:1px;">🏢</span>
+                    <span style="font-weight:600;">${esc(m)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </details>
+          ` : ''}
+        </div>
+      </div>
+    </td>
+  `;
+}
+
 window.exportShortagesV2Csv = function() {
   if (!window.currentFilteredShortageRows || !window.currentFilteredShortageRows.length) {
     alert('Dışa aktarılacak kriz kaydı bulunamadı.');
@@ -1628,12 +1728,14 @@ window.exportShortagesV2Csv = function() {
       'FDA Kriz Durumu', 'FDA Kayıt Sayısı', 'FDA Kök Nedenleri',
       'EMA Kriz Durumu', 'EMA Alternatif Durumu (Monopol)', 'EMA Beklenen Çözülme', 'EMA MeSH Alanı',
       'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)',
+      'Alternatif Üretici Sayısı', 'Alternatif Üreticiler',
       'Endüstri Mühendisliği Aksiyonu', 'Aksiyon Detayı'
     ];
     const csvContent = '\uFEFF' + [
       crossHeaders.join(','),
       ...rows.map(r => {
         const med = getMedicareDataMatch(r) || r.medicare_data || {};
+        const alts = getAlternativeManufacturers(r);
         return [
           escapeCsv(r.molecule_name),
           escapeCsv(r.brand_names_combined),
@@ -1649,6 +1751,8 @@ window.exportShortagesV2Csv = function() {
           escapeCsv((r.ema_data?.mesh_categories || []).join('; ')),
           escapeCsv(med.claims_display || formatMedicareClaims(med.claims)),
           escapeCsv(med.spending_display || formatMedicareSpending(med.spending)),
+          escapeCsv(alts.length),
+          escapeCsv(alts.length ? alts.join('; ') : 'Yok'),
           escapeCsv(r.action),
           escapeCsv(r.action_detail)
         ].join(',');
@@ -1665,6 +1769,7 @@ window.exportShortagesV2Csv = function() {
     'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu',
     'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)', 'Sıkıntı Nedeni',
     'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
+    'Alternatif Üretici Sayısı', 'Alternatif Üreticiler',
     'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
     'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
   ];
@@ -1673,6 +1778,7 @@ window.exportShortagesV2Csv = function() {
     headers.join(','),
     ...rows.map(r => {
       const med = getMedicareDataMatch(r);
+      const alts = getAlternativeManufacturers(r);
       return [
         escapeCsv(r.id),
         escapeCsv(r.source),
@@ -1687,6 +1793,8 @@ window.exportShortagesV2Csv = function() {
         escapeCsv(r.availability || ''),
         escapeCsv(r.presentation || ''),
         escapeCsv(r.manufacturer || r.vendor || ''),
+        escapeCsv(alts.length),
+        escapeCsv(alts.length ? alts.join('; ') : 'Yok'),
         escapeCsv(r.contactInfo || ''),
         escapeCsv(r.application_no || ''),
         escapeCsv(r.ndc || r.product_ndc || r.package_ndc || ''),
@@ -2128,6 +2236,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Transatlantik Risk</th>
               <th style="min-width:240px;">🇺🇸 ABD FDA Kriz Verileri</th>
               <th style="min-width:240px;">🇪🇺 AB EMA Kriz Verileri</th>
+              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
               <th style="min-width:160px; padding:12px 14px;">
                 <div style="font-weight:700;">Medicare Reçete Talebi</div>
                 <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
@@ -2203,6 +2312,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                       ` : ''}
                     </div>
                   </td>
+                  ${renderAlternativeManufacturersCell(r)}
                   ${renderMedicareCells(r)}
                   <td>
                     <div style="font-size:12px; font-weight:700; color:#0f172a;">
@@ -2253,6 +2363,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               </th>
               <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
               <th style="min-width:240px; padding:12px 16px;">Etkilenen Form & Dozaj</th>
+              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
               <th>Alternatif Bulunabilirliği</th>
               <th>Tarihler & Beklenen Çözülme</th>
               <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
@@ -2311,6 +2422,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                       </div>
                     ` : ''}
                   </td>
+                  ${renderAlternativeManufacturersCell(r)}
                   <td>${altHtml}</td>
                   <td style="min-width:180px; vertical-align:top; padding:14px 16px; white-space:normal;">
                     <div style="display:flex; flex-direction:column; gap:6px;">
@@ -2393,6 +2505,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Bulunabilirlik (Stok)</th>
               <th style="min-width:280px; padding:12px 16px;">Sunum & Dozaj Formu</th>
               <th style="min-width:260px; padding:12px 16px;">Üretici Firma & İletişim</th>
+              <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
               <th style="min-width:160px; padding:12px 14px;">Kriz Tarihleri</th>
               <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
               <th>İşlem</th>
@@ -2439,6 +2552,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     </div>
                   ` : ''}
                 </td>
+                ${renderAlternativeManufacturersCell(r)}
                 <td style="min-width:160px; vertical-align:top; padding:14px 16px; white-space:normal;">
                   <div style="display:flex; flex-direction:column; gap:6px;">
                     <div>
@@ -2479,6 +2593,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
             <th>Kaynak</th>
             <th style="min-width:250px; padding:12px 16px;">Üretici / Tedarikçi</th>
+            <th style="min-width:240px; padding:12px 16px;">Alternatif Üretici</th>
             <th>NDC / Kod</th>
             <th>FDA Kriz Durumu</th>
             <th style="min-width:145px;">EMA Kriz Durumu</th>
@@ -2505,6 +2620,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                   <span>🏢</span> <span>${esc(r.manufacturer || r.vendor || '—')}</span>
                 </div>
               </td>
+              ${renderAlternativeManufacturersCell(r)}
               <td><code style="font-size:11px;">${esc(r.ndc || r.product_ndc || r.package_ndc || '—')}</code></td>
               <td>${r.statusBadgeHtml}</td>
               <td>${renderEmaCrisisStatusCell(r)}</td>
@@ -2660,7 +2776,7 @@ async function shortagePageV2(
       if (!v2FdaRecordsCache || v2FdaRecordsCache.length < 1500) {
         let allRows = [];
         try {
-          const staticRes = await fetch('fda_shortages_records.json?v=1.0.31').then(r => r.json());
+          const staticRes = await fetch('fda_shortages_records.json?v=1.0.33').then(r => r.json());
           if (Array.isArray(staticRes) && staticRes.length >= 1500) {
             allRows = staticRes;
           }
