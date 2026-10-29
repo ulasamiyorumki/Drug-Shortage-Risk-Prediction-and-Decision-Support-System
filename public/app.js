@@ -2291,13 +2291,47 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     ` : ''}
                   </td>
                   <td>${altHtml}</td>
-                  <td>
-                    <div style="font-size:12px; font-weight:700; color:#0f172a;">
-                      ${raw.expected_resolution ? `🎯 ${esc(raw.expected_resolution)}` : (raw.expected_resolution_date ? `🎯 ${esc(raw.expected_resolution_date)}` : '<span style="color:#64748b; font-style:italic;">Belirtilmemiş</span>')}
+                  <td style="min-width:180px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                      <div>
+                        <span style="font-size:10px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                          🎯 Beklenen Çözülme:
+                        </span>
+                        <span style="font-size:12px; font-weight:700; color:#1e293b;">
+                          ${raw.expected_resolution ? esc(raw.expected_resolution) : (raw.expected_resolution_date ? esc(raw.expected_resolution_date) : '<span style="color:#94a3b8; font-weight:400; font-style:italic;">Belirtilmemiş</span>')}
+                        </span>
+                      </div>
+                      ${raw.start_of_shortage_date ? `
+                        <div style="border-top:1px dashed #e2e8f0; padding-top:4px;">
+                          <span style="font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; display:block;">
+                            ⚠ Kriz Başlangıcı:
+                          </span>
+                          <span style="font-size:11.5px; color:#b45309; font-weight:600;">
+                            ${esc(raw.start_of_shortage_date)}
+                          </span>
+                        </div>
+                      ` : ''}
+                      ${raw.last_updated_date ? `
+                        <div style="border-top:1px dashed #e2e8f0; padding-top:4px;">
+                          <span style="font-size:10px; font-weight:600; color:#0369a1; text-transform:uppercase; display:block;">
+                            🔄 Son Revizyon:
+                          </span>
+                          <span style="font-size:11.5px; color:#0369a1; font-weight:600;">
+                            ${esc(raw.last_updated_date)}
+                          </span>
+                        </div>
+                      ` : ''}
+                      ${raw.first_published_date ? `
+                        <div style="border-top:1px dashed #e2e8f0; padding-top:4px;">
+                          <span style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; display:block;">
+                            📢 İlk İlan:
+                          </span>
+                          <span style="font-size:11px; color:#64748b;">
+                            ${esc(raw.first_published_date)}
+                          </span>
+                        </div>
+                      ` : ''}
                     </div>
-                    ${raw.start_of_shortage_date ? `<small style="font-size:10.5px; color:#b45309; display:block; margin-top:3px; font-weight:600;">Başlangıç: ${esc(raw.start_of_shortage_date)}</small>` : ''}
-                    ${raw.first_published_date ? `<small style="font-size:10.5px; color:#64748b; display:block; margin-top:2px;">İlan: ${esc(raw.first_published_date)}</small>` : ''}
-                    ${raw.last_updated_date ? `<small style="font-size:10px; color:#0369a1; display:block; margin-top:1px;">Revizyon: ${esc(raw.last_updated_date)}</small>` : ''}
                   </td>
                   <td>${renderActionCell(r)}</td>
                   <td>
@@ -2332,7 +2366,7 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Bulunabilirlik (Stok)</th>
               <th style="min-width:280px; padding:12px 16px;">Sunum & Dozaj Formu</th>
               <th style="min-width:260px; padding:12px 16px;">Üretici Firma & İletişim</th>
-              <th>Tarih</th>
+              <th style="min-width:160px; padding:12px 14px;">Kriz Tarihleri</th>
               <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
               <th>İşlem</th>
             </tr>
@@ -2378,9 +2412,27 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     </div>
                   ` : ''}
                 </td>
-                <td>
-                  <div style="font-size:12px; font-weight:700; color:#334155;">${esc(r.updateDate)}</div>
-                  ${r.initialDate ? `<small style="font-size:10.5px; color:var(--muted); display:block; margin-top:2px;">İlan: ${esc(r.initialDate)}</small>` : ''}
+                <td style="min-width:160px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div>
+                      <span style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                        🔄 Son Güncelleme:
+                      </span>
+                      <span style="font-size:12px; font-weight:700; color:#0f172a;">
+                        ${esc(r.updateDate || '—')}
+                      </span>
+                    </div>
+                    ${r.initialDate ? `
+                      <div style="border-top:1px dashed #e2e8f0; padding-top:5px;">
+                        <span style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                          📢 İlk İlan Tarihi:
+                        </span>
+                        <span style="font-size:11.5px; color:#475569; font-weight:600;">
+                          ${esc(r.initialDate)}
+                        </span>
+                      </div>
+                    ` : ''}
+                  </div>
                 </td>
                 <td>${renderActionCell(r)}</td>
                 <td><button class="button" style="padding:6px 12px; font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); detail('${r.id}')">İncele →</button></td>
