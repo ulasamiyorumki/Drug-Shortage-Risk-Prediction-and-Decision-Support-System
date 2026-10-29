@@ -4540,6 +4540,540 @@ function exportRiskCriteriaMatrixCSV() {
   URL.revokeObjectURL(url);
 }
 
+// ==========================================================================
+// 400 YEŞİL REÇETELİ İLAÇ (V2 KAPSAMI) - RİSK ANALİZ VERİ KÜMESİ SİSTEMİ
+// ==========================================================================
+let riskCriteriaDrugQuery = '';
+let riskCriteriaDrugRiskFilter = '';
+let riskCriteriaDrugStatusFilter = '';
+let riskCriteriaDrugPage = 1;
+let riskCriteriaDrugPageSize = 25;
+let riskCriteriaSelectedDrugId = null;
+let riskCriteriaFdaLoading = false;
+
+async function ensureV2FdaDataLoaded() {
+  if (!v2FdaRecordsCache || v2FdaRecordsCache.length < 1500) {
+    try {
+      const staticRes = await fetch('fda_shortages_records.json?v=1.0.33').then(r => r.json());
+      if (Array.isArray(staticRes) && staticRes.length >= 1500) {
+        v2FdaRecordsCache = staticRes;
+      }
+    } catch (e) {
+      console.warn('FDA static fetch failed, falling back to API:', e);
+      try {
+        const dt = await api('/api/records?source=Drug%20Shortages&limit=2000');
+        if (dt && Array.isArray(dt.rows)) v2FdaRecordsCache = dt.rows;
+      } catch {}
+    }
+  }
+  if (!v2MedicareCache) {
+    try {
+      const medData = await fetch('medicare_spending_compact.json?v=1.0.31').then(r => r.json());
+      if (medData && typeof medData === 'object') v2MedicareCache = medData;
+    } catch {}
+  }
+}
+
+function getV2Green400Records() {
+  if (!v2FdaRecordsCache || !Array.isArray(v2FdaRecordsCache)) return [];
+  const enriched = v2FdaRecordsCache.map(enrichShortageRecord);
+  return enriched.filter(r => r.isGreen);
+}
+
+function getFilteredV2GreenDrugs() {
+  let records = getV2Green400Records();
+  if (riskCriteriaDrugQuery) {
+    const q = riskCriteriaDrugQuery.toLowerCase().trim();
+    records = records.filter(r => {
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const nd = (r.ndc || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const sr = (r.shortage_reason || r.reasonText || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || nd.includes(q) || pr.includes(q) || sr.includes(q);
+    });
+  }
+  if (riskCriteriaDrugStatusFilter) {
+    const s = riskCriteriaDrugStatusFilter.toLowerCase();
+    records = records.filter(r => (r.shortage_status || '').toLowerCase().includes(s));
+  }
+  if (riskCriteriaDrugRiskFilter) {
+    if (riskCriteriaDrugRiskFilter === 'critical') records = records.filter(r => (r.riskScore || 0) >= 75);
+    else if (riskCriteriaDrugRiskFilter === 'high') records = records.filter(r => (r.riskScore || 0) >= 50 && (r.riskScore || 0) < 75);
+    else if (riskCriteriaDrugRiskFilter === 'med') records = records.filter(r => (r.riskScore || 0) < 50);
+  }
+  return records;
+}
+
+function applyDrugToRiskCriteria(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  riskCriteriaSelectedDrugId = d.id;
+
+  // DSRDS 8 Kriter Değerini İlacın Gerçek Parametrelerine Göre Hesapla:
+  // R1: Önceki kıtlıklar ve devamlılığı (shortage_status & history)
+  let r1 = 50;
+  if (d.shortage_status === 'Current') r1 = 88;
+  else if (d.shortage_status === 'Resolved') r1 = 35;
+  else if (String(d.shortage_status).includes('Discontinued')) r1 = 92;
+
+  // R2: Talep–stok dengesizliği (CMS Medicare talebi & bulunabilirlik)
+  let r2 = 55;
+  const m = getMedicareDataMatch(d);
+  if (m && m.claims > 500000) r2 += 30;
+  else if (m && m.claims > 100000) r2 += 20;
+  else if (m && m.claims > 20000) r2 += 10;
+  const avLow = (d.availability || '').toLowerCase();
+  if (avLow.includes('un') || avLow.includes('limit')) r2 += 15;
+  r2 = Math.min(100, Math.max(20, r2));
+
+  // R3: Üretici ve tedarikçi yoğunlaşması (alternatif üretici sayısı)
+  let r3 = 70;
+  const altCount = Number(d.alternative_manufacturers_count) || (d.alternative_manufacturers ? d.alternative_manufacturers.length : 0);
+  if (altCount === 0) r3 = 95;
+  else if (altCount <= 2) r3 = 78;
+  else if (altCount <= 4) r3 = 55;
+  else r3 = 30;
+
+  // R4: Üretim, hammadde ve kalite kesintileri (kök neden)
+  let r4 = 50;
+  const reason = (d.shortage_reason || d.reasonText || '').toLowerCase();
+  if (reason.includes('api') || reason.includes('hammadde') || reason.includes('active pharmaceutical')) r4 = 92;
+  else if (reason.includes('manufacturing') || reason.includes('imalat') || reason.includes('kalite') || reason.includes('quality')) r4 = 85;
+  else if (reason.includes('delay') || reason.includes('shipping') || reason.includes('gecik')) r4 = 72;
+  else if (reason.includes('demand') || reason.includes('talep')) r4 = 65;
+  else r4 = 45;
+
+  // R5: Tedarik süresi ve lojistik riskleri (İthal vs Yerli, enjeksiyon/soğuk zincir)
+  let r5 = 55;
+  const isImport = (d.greenData?.origin || '').includes('İTHAL');
+  if (isImport) r5 = 82;
+  else if ((d.greenData?.origin || '').includes('İMAL')) r5 = 38;
+  const presLow = (d.presentation || '').toLowerCase();
+  if (presLow.includes('injection') || presLow.includes('enjeksiyon') || presLow.includes('ampul') || presLow.includes('vial')) {
+    r5 = Math.min(100, r5 + 10);
+  }
+
+  // R6: İlişkili terapötik gruptaki kıtlıklar (Psikotrop / Narkotik yeşil reçete yoğunluğu)
+  let r6 = 80;
+
+  // R7: Ürün özellikleri ve ikame edilebilirlik (Türkiye yerli muadil sayısı)
+  let r7 = 50;
+  const equivCount = d.greenData?.localEquivCount;
+  if (equivCount === 0) r7 = 95;
+  else if (equivCount !== undefined && equivCount <= 2) r7 = 68;
+  else if (equivCount !== undefined && equivCount > 2) r7 = 35;
+  else r7 = 55;
+
+  // R8: Finansal, yasal ve bilgi akışı riskleri (yeşil reçete kotası & kur hassasiyeti)
+  let r8 = 75;
+  if (isImport) r8 = 88;
+
+  const scoresMap = { 1: r1, 2: r2, 3: r3, 4: r4, 5: r5, 6: r6, 7: r7, 8: r8 };
+  riskCriteriaState.criteria.forEach(c => {
+    if (scoresMap[c.id] !== undefined) {
+      c.score = scoresMap[c.id];
+    }
+  });
+
+  riskCriteriaPage();
+
+  setTimeout(() => {
+    const el = document.getElementById('dsrdsActiveDrugBanner') || document.getElementById('dsrdsFormulaSection');
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 50);
+}
+
+function clearSelectedRiskDrug() {
+  riskCriteriaSelectedDrugId = null;
+  riskCriteriaState.criteria.forEach(c => {
+    c.score = 50;
+  });
+  riskCriteriaPage();
+}
+
+function scrollToRiskFormula() {
+  const el = document.getElementById('dsrdsFormulaSection');
+  if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function handleRiskCriteriaDrugSearch(val) {
+  riskCriteriaDrugQuery = val;
+  riskCriteriaDrugPage = 1;
+  renderRiskCriteriaDrugTableOnly();
+}
+
+function handleRiskCriteriaDrugStatusFilter(val) {
+  riskCriteriaDrugStatusFilter = val;
+  riskCriteriaDrugPage = 1;
+  renderRiskCriteriaDrugTableOnly();
+}
+
+function handleRiskCriteriaDrugRiskFilter(val) {
+  riskCriteriaDrugRiskFilter = val;
+  riskCriteriaDrugPage = 1;
+  renderRiskCriteriaDrugTableOnly();
+}
+
+function handleRiskCriteriaDrugPage(p) {
+  const filtered = getFilteredV2GreenDrugs();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / riskCriteriaDrugPageSize));
+  riskCriteriaDrugPage = Math.max(1, Math.min(totalPages, p));
+  renderRiskCriteriaDrugTableOnly();
+  const el = document.getElementById('riskCriteriaDrugSectionContainer');
+  if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function handleRiskCriteriaDrugPageSize(sz) {
+  riskCriteriaDrugPageSize = Number(sz) || 25;
+  riskCriteriaDrugPage = 1;
+  renderRiskCriteriaDrugTableOnly();
+}
+
+function clearRiskCriteriaDrugFilters() {
+  riskCriteriaDrugQuery = '';
+  riskCriteriaDrugStatusFilter = '';
+  riskCriteriaDrugRiskFilter = '';
+  riskCriteriaDrugPage = 1;
+  const inputEl = document.getElementById('riskCriteriaDrugSearchInput');
+  if (inputEl) inputEl.value = '';
+  const statusEl = document.getElementById('riskCriteriaDrugStatusSelect');
+  if (statusEl) statusEl.value = '';
+  const riskEl = document.getElementById('riskCriteriaDrugRiskSelect');
+  if (riskEl) riskEl.value = '';
+  renderRiskCriteriaDrugTableOnly();
+}
+
+function exportRiskCriteriaGreenDrugsCSV() {
+  const records = getV2Green400Records();
+  if (!records || records.length === 0) {
+    alert('Veriler yükleniyor, lütfen bekleyin...');
+    return;
+  }
+  const headers = [
+    'Sıra', 'ID', 'Etkin Madde (INN)', 'Marka Adı', 'Üretici Firma', 'Menşe',
+    'Yerli Muadil Sayısı', 'FDA Kriz Durumu', 'Kriz Nedeni', 'Bulunabilirlik',
+    'Sunum & Dozaj', 'NDC', 'FDA Başvuru No', 'CMS Medicare Reçete Talebi (15 Ay)',
+    'CMS Medicare Harcama $ (15 Ay)', 'DSRDS Risk Puanı', 'Risk Seviyesi'
+  ];
+  const rows = records.map((r, i) => {
+    const m = getMedicareDataMatch(r);
+    return [
+      i + 1,
+      r.id,
+      r.generic_name || '',
+      r.brand_name || '',
+      r.manufacturer || r.vendor || '',
+      (r.greenData?.origin || '').includes('İTHAL') ? 'İTHAL' : 'İMALAT',
+      r.greenData?.localEquivCount !== undefined ? r.greenData.localEquivCount : '',
+      r.shortage_status || '',
+      r.shortage_reason || r.reasonText || '',
+      r.availability || '',
+      r.presentation || '',
+      r.ndc || '',
+      r.application_no || '',
+      m ? m.claims : '',
+      m ? m.spending : '',
+      r.riskScore || '',
+      r.riskTierLabel || ''
+    ];
+  });
+  const csvContent = '\uFEFF' + [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `DSRDS_400_Yesil_Recete_Ilac_Risk_Veri_Kumesi_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function renderRiskCriteriaDrugTableOnly() {
+  const tableWrap = document.getElementById('riskCriteriaDrugTableWrap');
+  const pagWrap = document.getElementById('riskCriteriaDrugPaginationWrap');
+  const countBadge = document.getElementById('riskCriteriaDrugFilteredCount');
+  if (!tableWrap || !pagWrap) return;
+
+  const allRecords = getV2Green400Records();
+  const filtered = getFilteredV2GreenDrugs();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / riskCriteriaDrugPageSize));
+  if (riskCriteriaDrugPage > totalPages) riskCriteriaDrugPage = totalPages;
+
+  const startIdx = (riskCriteriaDrugPage - 1) * riskCriteriaDrugPageSize;
+  const endIdx = startIdx + riskCriteriaDrugPageSize;
+  const paginated = filtered.slice(startIdx, endIdx);
+
+  if (countBadge) {
+    countBadge.textContent = `${total} / ${allRecords.length} İlaç`;
+  }
+
+  if (paginated.length === 0) {
+    tableWrap.innerHTML = `
+      <div style="padding:48px 20px; text-align:center; background:#ffffff; border-radius:12px; border:1.5px solid #bcdcfa;">
+        <div style="font-size:36px; margin-bottom:8px;">🔍</div>
+        <h4 style="margin:0 0 6px; font-size:16px; color:#0f2942;">Arama Kriterlerine Uygun İlaç Bulunamadı</h4>
+        <p style="margin:0; font-size:12.5px; color:#64748b;">Farklı bir arama terimi girin veya filtreleri temizleyin.</p>
+        <button type="button" class="button secondary" style="margin-top:12px; font-size:11px; padding:6px 14px; font-weight:700;" onclick="clearRiskCriteriaDrugFilters()">
+          Filtreleri Temizle
+        </button>
+      </div>
+    `;
+    pagWrap.innerHTML = '';
+    return;
+  }
+
+  tableWrap.innerHTML = `
+    <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #bcdcfa; overflow-x:auto;">
+      <table class="dsrds-drug-table">
+        <thead>
+          <tr>
+            <th style="width:45px; text-align:center;">#</th>
+            <th style="min-width:230px;">İlaç / Etkin Madde & Marka (INN)</th>
+            <th style="min-width:180px;">Üretici Firma</th>
+            <th style="min-width:130px; text-align:center;">Menşe & Muadil (TR)</th>
+            <th style="min-width:130px; text-align:center;">FDA Kriz Durumu</th>
+            <th style="min-width:180px;">Kriz Nedeni & Kök Neden</th>
+            <th style="min-width:145px; text-align:center;">Medicare Reçete (15 Ay)</th>
+            <th style="min-width:135px; text-align:center;">Medicare Harcama ($)</th>
+            <th style="min-width:115px; text-align:center;">DSRDS Risk Puanı</th>
+            <th style="min-width:130px; text-align:center;">Karar Destek Analizi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paginated.map((r, idx) => {
+            const seq = startIdx + idx + 1;
+            const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+            return `
+              <tr class="${isSelected ? 'selected' : ''}">
+                <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px;">
+                  ${seq}
+                </td>
+                <td>
+                  <div style="font-weight:800; font-size:13px; color:#1e3a8a;">
+                    ${esc(r.brand_name || r.generic_name || '—')}
+                  </div>
+                  <div style="font-size:11.5px; color:#475569; font-weight:600; margin-top:2px;">
+                    🧪 INN: ${esc(r.generic_name || '—')}
+                  </div>
+                  <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+                    <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">🟢 Yeşil Reçete</span>
+                    ${r.ndc ? `<span style="font-size:10px; color:#475569; background:#f1f5f9; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #e2e8f0;">NDC: ${esc(r.ndc)}</span>` : ''}
+                    ${r.application_no ? `<span style="font-size:10px; color:#0369a1; background:#e0f2fe; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #bae6fd;">FDA: ${esc(r.application_no)}</span>` : ''}
+                  </div>
+                </td>
+                <td>
+                  <div style="font-weight:700; font-size:12px; color:#0f172a; line-height:1.4;">
+                    🏢 ${esc(r.manufacturer || r.vendor || '—')}
+                  </div>
+                  ${r.contactInfo ? `
+                    <div style="font-size:10.5px; color:#0369a1; margin-top:3px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.contactInfo)}">
+                      📞 ${esc(r.contactInfo)}
+                    </div>
+                  ` : ''}
+                </td>
+                <td style="text-align:center;">
+                  ${(r.greenData?.origin || '').includes('İTHAL') ? `
+                    <span class="badge" style="background:#fff1f2; color:#be123c; border:1px solid #fecdd3; font-size:10px; font-weight:700;">İTHAL</span>
+                  ` : `
+                    <span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">İMALAT</span>
+                  `}
+                  <div style="margin-top:4px; font-size:10.5px; font-weight:600; color:#475569;">
+                    ${r.greenData?.localEquivCount === 0 
+                      ? '<span style="color:#dc2626; font-weight:800; background:#fee2e2; padding:1px 5px; border-radius:4px;">0 Muadil</span>' 
+                      : (r.greenData?.localEquivCount !== undefined ? `${r.greenData.localEquivCount} Yerli Muadil` : 'Kontrole Tabi')}
+                  </div>
+                </td>
+                <td style="text-align:center;">
+                  ${r.statusBadgeHtml}
+                </td>
+                <td>
+                  <div style="font-size:12px; font-weight:600; color:#334155; line-height:1.4;">
+                    ${esc(r.shortage_reason || r.reasonText || '—')}
+                  </div>
+                  ${r.availBadgeHtml ? `<div style="margin-top:4px;">${r.availBadgeHtml}</div>` : ''}
+                </td>
+                ${renderMedicareCells(r)}
+                <td style="text-align:center;">
+                  <div style="font-size:15px; font-weight:800; color:${r.riskScore >= 75 ? '#dc2626' : (r.riskScore >= 50 ? '#ea580c' : '#16a34a')};">
+                    ${r.riskScore} <small style="font-size:10.5px; color:#94a3b8;">/100</small>
+                  </div>
+                  <span class="badge" style="font-size:9.5px; margin-top:2px; font-weight:800; background:${r.riskTier === 'high' ? '#fee2e2' : (r.riskTier === 'med' ? '#ffedd5' : '#dcfce7')}; color:${r.riskTier === 'high' ? '#dc2626' : (r.riskTier === 'med' ? '#ea580c' : '#16a34a')};">
+                    ${r.riskTierLabel || (r.riskScore >= 75 ? 'KRİTİK' : (r.riskScore >= 50 ? 'YÜKSEK' : 'ORTA'))}
+                  </span>
+                </td>
+                <td style="text-align:center;">
+                  <button type="button" class="dsrds-apply-btn ${isSelected ? 'applied' : ''}" onclick="applyDrugToRiskCriteria('${esc(r.id)}')">
+                    ${isSelected ? '✓ Yansıtıldı' : '🎯 Kriterlere Yansıt'}
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  pagWrap.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:16px;">
+      <div style="font-size:12px; color:var(--muted); font-weight:600;">
+        Toplam <b>${total}</b> yeşil reçeteli ilaçtan <b>${startIdx + 1} - ${Math.min(endIdx, total)}</b> arası gösteriliyor.
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button type="button" class="button secondary" style="font-size:11px; padding:6px 12px; font-weight:700;" onclick="handleRiskCriteriaDrugPage(${riskCriteriaDrugPage - 1})" ${riskCriteriaDrugPage <= 1 ? 'disabled' : ''}>
+          ← Önceki
+        </button>
+        <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+          ${riskCriteriaDrugPage} / ${totalPages}
+        </span>
+        <button type="button" class="button secondary" style="font-size:11px; padding:6px 12px; font-weight:700;" onclick="handleRiskCriteriaDrugPage(${riskCriteriaDrugPage + 1})" ${riskCriteriaDrugPage >= totalPages ? 'disabled' : ''}>
+          Sonraki →
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderRiskCriteriaDrugSection() {
+  const records = getV2Green400Records();
+  const selectedDrug = riskCriteriaSelectedDrugId ? records.find(r => String(r.id) === String(riskCriteriaSelectedDrugId)) : null;
+
+  if (records.length === 0) {
+    return `
+      <section class="glass panel" id="riskCriteriaDrugSectionContainer" style="padding: 24px; margin-bottom: 24px;">
+        <div style="text-align:center; padding:40px 20px;">
+          <div style="font-size:36px; margin-bottom:12px;">⏳</div>
+          <h3 style="margin:0 0 6px; font-size:17px; font-family:Outfit; color:#0f2942;">
+            V2 Yeşil Reçete Kriz Verileri Yükleniyor (400 İlaç)...
+          </h3>
+          <p style="color:var(--muted); font-size:13px; margin:0 auto; max-width:500px;">
+            FDA ve CMS Medicare veri tabanlarındaki 400 yeşil reçeteli ilaç kaydı hazırlanıyor ve senkronize ediliyor. Lütfen birkaç saniye bekleyin...
+          </p>
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="glass panel" id="riskCriteriaDrugSectionContainer" style="padding: 24px; margin-bottom: 24px;">
+      <!-- Başlık Bandı & Senkronizasyon Rozeti -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom:20px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px; flex-wrap:wrap;">
+            <span style="font-size:24px;">🟢</span>
+            <h2 style="margin:0; font-size:18px; font-family:Outfit; color:#0f2942;">
+              4. İlaç Bazlı Risk Analiz Veri Kümesi (V2 Yeşil Reçete Kapsamı · 400 İlaç)
+            </h2>
+            <span class="badge" id="riskCriteriaDrugFilteredCount" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-weight:800; font-size:12px; padding:4px 10px;">
+              ${records.length} İlaç
+            </span>
+          </div>
+          <p style="color:var(--muted); font-size:13px; margin:0; line-height:1.5;">
+            V2 Tedarik Krizleri panelindeki <b>"🟢 Tüm Yeşil Reçeteliler"</b> filtresiyle birebir senkronize çalışan 400 ilacın FDA kriz, yerli muadil ve CMS Medicare harcama verileri.
+            Herhangi bir ilacın <b>"🎯 Kriterlere Yansıt"</b> butonuna tıklayarak yukarıdaki 8 ana risk kriterini (R₁–R₈) o ilacın reel parametreleriyle doldurabilir ve hesaplanan nihai risk puanını (R<sub>total</sub>) analiz edebilirsiniz.
+          </p>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <span class="badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; font-weight:700; font-size:11px; padding:6px 12px; display:inline-flex; align-items:center; gap:6px;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
+            V2 ile Canlı Senkronize
+          </span>
+          <button type="button" class="button" style="font-size:11.5px; padding:8px 16px; font-weight:700; display:inline-flex; align-items:center; gap:6px;" onclick="exportRiskCriteriaGreenDrugsCSV()">
+            📥 400 İlacın Verisini İndir (CSV)
+          </button>
+        </div>
+      </div>
+
+      <!-- Aktif Analiz Edilen İlaç Bandı -->
+      ${selectedDrug ? `
+        <div id="dsrdsActiveDrugBanner" class="dsrds-active-drug-banner">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <div style="width:44px; height:44px; border-radius:10px; background:#2563eb; color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; flex-shrink:0;">
+              🎯
+            </div>
+            <div>
+              <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase; letter-spacing:0.5px;">
+                Aktif Analiz Edilen İlaç Seçildi:
+              </div>
+              <div style="font-size:16px; font-weight:800; color:#1e3a8a;">
+                ${esc(selectedDrug.brand_name || selectedDrug.generic_name)}
+                <span style="font-size:13px; font-weight:600; color:#3b82f6;">(INN: ${esc(selectedDrug.generic_name || '—')})</span>
+              </div>
+              <div style="font-size:12px; color:#475569; margin-top:2px;">
+                🏢 Üretici: <b>${esc(selectedDrug.manufacturer || selectedDrug.vendor || '—')}</b> · 
+                Menşe: <b>${esc(selectedDrug.greenData?.origin || 'İTHAL')}</b> (${selectedDrug.greenData?.localEquivCount === 0 ? '0 Yerli Muadil' : `${selectedDrug.greenData?.localEquivCount || 0} Muadil`}) · 
+                Bu ilacın reel parametreleri yukarıdaki 8 ana kriter puanına (R₁–R₈) yansıtılmıştır.
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="button secondary" style="font-size:11.5px; padding:6px 14px; font-weight:700; background:#fff;" onclick="clearSelectedRiskDrug()">
+              ✕ Seçimi Kaldır / Sıfırla
+            </button>
+            <button type="button" class="button" style="font-size:11.5px; padding:6px 14px; font-weight:700;" onclick="scrollToRiskFormula()">
+              ↑ Denkleme & Puanlara Git
+            </button>
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- Arama ve Filtreleme Kontrolleri -->
+      <div style="background:#ffffff; border:1.5px solid #bcdcfa; border-radius:12px; padding:14px 18px; margin-bottom:18px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; flex:1; min-width:300px;">
+          <div style="position:relative; flex:1; min-width:220px; max-width:400px;">
+            <input type="text" id="riskCriteriaDrugSearchInput" value="${esc(riskCriteriaDrugQuery)}" placeholder="400 yeşil reçeteli ilaçta ara (INN, marka, üretici)..." style="width:100%; height:36px; padding:0 12px 0 32px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12.5px; outline:none; box-sizing:border-box;" oninput="handleRiskCriteriaDrugSearch(this.value)">
+            <span style="position:absolute; left:10px; top:9px; font-size:14px; color:#94a3b8;">🔍</span>
+          </div>
+
+          <select id="riskCriteriaDrugStatusSelect" style="height:36px; padding:0 10px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; font-weight:600; color:#334155; background:#fff;" onchange="handleRiskCriteriaDrugStatusFilter(this.value)">
+            <option value="" ${riskCriteriaDrugStatusFilter === '' ? 'selected' : ''}>Tüm Kriz Durumları</option>
+            <option value="Current" ${riskCriteriaDrugStatusFilter === 'Current' ? 'selected' : ''}>🚨 Güncel Kriz (Current)</option>
+            <option value="Discontinued" ${riskCriteriaDrugStatusFilter === 'Discontinued' ? 'selected' : ''}>⚠️ Üretimi Durdurulacak</option>
+          </select>
+
+          <select id="riskCriteriaDrugRiskSelect" style="height:36px; padding:0 10px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; font-weight:600; color:#334155; background:#fff;" onchange="handleRiskCriteriaDrugRiskFilter(this.value)">
+            <option value="" ${riskCriteriaDrugRiskFilter === '' ? 'selected' : ''}>Tüm Risk Düzeyleri</option>
+            <option value="critical" ${riskCriteriaDrugRiskFilter === 'critical' ? 'selected' : ''}>🔴 Kritik Risk (≥75)</option>
+            <option value="high" ${riskCriteriaDrugRiskFilter === 'high' ? 'selected' : ''}>🟠 Yüksek Risk (50-74)</option>
+            <option value="med" ${riskCriteriaDrugRiskFilter === 'med' ? 'selected' : ''}>🟡 Orta Risk (&lt;50)</option>
+          </select>
+
+          ${(riskCriteriaDrugQuery || riskCriteriaDrugStatusFilter || riskCriteriaDrugRiskFilter) ? `
+            <button type="button" class="button secondary" style="font-size:11px; padding:6px 12px; font-weight:700;" onclick="clearRiskCriteriaDrugFilters()">
+              ✕ Filtreleri Temizle
+            </button>
+          ` : ''}
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12px; color:var(--muted); font-weight:600;">Sayfa Başı:</span>
+          <select style="height:32px; padding:0 6px; border:1px solid #cbd5e1; border-radius:6px; font-size:11.5px; font-weight:700;" onchange="handleRiskCriteriaDrugPageSize(this.value)">
+            <option value="25" ${riskCriteriaDrugPageSize === 25 ? 'selected' : ''}>25 Kayıt</option>
+            <option value="50" ${riskCriteriaDrugPageSize === 50 ? 'selected' : ''}>50 Kayıt</option>
+            <option value="100" ${riskCriteriaDrugPageSize === 100 ? 'selected' : ''}>100 Kayıt</option>
+            <option value="400" ${riskCriteriaDrugPageSize === 400 ? 'selected' : ''}>Tümü (400)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tablo Alanı -->
+      <div id="riskCriteriaDrugTableWrap"></div>
+
+      <!-- Sayfalama Alanı -->
+      <div id="riskCriteriaDrugPaginationWrap"></div>
+    </section>
+  `;
+}
+
 // Global scope bindings for inline HTML event handlers
 window.enterCriterion = enterCriterion;
 window.leaveCriterion = leaveCriterion;
@@ -4556,6 +5090,18 @@ window.clearSubCriteriaOfCriterion = clearSubCriteriaOfCriterion;
 window.resetAllCriteriaWeightsToDefault = resetAllCriteriaWeightsToDefault;
 window.setAllCriteriaScoresValue = setAllCriteriaScoresValue;
 window.exportRiskCriteriaMatrixCSV = exportRiskCriteriaMatrixCSV;
+
+window.handleRiskCriteriaDrugSearch = handleRiskCriteriaDrugSearch;
+window.handleRiskCriteriaDrugStatusFilter = handleRiskCriteriaDrugStatusFilter;
+window.handleRiskCriteriaDrugRiskFilter = handleRiskCriteriaDrugRiskFilter;
+window.handleRiskCriteriaDrugPage = handleRiskCriteriaDrugPage;
+window.handleRiskCriteriaDrugPageSize = handleRiskCriteriaDrugPageSize;
+window.clearRiskCriteriaDrugFilters = clearRiskCriteriaDrugFilters;
+window.applyDrugToRiskCriteria = applyDrugToRiskCriteria;
+window.clearSelectedRiskDrug = clearSelectedRiskDrug;
+window.scrollToRiskFormula = scrollToRiskFormula;
+window.exportRiskCriteriaGreenDrugsCSV = exportRiskCriteriaGreenDrugsCSV;
+
 
 function riskCriteriaPage() {
   const { totalWeightPercent, totalWeightDecimal, rTotal, isBalanced } = calculateOverallRiskScores();
@@ -4741,6 +5287,21 @@ function riskCriteriaPage() {
   // --------------------------------------------------------------------------
   // DURUM B: ANA EKRAN (8 ADET BUTON GİBİ BUTON + TOPLAM RİSK DENKLEMİ)
   // --------------------------------------------------------------------------
+  if (!v2FdaRecordsCache || v2FdaRecordsCache.length < 1500) {
+    if (!riskCriteriaFdaLoading) {
+      riskCriteriaFdaLoading = true;
+      ensureV2FdaDataLoaded().then(() => {
+        riskCriteriaFdaLoading = false;
+        if (location.hash === '#riskcriteria') {
+          riskCriteriaPage();
+        }
+      });
+    }
+  }
+
+  const allGreenRecords = getV2Green400Records();
+  const selectedDrug = riskCriteriaSelectedDrugId ? allGreenRecords.find(r => String(r.id) === String(riskCriteriaSelectedDrugId)) : null;
+
   page.innerHTML = header('Toplam İlaç Kıtlığı Risk Puanı (DSRDS)', '8 ana risk kriteri, ondalık ağırlıklı toplam risk denklemi ve kriter bazlı alt hesaplama mimarisi.') + `
     <!-- 1. BÖLÜM: 8 ADET GERÇEK BUTON ŞEKLİNDE KRİTERLER -->
     <section class="glass panel" style="margin-bottom: 24px; padding: 24px;">
@@ -4788,7 +5349,21 @@ function riskCriteriaPage() {
     </section>
 
     <!-- 2. BÖLÜM: TOPLAM RİSK DENKLEMİ VE HESAPLAMA SİSTEMİ -->
-    <section class="glass panel" style="padding: 24px; margin-bottom: 24px;">
+    <section class="glass panel" id="dsrdsFormulaSection" style="padding: 24px; margin-bottom: 24px;">
+      ${selectedDrug ? `
+        <div class="dsrds-active-drug-banner" style="margin-bottom:18px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="font-size:24px;">🎯</span>
+            <div>
+              <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase;">Seçili İlaç Parametreleri Denklem Puanlarına Yansıtıldı:</div>
+              <div style="font-size:15px; font-weight:800; color:#1e3a8a;">${esc(selectedDrug.brand_name || selectedDrug.generic_name)} <span style="font-weight:600; font-size:12px; color:#475569;">(${esc(selectedDrug.generic_name || '')})</span></div>
+            </div>
+          </div>
+          <button type="button" class="button secondary" style="font-size:11px; padding:6px 12px; font-weight:700; background:#fff;" onclick="clearSelectedRiskDrug()">
+            ✕ İlaç Seçimini Kaldır
+          </button>
+        </div>
+      ` : ''}
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
         <div>
           <h2 style="margin:0 0 4px; font-size:18px; font-family:Outfit;">2. Toplam İlaç Kıtlığı Risk Puanı Denklemi</h2>
@@ -4976,7 +5551,12 @@ function riskCriteriaPage() {
         <b>⚠️ Önemli:</b> Bunlar sistemin başlangıç hesaplama denklemleridir. Ana kriter ağırlıkları ve alt gösterge ağırlıkları tasarım önerileridir; modelin tahmin başarısı gerçek kıtlık verileriyle test edilerek doğrulanmalıdır. Eksik veriler de otomatik olarak sıfır risk kabul edilmemelidir.
       </div>
     </section>
+
+    <!-- 4. BÖLÜM: V2 YEŞİL REÇETE KAPSAMINDAKİ 400 İLAÇ VE RİSK ANALİZ VERİ KÜMESİ -->
+    ${renderRiskCriteriaDrugSection()}
   `;
+
+  renderRiskCriteriaDrugTableOnly();
 }
 
 
