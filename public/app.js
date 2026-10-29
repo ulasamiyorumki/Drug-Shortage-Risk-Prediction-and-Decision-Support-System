@@ -1570,14 +1570,14 @@ function renderMedicareCells(r, showSdScore = false) {
   if (!m) {
     return `
       <td style="vertical-align:top; padding:12px 14px;">
-        <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Medicare Part D reçete kaydı bulunmuyor veya hastane/klinik protokolü">
-          ⚪ Belirtilmemiş
+        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-size:10.5px; font-weight:700;" title="Reçete miktarı bilinmiyor (CMS Part D reçete kaydı bulunmuyor)">
+          ⚠️ Reçete Bilinmiyor (Eksik Veri)
         </span>
         <div style="font-size:9.5px; color:#94a3b8; margin-top:3px; font-weight:500;">2025–2026 Q1</div>
         ${showSdScore ? `
           <div style="margin-top:4px; padding-top:4px; border-top:1.5px solid #fed7aa;">
-            <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
-              📊 S_D: 0.0/100
+            <span class="badge" style="background:#fffbeb; color:#b45309; border:1px dashed #fde68a; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="Reçete miktarı bilinmediği için eksik veri uyarısı verilmiştir (0 Puan)">
+              ⚠️ S_D: Eksik Veri
             </span>
           </div>
         ` : ''}
@@ -1595,15 +1595,24 @@ function renderMedicareCells(r, showSdScore = false) {
   return `
     <td style="vertical-align:top; padding:12px 14px;">
       <div style="display:flex; flex-direction:column; gap:3px;">
-        <span class="badge" style="background:${isHospital ? '#f1f5f9' : '#eff6ff'}; color:${isHospital ? '#475569' : '#1d4ed8'}; border:1px solid ${isHospital ? '#cbd5e1' : '#bfdbfe'}; font-weight:800; font-size:11px; width:fit-content;">
-          ${isHospital ? '🏥 ' : '💊 '}${esc(claimsText)}
+        <span class="badge" style="background:${isHospital ? '#fffbeb' : '#eff6ff'}; color:${isHospital ? '#b45309' : '#1d4ed8'}; border:1px solid ${isHospital ? '#fde68a' : '#bfdbfe'}; font-weight:800; font-size:11px; width:fit-content;">
+          ${isHospital ? '⚠️ ' : '💊 '}${esc(claimsText)}
         </span>
-        ${m.benes > 0 ? `<small style="font-size:10.5px; color:#475569; font-weight:500;">${Number(m.benes).toLocaleString('tr-TR')} Yararlanıcı</small>` : (isHospital ? '<small style="font-size:10px; color:#64748b;">Klinik / IV Uygulama</small>' : '')}
+        ${m.benes > 0 ? `<small style="font-size:10.5px; color:#475569; font-weight:500;">${Number(m.benes).toLocaleString('tr-TR')} Yararlanıcı</small>` : (isHospital ? '<small style="font-size:10px; color:#b45309; font-weight:600;">Reçete Verisi Yok (Klinik / IV)</small>' : '')}
         <div style="font-size:9.5px; color:#0369a1; font-weight:700; margin-top:2px; display:inline-flex; align-items:center; gap:3px;">
           <span>⏱</span> <span>2025–2026 Q1 (15 Ay)</span>
         </div>
         ${showSdScore ? (() => {
           const r2D = calculateDrugR2Score(r);
+          if (r2D.isMissingClaims) {
+            return `
+              <div style="margin-top:4px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+                <span class="badge" style="background:#fffbeb; color:#b45309; border:1px dashed #fde68a; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="Reçete miktarı bilinmediği için eksik veri uyarısı verilmiştir (0 Puan)">
+                  ⚠️ S_D: Eksik Veri
+                </span>
+              </div>
+            `;
+          }
           return `
             <div style="margin-top:4px; padding-top:4px; border-top:1.5px solid #fed7aa;">
               <span class="badge" style="background:${r2D.sdScore >= 75 ? '#ffedd5' : '#eff6ff'}; color:${r2D.sdScore >= 75 ? '#9a3412' : '#1d4ed8'}; border:1px solid ${r2D.sdScore >= 75 ? '#fed7aa' : '#bfdbfe'}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
@@ -4840,7 +4849,9 @@ let r2DrugFilterState = {
 function calculateDrugR2Score(r, customMaxQ = null) {
   // 1. S_D: 15 aylık Medicare reçete sayısı log normalizasyonu
   const m = getMedicareDataMatch(r);
-  const claims = (m && m.claims) ? Number(m.claims) : 0;
+  const rawClaims = (m && m.claims !== undefined && m.claims !== null) ? Number(m.claims) : null;
+  const isMissingClaims = (rawClaims === null || isNaN(rawClaims) || rawClaims <= 0);
+  const claims = (!isMissingClaims && rawClaims > 0) ? rawClaims : 0;
   const maxQ = customMaxQ || 10757524;
   const lnMaxQ = Math.log(1 + maxQ);
   const sdScore = (lnMaxQ > 0 && claims > 0) ? Math.min(100, Math.max(0, Math.round((100 * Math.log(1 + claims) / lnMaxQ) * 10) / 10)) : 0;
@@ -4901,8 +4912,13 @@ function calculateDrugR2Score(r, customMaxQ = null) {
 
   return {
     claims,
-    claimsDisplay: formatMedicareClaims(claims),
+    rawClaims,
+    isMissingClaims,
+    hasClaimsData: !isMissingClaims,
+    claimsDisplay: isMissingClaims ? 'Eksik Veri' : formatMedicareClaims(claims),
     sdScore,
+    sdLabel: isMissingClaims ? 'Eksik Veri (0)' : `${sdScore}/100`,
+    sdStatus: isMissingClaims ? 'missing' : 'available',
     saScore,
     saLabel,
     saLevel,
@@ -4929,6 +4945,8 @@ function getR2DistributionStats() {
   let sumSa = 0;
   let sumSn = 0;
   let sumR2 = 0;
+  let missingClaimsCount = 0;
+  let availableClaimsCount = 0;
 
   records.forEach(r => {
     const m = getMedicareDataMatch(r);
@@ -4963,6 +4981,9 @@ function getR2DistributionStats() {
     sumSn += res.snScore;
     sumR2 += res.score;
 
+    if (res.isMissingClaims) missingClaimsCount++;
+    else availableClaimsCount++;
+
     if (res.score >= 80) tiers[0].count++;
     else if (res.score >= 60) tiers[1].count++;
     else if (res.score >= 40) tiers[2].count++;
@@ -4993,6 +5014,8 @@ function getR2DistributionStats() {
     avgSn,
     avgR2,
     tiers,
+    missingClaimsCount,
+    availableClaimsCount,
     demandReasonCount,
     otherReasonCount,
     availableCount,
@@ -5030,6 +5053,7 @@ function applySingleDrugR2ToCriterion(drugId) {
     c2.score = res.score;
     if (c2.subCriteria && c2.subCriteria.length >= 3) {
       c2.subCriteria[0].score = res.sdScore;
+      c2.subCriteria[0].dataStatus = res.isMissingClaims ? 'insufficient' : 'available';
       c2.subCriteria[1].score = res.saScore;
       c2.subCriteria[2].score = res.snScore;
     }
@@ -5038,8 +5062,9 @@ function applySingleDrugR2ToCriterion(drugId) {
   riskCriteriaPage();
 
   const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  const sdMsg = res.isMissingClaims ? 'S_D: 0 (⚠️ Reçete Miktarı Eksik Veri)' : `S_D: ${res.sdScore}`;
   if (typeof alert === 'function') {
-    alert(`✓ "${drugName}" ilacının talep–stok parametreleri (S_D: ${res.sdScore}, S_A: ${res.saScore}, S_N: ${res.snScore}) baz alınarak R₂ Puanı ${res.score}/100 (${res.level}) olarak atandı ve ana denkleme aktarıldı.`);
+    alert(`✓ "${drugName}" ilacının talep–stok parametreleri (${sdMsg}, S_A: ${res.saScore}, S_N: ${res.snScore}) baz alınarak R₂ Puanı ${res.score}/100 (${res.level}) olarak atandı ve ana denkleme aktarıldı.`);
   }
 }
 
@@ -5507,6 +5532,7 @@ function applyDrugToRiskCriteria(drugId) {
       }
       if (c.id === 2 && c.subCriteria && c.subCriteria.length >= 3) {
         c.subCriteria[0].score = r2Res.sdScore;
+        c.subCriteria[0].dataStatus = r2Res.isMissingClaims ? 'insufficient' : 'available';
         c.subCriteria[1].score = r2Res.saScore;
         c.subCriteria[2].score = r2Res.snScore;
       }
@@ -6562,8 +6588,11 @@ function renderCriterion2DetailPage(c) {
     return {
       record: r,
       claims: r2.claims,
+      isMissingClaims: r2.isMissingClaims,
       claimsDisplay: r2.claimsDisplay,
       sdScore: r2.sdScore,
+      sdLabel: r2.sdLabel,
+      sdStatus: r2.sdStatus,
       saScore: r2.saScore,
       saLabel: r2.saLabel,
       saLevel: r2.saLevel,
@@ -6596,7 +6625,11 @@ function renderCriterion2DetailPage(c) {
   }
 
   if (r2DrugFilterState.tierFilter !== 'all') {
-    filteredR2Drugs = filteredR2Drugs.filter(item => item.tierKey === r2DrugFilterState.tierFilter);
+    if (r2DrugFilterState.tierFilter === 'missing_claims') {
+      filteredR2Drugs = filteredR2Drugs.filter(item => item.isMissingClaims);
+    } else {
+      filteredR2Drugs = filteredR2Drugs.filter(item => item.tierKey === r2DrugFilterState.tierFilter);
+    }
   }
 
   const r2TotalFiltered = filteredR2Drugs.length;
@@ -6695,8 +6728,11 @@ function renderCriterion2DetailPage(c) {
                 <td style="text-align:center; font-weight:800; color:#ea580c; font-family:'DM Mono', monospace;">S_D</td>
                 <td style="text-align:center; font-weight:800; color:#ea580c;">%30 (0.30)</td>
                 <td>
-                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:4px 9px;">
-                    🟢 CMS Part D Verisi Mevcut (294 İlaç Reçeteli)
+                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:3px 8px;">
+                    🟢 294 İlaç Reçeteli (Mevcut)
+                  </span>
+                  <span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-weight:800; font-size:11px; padding:3px 8px; margin-left:4px;">
+                    ⚠️ 106 İlaçta Eksik Veri (0 Puan)
                   </span>
                 </td>
                 <td style="font-family:'DM Mono', monospace; font-size:12px; color:#0f4c81;">
@@ -6751,7 +6787,8 @@ function renderCriterion2DetailPage(c) {
             <div style="font-size:12px; color:#7c2d12; line-height:1.45;">
               • <b>Q_i</b>: İlacın 15 aylık Medicare reçete sayısı.<br>
               • <b>Q_max</b>: <b>10,757,524</b> (Clonazepam Tablet).<br>
-              • Log normalizasyonu uçurum farkları dengeler.
+              • Log normalizasyonu uçurum farkları dengeler.<br>
+              • <b>⚠️ Eksik Veri Kuralı:</b> Reçete miktarı bilinmeyen (Part D kaydı olmayan / klinik) ilaçlarda <b>⚠️ Eksik Veri</b> uyarısı gösterilir ve S_D = 0 puan atanır.
             </div>
           </div>
 
@@ -6816,7 +6853,7 @@ function renderCriterion2DetailPage(c) {
           <div style="background:#eff6ff; padding:12px 14px; border-radius:10px; border:1px solid #bfdbfe;">
             <div style="font-size:11px; font-weight:700; color:#1d4ed8; text-transform:uppercase;">Ortalama S_D (%30):</div>
             <div style="font-size:17px; font-weight:800; color:#1e40af; margin-top:2px;">${stats.avgSd} / 100</div>
-            <small style="font-size:11px; color:#3b82f6; display:block; margin-top:2px;">294 Reçeteli · 106 Klinik</small>
+            <small style="font-size:11px; color:#3b82f6; display:block; margin-top:2px;">294 Reçeteli · <span style="color:#b45309; font-weight:700;">⚠️ ${stats.missingClaimsCount} Eksik Veri</span></small>
           </div>
 
           <div style="background:#ecfdf5; padding:12px 14px; border-radius:10px; border:1px solid #a7f3d0;">
@@ -6843,6 +6880,9 @@ function renderCriterion2DetailPage(c) {
           <span style="font-size:12px; font-weight:700; color:#64748b; margin-right:4px;">Risk Düzeyine Göre Filtrele:</span>
           <button type="button" class="r2-filter-btn ${r2DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR2TierFilter('all')">
             🌐 Tümü (${stats.total})
+          </button>
+          <button type="button" class="r2-filter-btn ${r2DrugFilterState.tierFilter === 'missing_claims' ? 'active' : ''}" style="${r2DrugFilterState.tierFilter === 'missing_claims' ? 'background:#fef3c7; border-color:#f59e0b; color:#92400e;' : 'border-color:#fde68a; color:#b45309;'}" onclick="handleR2TierFilter('missing_claims')">
+            ⚠️ Reçete Miktarı Eksik (${stats.missingClaimsCount})
           </button>
           ${stats.tiers.map(t => `
             <button type="button" class="r2-filter-btn ${r2DrugFilterState.tierFilter === t.key ? 'active' : ''}" onclick="handleR2TierFilter('${t.key}')">
@@ -6910,13 +6950,27 @@ function renderCriterion2DetailPage(c) {
                       <span style="font-weight:600; color:#334155; font-size:12px;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
                     </td>
                     <td style="text-align:center;">
-                      <div style="font-weight:800; color:#0284c7; font-size:12.5px;">${esc(item.claimsDisplay || '—')}</div>
-                      <small style="font-size:10px; color:#64748b;">Medicare Part D</small>
+                      ${item.isMissingClaims ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 7px;">
+                          ⚠️ Reçete Bilinmiyor
+                        </span>
+                        <small style="font-size:10px; color:#b45309; display:block; margin-top:2px; font-weight:600;">Eksik Veri (Part B / Klinik)</small>
+                      ` : `
+                        <div style="font-weight:800; color:#0284c7; font-size:12.5px;">${esc(item.claimsDisplay || '—')}</div>
+                        <small style="font-size:10px; color:#64748b;">Medicare Part D</small>
+                      `}
                     </td>
                     <td style="text-align:center;">
-                      <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11.5px; padding:3px 8px;">
-                        ${item.sdScore}/100
-                      </span>
+                      ${item.isMissingClaims ? `
+                        <span class="badge" style="background:#fef2f2; color:#b91c1c; border:1px dashed #fecaca; font-weight:800; font-size:11px; padding:3px 7px;" title="Reçete miktarı bilinmediği için eksik veri uyarısı verilmiştir (0 Puan)">
+                          ⚠️ Eksik Veri
+                        </span>
+                        <small style="font-size:10px; color:#991b1b; display:block; margin-top:2px; font-weight:700;">(0 Puan)</small>
+                      ` : `
+                        <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11.5px; padding:3px 8px;">
+                          ${item.sdScore}/100
+                        </span>
+                      `}
                     </td>
                     <td style="text-align:center;">
                       <span style="font-weight:700; font-size:12px; color:#334155;">${esc(item.saLabel)}</span>
@@ -7027,7 +7081,11 @@ function renderCriterion2DetailPage(c) {
                     <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(2, ${sub.id}, this.value)" oninput="updateSubCriterionName(2, ${sub.id}, this.value)">
                   </td>
                   <td style="text-align:center;">
-                    <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    ${sub.dataStatus === 'insufficient' ? `
+                      <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:10.5px; padding:2px 7px;" title="Reçete miktarı bilinmediği için eksik veri uyarısı verilmiştir">⚠️ Eksik Veri</span>
+                    ` : `
+                      <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    `}
                   </td>
                   <td>
                     <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
