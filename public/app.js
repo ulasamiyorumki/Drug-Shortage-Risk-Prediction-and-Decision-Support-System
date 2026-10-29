@@ -1651,20 +1651,49 @@ function getAlternativeManufacturers(r) {
   return [];
 }
 
-function renderAlternativeManufacturersCell(r) {
+// ==========================================================================
+// R3 (ÜRETİCİ VE TEDARİKÇİ YOĞUNLAŞMASI) RESMİ RİSK PUANLAMA SKALASI
+// ==========================================================================
+const R3_SCORING_TIERS = [
+  { range: '0', min: 0, max: 0, score: 100, level: 'Kritik', tier: 'critical', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', badgeBg: '#fee2e2', badgeColor: '#991b1b', desc: 'Alternatif üretici yok (Tek kaynak / Monopol riski)' },
+  { range: '1–2', min: 1, max: 2, score: 80, level: 'Çok yüksek', tier: 'very_high', color: '#ea580c', bg: '#ffedd5', border: '#fed7aa', badgeBg: '#ffedd5', badgeColor: '#9a3412', desc: '1–2 alternatif üretici (Kritik bağımlılık, kırılgan tedarik)' },
+  { range: '3–4', min: 3, max: 4, score: 65, level: 'Yüksek', tier: 'high', color: '#d97706', bg: '#fef3c7', border: '#fde68a', badgeBg: '#fef3c7', badgeColor: '#b45309', desc: '3–4 alternatif üretici (Kırılgan pazar yapısı, oligopol)' },
+  { range: '5–6', min: 5, max: 6, score: 45, level: 'Orta-yüksek', tier: 'med_high', color: '#b45309', bg: '#fffbeb', border: '#fde68a', badgeBg: '#fffbeb', badgeColor: '#92400e', desc: '5–6 alternatif üretici (Orta düzey piyasa esnekliği)' },
+  { range: '7–9', min: 7, max: 9, score: 25, level: 'Düşük-orta', tier: 'low_med', color: '#10b981', bg: '#ecfdf5', border: '#a7f3d0', badgeBg: '#ecfdf5', badgeColor: '#065f46', desc: '7–9 alternatif üretici (Geniş tedarikçi havuzu)' },
+  { range: '10 ve üzeri', min: 10, max: 9999, score: 10, level: 'Düşük', tier: 'low', color: '#059669', bg: '#f0fdf4', border: '#86efac', badgeBg: '#f0fdf4', badgeColor: '#065f46', desc: '10 ve üzeri alternatif üretici (Yüksek rekabet ve güçlü ikame)' }
+];
+
+function calculateR3FromAlternativeCount(count) {
+  const c = Number(count) || 0;
+  if (c === 0) return { ...R3_SCORING_TIERS[0], count: c };
+  if (c <= 2) return { ...R3_SCORING_TIERS[1], count: c };
+  if (c <= 4) return { ...R3_SCORING_TIERS[2], count: c };
+  if (c <= 6) return { ...R3_SCORING_TIERS[3], count: c };
+  if (c <= 9) return { ...R3_SCORING_TIERS[4], count: c };
+  return { ...R3_SCORING_TIERS[5], count: c };
+}
+
+function renderAlternativeManufacturersCell(r, isRiskCriteriaTable = false) {
   const alts = getAlternativeManufacturers(r);
   const count = alts.length;
+  const r3Info = calculateR3FromAlternativeCount(count);
 
   if (count === 0) {
     return `
       <td style="min-width:200px; max-width:260px; vertical-align:top; padding:14px 16px; white-space:normal;">
-        <div style="display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; flex-direction:column; gap:5px;">
           <span class="badge" style="background:#fef2f2; color:#991b1b; border:1px solid #fecaca; font-weight:800; font-size:11px; width:fit-content; display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
             <span>✕</span> <span>Yok</span>
           </span>
           <small style="font-size:10px; color:#94a3b8; font-weight:500; line-height:1.35;">
             Aynı etken madde & dozaj formunda farklı üretici yok (Tek Kaynak)
           </small>
+          ${isRiskCriteriaTable ? `
+            <div style="margin-top:4px; display:inline-flex; align-items:center; gap:5px; background:${r3Info.bg}; border:1px solid ${r3Info.border}; padding:3px 8px; border-radius:6px; width:fit-content;">
+              <span style="font-size:11px; font-weight:800; color:${r3Info.color};">🏭 R₃ Skoru: ${r3Info.score}/100</span>
+              <span style="font-size:10px; font-weight:700; color:${r3Info.color}; background:#ffffff; padding:1px 5px; border-radius:4px; border:1px solid ${r3Info.border};">${r3Info.level}</span>
+            </div>
+          ` : ''}
         </div>
       </td>
     `;
@@ -1676,10 +1705,16 @@ function renderAlternativeManufacturersCell(r) {
   return `
     <td style="min-width:240px; max-width:320px; vertical-align:top; padding:14px 16px; white-space:normal;">
       <div style="display:flex; flex-direction:column; gap:5px;">
-        <div style="display:flex; align-items:center; gap:6px;">
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11px; width:fit-content; display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
             <span>✓</span> <span>${count} Alternatif Üretici</span>
           </span>
+          ${isRiskCriteriaTable ? `
+            <div style="display:inline-flex; align-items:center; gap:5px; background:${r3Info.bg}; border:1px solid ${r3Info.border}; padding:3px 8px; border-radius:6px;">
+              <span style="font-size:11px; font-weight:800; color:${r3Info.color};">🏭 R₃: ${r3Info.score}/100</span>
+              <span style="font-size:10px; font-weight:700; color:${r3Info.color};">(${r3Info.level})</span>
+            </div>
+          ` : ''}
         </div>
         <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
           ${visibleAlts.map(m => `
@@ -4578,6 +4613,106 @@ async function ensureV2FdaDataLoaded() {
   }
 }
 
+// ==========================================================================
+// R3 (ÜRETİCİ VE TEDARİKÇİ YOĞUNLAŞMASI) ÖZEL HESAPLAMA & DAĞILIM SİSTEMİ
+// ==========================================================================
+let r3DrugFilterState = {
+  query: '',
+  tierFilter: 'all',
+  page: 1,
+  pageSize: 15
+};
+
+function getR3DistributionStats() {
+  const records = getV2Green400Records();
+  const tiers = R3_SCORING_TIERS.map(t => ({
+    ...t,
+    count: 0,
+    percent: 0,
+    weightedSum: 0
+  }));
+  let totalScoreSum = 0;
+
+  records.forEach(r => {
+    const alts = getAlternativeManufacturers(r);
+    const c = alts ? alts.length : 0;
+    const r3 = calculateR3FromAlternativeCount(c);
+    totalScoreSum += r3.score;
+
+    const t = tiers.find(item => {
+      if (item.max === 9999) return c >= item.min;
+      return c >= item.min && c <= item.max;
+    });
+    if (t) t.count++;
+  });
+
+  const total = records.length;
+  const weightedAvg = total > 0 ? (totalScoreSum / total) : 0;
+  tiers.forEach(t => {
+    t.percent = total > 0 ? ((t.count / total) * 100) : 0;
+    t.weightedSum = t.count * t.score;
+  });
+
+  return {
+    total,
+    tiers,
+    totalScoreSum,
+    weightedAvg,
+    roundedAvg: Math.round(weightedAvg * 10) / 10
+  };
+}
+
+function handleR3DrugSearch(val) {
+  r3DrugFilterState.query = val;
+  r3DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR3TierFilter(tier) {
+  r3DrugFilterState.tierFilter = tier;
+  r3DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR3DrugPage(p) {
+  r3DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR3ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const alts = getAlternativeManufacturers(d);
+  const count = alts ? alts.length : 0;
+  const r3 = calculateR3FromAlternativeCount(count);
+
+  const c3 = riskCriteriaState.criteria.find(item => item.id === 3);
+  if (c3) {
+    c3.score = r3.score;
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının alternatif üretici sayısı (${count}) baz alınarak R₃ Puanı ${r3.score}/100 (${r3.level}) olarak atandı ve ana denkleme aktarıldı.`);
+  }
+}
+
+function applyCollectiveR3ToCriterion() {
+  const stats = getR3DistributionStats();
+  const c3 = riskCriteriaState.criteria.find(item => item.id === 3);
+  if (c3) {
+    c3.score = stats.roundedAvg;
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın alternatif üretici dağılımına dayalı ağırlıklı ortalama R₃ Puanı (${stats.roundedAvg}/100) ana denkleme başarıyla aktarıldı!`);
+  }
+}
+
 function getV2Green400Records() {
   if (!v2FdaRecordsCache || !Array.isArray(v2FdaRecordsCache)) return [];
   const enriched = v2FdaRecordsCache.map(enrichShortageRecord);
@@ -4634,13 +4769,11 @@ function applyDrugToRiskCriteria(drugId) {
   if (avLow.includes('un') || avLow.includes('limit')) r2 += 15;
   r2 = Math.min(100, Math.max(20, r2));
 
-  // R3: Üretici ve tedarikçi yoğunlaşması (alternatif üretici sayısı)
-  let r3 = 70;
-  const altCount = Number(d.alternative_manufacturers_count) || (d.alternative_manufacturers ? d.alternative_manufacturers.length : 0);
-  if (altCount === 0) r3 = 95;
-  else if (altCount <= 2) r3 = 78;
-  else if (altCount <= 4) r3 = 55;
-  else r3 = 30;
+  // R3: Üretici ve tedarikçi yoğunlaşması (Alternatif üretici sayısı resmi tablosu)
+  const alts = getAlternativeManufacturers(d);
+  const altCount = alts ? alts.length : 0;
+  const r3Info = calculateR3FromAlternativeCount(altCount);
+  const r3 = r3Info.score;
 
   // R4: Üretim, hammadde ve kalite kesintileri (kök neden)
   let r4 = 50;
@@ -4866,7 +4999,7 @@ function renderRiskCriteriaDrugTableOnly() {
             <th title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi">8. Bulunabilirlik (Stok) (FDA)</th>
             <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">9. Sunum & Dozaj Formu (FDA)</th>
             <th style="min-width:260px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici Firma & Tedarik İletişim Bilgisi">10. Üretici Firma & İletişim (FDA)</th>
-            <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi">11. Alternatif Üretici (FDA Analizi)</th>
+            <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi ve Resmi R₃ Puanlaması">11. Alternatif Üretici & R₃ Skoru (FDA)</th>
             <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: ABD FDA İlk İlan ve Son Güncelleme Takvimi">12. Kriz Tarihleri (FDA)</th>
             <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması & Risk Skoru">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
             <th style="min-width:160px; text-align:center;" title="İşlem: DSRDS 8 Ana Kriterine Yansıt ve Detay Modalını Aç">İşlem (Karar Destek)</th>
@@ -4919,7 +5052,7 @@ function renderRiskCriteriaDrugTableOnly() {
                     </div>
                   ` : ''}
                 </td>
-                ${renderAlternativeManufacturersCell(r)}
+                ${renderAlternativeManufacturersCell(r, true)}
                 <td style="min-width:160px; vertical-align:top; padding:14px 16px; white-space:normal;">
                   <div style="display:flex; flex-direction:column; gap:6px;">
                     <div>
@@ -5141,6 +5274,450 @@ window.clearSelectedRiskDrug = clearSelectedRiskDrug;
 window.scrollToRiskFormula = scrollToRiskFormula;
 window.exportRiskCriteriaGreenDrugsCSV = exportRiskCriteriaGreenDrugsCSV;
 
+window.calculateR3FromAlternativeCount = calculateR3FromAlternativeCount;
+window.getR3DistributionStats = getR3DistributionStats;
+window.handleR3DrugSearch = handleR3DrugSearch;
+window.handleR3TierFilter = handleR3TierFilter;
+window.handleR3DrugPage = handleR3DrugPage;
+window.applySingleDrugR3ToCriterion = applySingleDrugR3ToCriterion;
+window.applyCollectiveR3ToCriterion = applyCollectiveR3ToCriterion;
+
+function renderCriterion3DetailPage(c) {
+  const stats = getR3DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR3Drugs = allDrugs.map(r => {
+    const alts = getAlternativeManufacturers(r);
+    const count = alts ? alts.length : 0;
+    const r3 = calculateR3FromAlternativeCount(count);
+    return {
+      record: r,
+      altCount: count,
+      r3Score: r3.score,
+      r3Level: r3.level,
+      r3Tier: r3.tier,
+      r3Range: r3.range,
+      r3Color: r3.color,
+      r3Bg: r3.bg,
+      r3Border: r3.border,
+      r3BadgeBg: r3.badgeBg,
+      r3BadgeColor: r3.badgeColor,
+      r3Desc: r3.desc
+    };
+  });
+
+  if (r3DrugFilterState.query) {
+    const q = r3DrugFilterState.query.toLowerCase().trim();
+    filteredR3Drugs = filteredR3Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const nd = (r.ndc || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || nd.includes(q);
+    });
+  }
+
+  if (r3DrugFilterState.tierFilter !== 'all') {
+    filteredR3Drugs = filteredR3Drugs.filter(item => item.r3Tier === r3DrugFilterState.tierFilter);
+  }
+
+  const r3TotalFiltered = filteredR3Drugs.length;
+  const r3PageSize = r3DrugFilterState.pageSize || 15;
+  const r3TotalPages = Math.max(1, Math.ceil(r3TotalFiltered / r3PageSize));
+  if (r3DrugFilterState.page > r3TotalPages) r3DrugFilterState.page = r3TotalPages;
+  const r3StartIdx = (r3DrugFilterState.page - 1) * r3PageSize;
+  const r3EndIdx = Math.min(r3StartIdx + r3PageSize, r3TotalFiltered);
+  const r3PaginatedDrugs = filteredR3Drugs.slice(r3StartIdx, r3EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #bcdcfa;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#f5f3ff; color:#7c3aed; border:1.5px solid #c4b5fd; font-weight:800; font-size:12px; padding:6px 14px;">
+          🏭 R₃ Kriter Analiz & Alt Ağırlık Sistemi
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #7c3aed; border-color:#c4b5fd; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #f5f3ff 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); box-shadow:0 4px 14px rgba(124, 58, 237, 0.35);">
+            R₃
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+              <span>🏭</span> Üretici ve Tedarikçi Yoğunlaşması
+            </h1>
+            <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+              Manufacturer/supplier concentration · Değişken Kodu: <b style="color:#7c3aed;">R3</b> · Ana Denklem Ağırlığı: <b style="color:#7c3aed;">%15 (0.15)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:12px; align-items:center; background:#ffffff; padding:10px 18px; border-radius:12px; border:1.5px solid #c4b5fd; box-shadow:0 4px 12px rgba(124,58,237,0.08);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₃):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateMainCriterionWeight(3, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">R₃ Risk Puanı:</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.score}" id="r3MainScoreInput" style="width:65px; height:32px; font-weight:800; text-align:center; border:2px solid #7c3aed; border-radius:6px; color:#7c3aed;" onchange="updateMainCriterionScore(3, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: ÜRETİCİ VE TEDARİKÇİ YOĞUNLAŞMASI RESMİ RİSK PUANLAMA TABLOSU -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #c4b5fd; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(124, 58, 237, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#1e1b4b; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> Üretici ve Tedarikçi Yoğunlaşması Risk Puanlama Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              R₃ kriterimizin alt ağırlığını hesaplamak için belirlenen resmi 6 kademeli risk puanlama skalası ve 400 yeşil reçeteli ilacın bu kademelere dağılımı:
+            </p>
+          </div>
+          <span class="badge" style="background:#f5f3ff; color:#7c3aed; border:1px solid #c4b5fd; font-weight:800; font-size:11.5px; padding:4px 10px;">
+            Resmi DSRDS Skalası
+          </span>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="r3-tier-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Alternatif Üretici Sayısı</th>
+                <th style="text-align:center;">Risk Puanı (0–100)</th>
+                <th style="text-align:center;">Risk Düzeyi</th>
+                <th style="text-align:center;">400 İlaçtaki Adet</th>
+                <th style="text-align:center;">Dağılım Payı (%)</th>
+                <th style="text-align:left;">Piyasa & Tedarik Riski Değerlendirmesi</th>
+                <th style="text-align:center;">Filtre</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${stats.tiers.map(t => `
+                <tr style="background:${r3DrugFilterState.tierFilter === t.tier ? '#f5f3ff' : 'transparent'};">
+                  <td style="font-weight:800; font-size:13.5px; color:#0f172a;">
+                    <span style="font-family:monospace; background:#f1f5f9; padding:3px 8px; border-radius:5px; border:1px solid #e2e8f0;">${t.range}</span>
+                  </td>
+                  <td style="text-align:center;">
+                    <span style="font-size:15px; font-weight:900; color:${t.color}; font-family:Outfit;">${t.score}</span>
+                  </td>
+                  <td style="text-align:center;">
+                    <span class="r3-tier-badge" style="background:${t.badgeBg}; color:${t.badgeColor}; border:1px solid ${t.border};">
+                      ${t.level}
+                    </span>
+                  </td>
+                  <td style="text-align:center; font-weight:800; font-size:13.5px; color:#1e293b;">
+                    ${t.count} ilaç
+                  </td>
+                  <td style="text-align:center;">
+                    <div style="display:flex; align-items:center; gap:6px; justify-content:center;">
+                      <span style="font-weight:700; font-size:12px; color:#475569;">%${t.percent.toFixed(1)}</span>
+                      <div style="width:50px; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                        <div style="width:${t.percent}%; height:100%; background:${t.color};"></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style="font-size:12px; color:#475569; line-height:1.4;">
+                    ${t.desc}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" class="button secondary" style="font-size:10.5px; padding:3px 8px; font-weight:700;" onclick="handleR3TierFilter('${t.tier}')">
+                      İlaçları Gör (${t.count})
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="background:#f8fafc; font-weight:800; border-top:2px solid #cbd5e1;">
+                <td style="padding:12px 14px; color:#0f172a;">TOPLAM / AĞIRLIKLI ORTALAMA:</td>
+                <td style="text-align:center; font-size:16px; color:#7c3aed; font-family:Outfit;">${stats.roundedAvg}</td>
+                <td style="text-align:center;">
+                  <span class="r3-tier-badge" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a;">
+                    Orta-Yüksek Risk
+                  </span>
+                </td>
+                <td style="text-align:center; font-size:14px; color:#0f172a;">400 İlaç</td>
+                <td style="text-align:center; color:#0f172a;">%100.0</td>
+                <td colspan="2" style="font-size:12px; color:#64748b; font-weight:600;">
+                  ∑ (Kategori İlaç Adedi × Risk Puanı) / 400 = 16,660 / 400 = 41.65
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: KOLEKTİF R3 ORTALAMA PUANI VE HIZLI AKTARIM KARTI -->
+      <div style="background:linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%); border:2px solid #7c3aed; border-radius:14px; padding:20px 24px; margin-bottom:24px; box-shadow:0 4px 16px rgba(124,58,237,0.12);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+          <div style="max-width:700px;">
+            <div style="font-size:11px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+              📊 400 Yeşil Reçeteli İlaç Kapsamında Kolektif R₃ Analiz Sonucu:
+            </div>
+            <div style="font-size:19px; font-weight:800; color:#0f172a; margin-bottom:4px; font-family:Outfit;">
+              Hesaplanan Kolektif R₃ Puanı: <span style="color:#7c3aed; font-size:26px;">${stats.roundedAvg}</span> / 100
+              <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-size:12px; margin-left:8px; vertical-align:middle;">
+                Orta-Yüksek Risk Düzeyi
+              </span>
+            </div>
+            <p style="font-size:12.5px; color:#475569; margin:0; line-height:1.55;">
+              Bu değer, 400 yeşil reçeteli ilacın alternatif üretici sayıları yukarıdaki resmi skaladaki risk katsayılarıyla (100, 80, 65, 45, 25, 10) tek tek çarpılarak hesaplanan ağırlıklı ortalamadır.
+              Bu butona basarak 400 ilacın gerçek verilerinden elde edilen kolektif R₃ puanını doğrudan ana denkleme aktarabilirsiniz.
+            </p>
+          </div>
+
+          <div>
+            <button type="button" class="button" style="font-size:13px; padding:12px 24px; font-weight:800; background:linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); border:0; box-shadow:0 4px 14px rgba(124, 58, 237, 0.35); display:inline-flex; align-items:center; gap:8px;" onclick="applyCollectiveR3ToCriterion()">
+              🎯 400 İlacın Verilerinden R₃ Puanını (${stats.roundedAvg}) Ata
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA BİREYSEL R3 RİSK ATAMA TABLOSU -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #cbd5e1; padding:22px; margin-bottom:24px; box-shadow:0 4px 14px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#0f172a; display:flex; align-items:center; gap:8px;">
+              <span>🔍</span> 400 Yeşil Reçeteli İlaç Bazında Alternatif Üretici Sayısı & Bireysel R₃ Risk Atama
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              Bu kısımda 400 ilacın her birine <b>sadece alternatif üretici sayısına göre</b> resmi skalamızdan atanmış R₃ puanları gösterilmektedir.
+              Dilediğiniz ilacın R₃ puanını tek tıkla ana denklemdeki R₃ kriterine atayabilirsiniz.
+            </p>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <input type="text" placeholder="İlaç adı, etken madde veya üretici ara..." value="${esc(r3DrugFilterState.query)}" style="padding:8px 14px; font-size:12.5px; border-radius:8px; border:1.5px solid #cbd5e1; width:280px;" oninput="handleR3DrugSearch(this.value)">
+          </div>
+        </div>
+
+        <!-- Seviye Filtre Butonları -->
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR3TierFilter('all')">
+            Tümü (400)
+          </button>
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'critical' ? 'active' : ''}" style="${r3DrugFilterState.tierFilter === 'critical' ? '' : 'color:#dc2626; border-color:#fca5a5;'}" onclick="handleR3TierFilter('critical')">
+            🔴 0 Üretici · Kritik (100 Puan) (${stats.tiers[0].count})
+          </button>
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'very_high' ? 'active' : ''}" style="${r3DrugFilterState.tierFilter === 'very_high' ? '' : 'color:#ea580c; border-color:#fed7aa;'}" onclick="handleR3TierFilter('very_high')">
+            🟠 1–2 Üretici · Çok Yüksek (80 Puan) (${stats.tiers[1].count})
+          </button>
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'high' ? 'active' : ''}" style="${r3DrugFilterState.tierFilter === 'high' ? '' : 'color:#d97706; border-color:#fde68a;'}" onclick="handleR3TierFilter('high')">
+            🟡 3–4 Üretici · Yüksek (65 Puan) (${stats.tiers[2].count})
+          </button>
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'med_high' ? 'active' : ''}" style="${r3DrugFilterState.tierFilter === 'med_high' ? '' : 'color:#b45309; border-color:#fde68a;'}" onclick="handleR3TierFilter('med_high')">
+            🟤 5–6 Üretici · Orta-Yüksek (45 Puan) (${stats.tiers[3].count})
+          </button>
+          <button type="button" class="r3-filter-btn ${r3DrugFilterState.tierFilter === 'low' ? 'active' : ''}" style="${r3DrugFilterState.tierFilter === 'low' ? '' : 'color:#059669; border-color:#86efac;'}" onclick="handleR3TierFilter('low')">
+            🟢 10+ Üretici · Düşük (10 Puan) (${stats.tiers[5].count})
+          </button>
+        </div>
+
+        <!-- İlaç Listesi Tablosu -->
+        <div class="data-table" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+            <thead>
+              <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
+                <th style="width:40px; text-align:center; padding:10px 8px;">#</th>
+                <th style="min-width:240px; padding:10px 12px; text-align:left;">İlaç / Sunum Formu</th>
+                <th style="min-width:180px; padding:10px 12px; text-align:left;">Etkin Madde (FDA)</th>
+                <th style="min-width:200px; padding:10px 12px; text-align:left;">Ruhsat Sahibi (Üretici)</th>
+                <th style="min-width:180px; padding:10px 12px; text-align:center;">Alternatif Üretici Sayısı</th>
+                <th style="min-width:120px; padding:10px 12px; text-align:center;">Atanan R₃ Puanı</th>
+                <th style="min-width:130px; padding:10px 12px; text-align:center;">Risk Düzeyi</th>
+                <th style="min-width:160px; padding:10px 12px; text-align:center;">Kriter Puanı Atama</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r3PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center; padding:30px; color:#64748b;">
+                    Arama kriterine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r3PaginatedDrugs.map((item, idx) => {
+                const seq = r3StartIdx + idx + 1;
+                const r = item.record;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#f5f3ff;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b; padding:10px 8px;">${seq}</td>
+                    <td style="padding:10px 12px;">
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td style="padding:10px 12px;">
+                      <span style="font-weight:600; color:#0369a1;">${esc(r.active_ingredient || r.molecule_name || '—')}</span>
+                    </td>
+                    <td style="padding:10px 12px;">
+                      <span style="font-weight:600; color:#334155;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      ${item.altCount === 0 ? `
+                        <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ✕ 0 Üretici (Tek Kaynak)
+                        </span>
+                      ` : `
+                        <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ✓ ${item.altCount} Alternatif
+                        </span>
+                      `}
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <span style="font-size:16px; font-weight:900; color:${item.r3Color}; font-family:Outfit;">
+                        ${item.r3Score}
+                      </span>
+                      <span style="font-size:11px; color:#64748b;">/100</span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <span class="r3-tier-badge" style="background:${item.r3BadgeBg}; color:${item.r3BadgeColor}; border:1px solid ${item.r3Border};">
+                        ${item.r3Level}
+                      </span>
+                    </td>
+                    <td style="text-align:center; padding:10px 12px;">
+                      <button type="button" class="dsrds-apply-btn" style="font-size:11px; padding:5px 12px; background:${isSelected ? '#059669' : '#7c3aed'}; border-color:${isSelected ? '#047857' : '#6d28d9'};" onclick="applySingleDrugR3ToCriterion('${esc(r.id)}')">
+                        ${isSelected ? '✓ R₃ Atandı' : `🎯 Bu Puanı (${item.r3Score}) Ata`}
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r3TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r3StartIdx + 1} - ${r3EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR3DrugPage(${r3DrugFilterState.page - 1})" ${r3DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r3DrugFilterState.page} / ${r3TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR3DrugPage(${r3DrugFilterState.page + 1})" ${r3DrugFilterState.page >= r3TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ (OPSİYONEL / GENİŞLETİLEBİLİR) -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#c4b5fd;">
+        <div style="font-size:11px; font-weight:800; color:#7c3aed; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#5b21b6; margin:8px 0; background:#f5f3ff; padding:12px 16px; border-radius:8px; border:1px solid #ddd6fe;">
+          R₃ = [ ∑<sub>j=1</sub><sup>n₃</sup> ( a₃<sub>j</sub> × S₃<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₃</sup> a₃<sub>j</sub> ]
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₃</b>: Üretici ve tedarikçi yoğunlaşması kriterinin nihai risk puanı (0–100).<br>
+          • <b>n₃</b>: Kriterdeki alt gösterge sayısı (Şu an: <b>${c.subCriteria.length}</b>).<br>
+          • <b>a₃<sub>j</sub></b>: Alt göstergenin kriter içindeki ağırlık yüzdesi.<br>
+          • <b>S₃<sub>j</sub></b>: Alt göstergenin 0–100 arasındaki risk puanı.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#7c3aed; border-color:#6d28d9;" onclick="addSubCriterion(3)">
+          ➕ Yeni Alt Gösterge Ekle (S₃<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(3)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#f5f3ff; color:#6d28d9; border-color:#c4b5fd; font-weight:700;" onclick="applySubScoreToMainCriterion(3)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff1f2; color:#be123c; border-color:#fecdd3; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(3)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      ${c.subCriteria.length === 0 ? `
+        <div style="padding: 24px; text-align:center; background:rgba(255,255,255,0.7); border:1.5px dashed #c4b5fd; border-radius:12px;">
+          <p style="color:#64748b; font-size:13px; margin:0;">
+            İsteğe bağlı ek alt göstergeler (örn: Hammadde Tekeli, Coğrafi Yoğunlaşma) tanımlamak isterseniz yukarıdaki <b>"➕ Yeni Alt Gösterge Ekle"</b> butonunu kullanabilirsiniz.
+          </p>
+        </div>
+      ` : `
+        <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #c4b5fd; overflow:hidden;">
+          <table class="sub-crit-table">
+            <thead>
+              <tr style="background: #f5f3ff;">
+                <th style="width:50px; text-align:center;">j</th>
+                <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+                <th style="width:150px; text-align:center;">Alt Ağırlık (a₃<sub>j</sub>, %)</th>
+                <th style="width:150px; text-align:center;">Risk Puanı (S₃<sub>j</sub>, 0-100)</th>
+                <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+                <th style="width:70px; text-align:center;">Sil</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${c.subCriteria.map((sub, idx) => {
+                const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+                return `
+                  <tr>
+                    <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                    <td>
+                      <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(3, ${sub.id}, this.value)" oninput="updateSubCriterionName(3, ${sub.id}, this.value)">
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(3, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.score}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionScore(3, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                      </div>
+                    </td>
+                    <td style="text-align:center; font-weight:700; color:#7c3aed;">
+                      +${contrib}
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(3, ${sub.id})">
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+  `;
+}
 
 function riskCriteriaPage() {
   const { totalWeightPercent, totalWeightDecimal, rTotal, isBalanced } = calculateOverallRiskScores();
@@ -5151,6 +5728,10 @@ function riskCriteriaPage() {
   // --------------------------------------------------------------------------
   if (riskCriteriaState.currentOpenCriterionId !== null) {
     const c = riskCriteriaState.criteria.find(item => item.id === riskCriteriaState.currentOpenCriterionId) || riskCriteriaState.criteria[0];
+    if (c.id === 3) {
+      renderCriterion3DetailPage(c);
+      return;
+    }
     const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
     const subScore = c.subCriteria.length > 0
       ? (subWeightSum > 0

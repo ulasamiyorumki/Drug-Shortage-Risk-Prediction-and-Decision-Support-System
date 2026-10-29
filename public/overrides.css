@@ -2078,3 +2078,71 @@ th:hover {
     border-color: #047857;
     color: #ffffff;
 }
+
+/* R3 Üretici ve Tedarikçi Yoğunlaşması Tablosu & Rozet Stilleri */
+.r3-tier-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1.5px solid #c4b5fd;
+    background: #ffffff;
+}
+.r3-tier-table th {
+    background: #f5f3ff;
+    color: #4c1d95;
+    font-weight: 800;
+    padding: 12px 14px;
+    border-bottom: 2px solid #ddd6fe;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.r3-tier-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #1e293b;
+    vertical-align: middle;
+}
+.r3-tier-table tr:last-child td {
+    border-bottom: none;
+}
+.r3-tier-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: 11.5px;
+    letter-spacing: 0.2px;
+}
+.r3-filter-btn {
+    font-size: 11.5px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1.5px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.r3-filter-btn:hover {
+    border-color: #7c3aed;
+    color: #7c3aed;
+    background: #f5f3ff;
+    transform: translateY(-1px);
+}
+.r3-filter-btn.active {
+    background: #7c3aed !important;
+    color: #ffffff !important;
+    border-color: #7c3aed !important;
+    box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+}
+
