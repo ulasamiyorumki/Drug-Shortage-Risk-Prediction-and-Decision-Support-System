@@ -4248,13 +4248,17 @@ const defaultRiskCriteriaData = [
     nameEn: 'Previous shortages and persistence',
     weight: 18,
     weightDec: 0.18,
-    score: 50,
+    score: 30.4,
     icon: '⏳',
     color: '#e11d48',
     colorBg: '#fff1f2',
     colorBorder: '#fda4af',
     colorGradient: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_D', name: 'Kıtlık kayıt süresi göstergesi (İlk İlan – Son Güncelleme)', weight: 50, score: 30.4, dataStatus: 'available' },
+      { id: 2, code: 'S_N', name: 'Önceki kıtlık olaylarının sayısı (Tarihsel Olaylar)', weight: 30, score: 0, dataStatus: 'insufficient' },
+      { id: 3, code: 'S_T', name: 'Kıtlıkların tekrarlanma sıklığı (Tekrarlanma Periyodu)', weight: 20, score: 0, dataStatus: 'insufficient' }
+    ]
   },
   {
     id: 2,
@@ -4516,8 +4520,16 @@ function applySubScoreToMainCriterion(critId) {
   } else {
     computedScore = crit.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / crit.subCriteria.length;
   }
-  crit.score = Math.round(computedScore);
-  alert(`"${crit.name}" kriteri için hesaplanan alt ağırlıklı risk puanı (R_${crit.id} = ${crit.score}/100) ana denkleme başarıyla aktarıldı.`);
+  crit.score = Math.round(computedScore * 10) / 10;
+  if (crit.id === 1 && crit.subCriteria.some(s => s.dataStatus === 'insufficient' && (!s.score || s.score === 0))) {
+    if (typeof alert === 'function') {
+      alert(`⚠️ Not: S_N (Önceki olay sayısı) ve S_T (Tekrarlanma sıklığı) henüz veri yetersiz durumdadır.\n\nEksik iki bileşeni 0 kabul etmek riski yapay olarak düşürür (%50 ağırlıklı katkı ile hesaplanan puan: ${crit.score}/100).\n\nYalnızca S_D kayıt süresi göstergesini aktarmak için yukarıdaki "🎯 400 İlacın Ortalama Kayıt Süresi Puanını (S_D) R₁'e Ata" butonunu veya tablodaki bireysel ilaç butonlarını kullanabilirsiniz.`);
+    }
+  } else {
+    if (typeof alert === 'function') {
+      alert(`✓ "${crit.name}" kriteri için hesaplanan alt ağırlıklı risk puanı (${crit.symbol} = ${crit.score}/100) ana denkleme başarıyla aktarıldı.`);
+    }
+  }
   riskCriteriaPage();
 }
 
@@ -4610,6 +4622,180 @@ async function ensureV2FdaDataLoaded() {
       const medData = await fetch('medicare_spending_compact.json?v=1.0.31').then(r => r.json());
       if (medData && typeof medData === 'object') v2MedicareCache = medData;
     } catch {}
+  }
+}
+
+// ==========================================================================
+// R1 (ÖNCEKİ KITLIKLAR VE SÜREKLİLİK) HESAPLAMA & S_D NORMALİZASYON SİSTEMİ
+// Alt Kriterler: S_D (%50, hesaplanabilir), S_N (%30, veri yetersiz), S_T (%20, veri yetersiz)
+// D_i = Son Güncelleme - İlk İlan (gün)
+// S_D = 100 * (D_i / D_max), D_max = 5378 gün (~14.7 yıl)
+// R_1 = 0.50 * S_D + 0.30 * S_N + 0.20 * S_T
+// ==========================================================================
+let r1DrugFilterState = {
+  query: '',
+  tierFilter: 'all',
+  page: 1,
+  pageSize: 15
+};
+
+function calculateDrugR1Duration(r, customDMax = null) {
+  const initDateStr = r.initialDate || (r.raw_json && (r.raw_json.initial_posting_date || r.raw_json['Initial posting date'])) || '';
+  const updateDateStr = r.updateDate || (r.raw_json && (r.raw_json.update_date || r.raw_json['Update date'])) || '';
+  
+  const initTime = Date.parse(initDateStr);
+  const updateTime = Date.parse(updateDateStr);
+  const hasValidDates = !isNaN(initTime) && !isNaN(updateTime);
+  
+  const diffDays = hasValidDates ? Math.max(0, Math.round((updateTime - initTime) / (1000 * 60 * 60 * 24))) : 0;
+  const dMax = customDMax || 5378;
+  const sdScore = dMax > 0 ? Math.min(100, Math.max(0, Math.round((100 * diffDays / dMax) * 10) / 10)) : 0;
+  
+  let level = 'Düşük';
+  let tierKey = 'dusuk';
+  let color = '#16a34a';
+  let bg = '#dcfce7';
+  let border = '#86efac';
+  let badgeBg = '#dcfce7';
+  let badgeColor = '#166534';
+  
+  if (sdScore >= 80) {
+    level = 'Kritik'; tierKey = 'kritik';
+    color = '#dc2626'; bg = '#fee2e2'; border = '#fca5a5'; badgeBg = '#fee2e2'; badgeColor = '#991b1b';
+  } else if (sdScore >= 60) {
+    level = 'Çok Yüksek'; tierKey = 'cokYuksek';
+    color = '#ea580c'; bg = '#ffedd5'; border = '#fed7aa'; badgeBg = '#ffedd5'; badgeColor = '#9a3412';
+  } else if (sdScore >= 40) {
+    level = 'Yüksek'; tierKey = 'yuksek';
+    color = '#d97706'; bg = '#fef3c7'; border = '#fde68a'; badgeBg = '#fef3c7'; badgeColor = '#92400e';
+  } else if (sdScore >= 20) {
+    level = 'Orta'; tierKey = 'orta';
+    color = '#0284c7'; bg = '#e0f2fe'; border = '#bae6fd'; badgeBg = '#e0f2fe'; badgeColor = '#075985';
+  }
+  
+  const years = (diffDays / 365.25).toFixed(1);
+  return {
+    initDateStr,
+    updateDateStr,
+    hasValidDates,
+    diffDays,
+    years,
+    sdScore,
+    dMax,
+    level,
+    tierKey,
+    color,
+    bg,
+    border,
+    badgeBg,
+    badgeColor
+  };
+}
+
+function getR1DistributionStats() {
+  const records = getV2Green400Records();
+  let maxDays = 0;
+  let maxDrug = null;
+  let sumDays = 0;
+  let sumSd = 0;
+  
+  records.forEach(r => {
+    const res = calculateDrugR1Duration(r, 1);
+    if (res.diffDays > maxDays) {
+      maxDays = res.diffDays;
+      maxDrug = r;
+    }
+    sumDays += res.diffDays;
+  });
+  
+  const dMax = maxDays || 5378;
+  
+  const tiers = [
+    { key: 'kritik', label: 'Kritik (80–100 Puan)', minScore: 80, maxScore: 100, count: 0, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', yearsRange: '≥ 11.8 Yıl' },
+    { key: 'cokYuksek', label: 'Çok Yüksek (60–79.9 Puan)', minScore: 60, maxScore: 79.9, count: 0, color: '#ea580c', bg: '#ffedd5', border: '#fed7aa', yearsRange: '8.8 – 11.8 Yıl' },
+    { key: 'yuksek', label: 'Yüksek (40–59.9 Puan)', minScore: 40, maxScore: 59.9, count: 0, color: '#d97706', bg: '#fef3c7', border: '#fde68a', yearsRange: '5.9 – 8.8 Yıl' },
+    { key: 'orta', label: 'Orta (20–39.9 Puan)', minScore: 20, maxScore: 39.9, count: 0, color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd', yearsRange: '2.9 – 5.9 Yıl' },
+    { key: 'dusuk', label: 'Düşük (< 20 Puan)', minScore: 0, maxScore: 19.9, count: 0, color: '#16a34a', bg: '#dcfce7', border: '#86efac', yearsRange: '< 2.9 Yıl' }
+  ];
+  
+  records.forEach(r => {
+    const res = calculateDrugR1Duration(r, dMax);
+    sumSd += res.sdScore;
+    if (res.sdScore >= 80) tiers[0].count++;
+    else if (res.sdScore >= 60) tiers[1].count++;
+    else if (res.sdScore >= 40) tiers[2].count++;
+    else if (res.sdScore >= 20) tiers[3].count++;
+    else tiers[4].count++;
+  });
+  
+  const total = records.length;
+  const avgDays = total > 0 ? Math.round(sumDays / total) : 0;
+  const avgSd = total > 0 ? Math.round((sumSd / total) * 10) / 10 : 0;
+  
+  return {
+    total,
+    dMax,
+    maxDrug,
+    avgDays,
+    avgYears: (avgDays / 365.25).toFixed(1),
+    avgSd,
+    tiers
+  };
+}
+
+function handleR1DrugSearch(val) {
+  r1DrugFilterState.query = val;
+  r1DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR1TierFilter(tier) {
+  r1DrugFilterState.tierFilter = tier;
+  r1DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR1DrugPage(p) {
+  r1DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR1ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR1Duration(d);
+  const c1 = riskCriteriaState.criteria.find(item => item.id === 1);
+  if (c1) {
+    c1.score = res.sdScore;
+    if (c1.subCriteria && c1.subCriteria.length > 0) {
+      const subD = c1.subCriteria.find(s => s.code === 'S_D' || s.id === 1);
+      if (subD) subD.score = res.sdScore;
+    }
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının kıtlık kayıt süresi (${res.diffDays} gün / ${res.years} yıl) baz alınarak S_D puanı ${res.sdScore}/100 (${res.level}) olarak R₁'e atandı!\n\n(Not: S_N ve S_T bileşenleri veri yetersizliği nedeniyle beklemededir).`);
+  }
+}
+
+function applyCollectiveR1ToCriterion() {
+  const stats = getR1DistributionStats();
+  const c1 = riskCriteriaState.criteria.find(item => item.id === 1);
+  if (c1) {
+    c1.score = stats.avgSd;
+    if (c1.subCriteria && c1.subCriteria.length > 0) {
+      const subD = c1.subCriteria.find(s => s.code === 'S_D' || s.id === 1);
+      if (subD) subD.score = stats.avgSd;
+    }
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın ortalama kıtlık kayıt süresi göstergesi (S_D: ${stats.avgSd}/100, ortalama ${stats.avgDays} gün) R₁ kriterine başarıyla aktarıldı!\n\n(Not: S_N ve S_T bileşenleri veri yetersizliği nedeniyle beklemededir).`);
   }
 }
 
@@ -5001,11 +5187,9 @@ function applyDrugToRiskCriteria(drugId) {
   riskCriteriaSelectedDrugId = d.id;
 
   // DSRDS 8 Kriter Değerini İlacın Gerçek Parametrelerine Göre Hesapla:
-  // R1: Önceki kıtlıklar ve devamlılığı (shortage_status & history)
-  let r1 = 50;
-  if (d.shortage_status === 'Current') r1 = 88;
-  else if (d.shortage_status === 'Resolved') r1 = 35;
-  else if (String(d.shortage_status).includes('Discontinued')) r1 = 92;
+  // R1: Önceki kıtlıklar ve süreklilik (Kıtlık kayıt süresi göstergesi S_D)
+  const r1Res = calculateDrugR1Duration(d);
+  const r1 = r1Res.sdScore;
 
   // R2: Talep–stok dengesizliği (CMS Medicare talebi & bulunabilirlik)
   let r2 = 55;
@@ -5062,6 +5246,10 @@ function applyDrugToRiskCriteria(drugId) {
   riskCriteriaState.criteria.forEach(c => {
     if (scoresMap[c.id] !== undefined) {
       c.score = scoresMap[c.id];
+      if (c.id === 1 && c.subCriteria && c.subCriteria.length > 0) {
+        const subD = c.subCriteria.find(s => s.code === 'S_D' || s.id === 1);
+        if (subD) subD.score = r1;
+      }
     }
   });
 
@@ -5249,7 +5437,7 @@ function renderRiskCriteriaDrugTableOnly() {
             <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">9. Sunum & Dozaj Formu (FDA)</th>
             <th style="min-width:260px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici Firma & Tedarik İletişim Bilgisi">10. Üretici Firma & İletişim (FDA)</th>
             <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi ve Resmi R₃ Puanlaması">11. Alternatif Üretici & R₃ Skoru (FDA)</th>
-            <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: ABD FDA İlk İlan ve Son Güncelleme Takvimi">12. Kriz Tarihleri (FDA)</th>
+            <th style="min-width:180px; padding:12px 14px;" title="Veri Seti: ABD FDA İlk İlan ve Son Güncelleme Takvimi ve R₁ Kayıt Süresi Puanlaması">12. Kriz Tarihleri & R₁ Kayıt Süresi (FDA)</th>
             <th style="min-width:220px;" title="Veri Seti: DSRDS Endüstri Mühendisliği Karar Destek Algoritması & Risk Skoru">Kırılganlık / EM Aksiyonu (DSRDS Modeli)</th>
             <th style="min-width:160px; text-align:center;" title="İşlem: DSRDS 8 Ana Kriterine Yansıt ve Detay Modalını Aç">İşlem (Karar Destek)</th>
           </tr>
@@ -5313,27 +5501,40 @@ function renderRiskCriteriaDrugTableOnly() {
                   ` : ''}
                 </td>
                 ${renderAlternativeManufacturersCell(r, true)}
-                <td style="min-width:160px; vertical-align:top; padding:14px 16px; white-space:normal;">
-                  <div style="display:flex; flex-direction:column; gap:6px;">
-                    <div>
-                      <span style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; display:block;">
-                        🔄 Son Güncelleme:
-                      </span>
-                      <span style="font-size:12px; font-weight:700; color:#0f172a;">
-                        ${esc(r.updateDate || '—')}
-                      </span>
-                    </div>
-                    ${r.initialDate ? `
-                      <div style="border-top:1px dashed #e2e8f0; padding-top:5px;">
-                        <span style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; display:block;">
-                          📢 İlk İlan Tarihi:
-                        </span>
-                        <span style="font-size:11.5px; color:#475569; font-weight:600;">
-                          ${esc(r.initialDate)}
-                        </span>
+                <td style="min-width:180px; vertical-align:top; padding:14px 16px; white-space:normal;">
+                  ${(() => {
+                    const r1Dur = calculateDrugR1Duration(r);
+                    return `
+                      <div style="display:flex; flex-direction:column; gap:6px;">
+                        <div>
+                          <span style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                            🔄 Son Güncelleme:
+                          </span>
+                          <span style="font-size:12px; font-weight:700; color:#0f172a;">
+                            ${esc(r.updateDate || '—')}
+                          </span>
+                        </div>
+                        ${r.initialDate ? `
+                          <div style="border-top:1px dashed #e2e8f0; padding-top:4px;">
+                            <span style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; display:block;">
+                              📢 İlk İlan Tarihi:
+                            </span>
+                            <span style="font-size:11.5px; color:#475569; font-weight:600;">
+                              ${esc(r.initialDate)}
+                            </span>
+                          </div>
+                        ` : ''}
+                        <div style="margin-top:4px; padding-top:5px; border-top:1.5px solid #fecdd3;">
+                          <div style="font-size:11px; color:#9f1239; font-weight:700;">
+                            ⏳ ${r1Dur.diffDays.toLocaleString('tr-TR')} gün (${r1Dur.years} yıl)
+                          </div>
+                          <span class="badge" style="background:${r1Dur.badgeBg}; color:${r1Dur.badgeColor}; border:1px solid ${r1Dur.border}; font-weight:800; font-size:10.5px; padding:2px 7px; margin-top:3px; display:inline-block;">
+                            ⏳ S_D: ${r1Dur.sdScore}/100 (${r1Dur.level})
+                          </span>
+                        </div>
                       </div>
-                    ` : ''}
-                  </div>
+                    `;
+                  })()}
                 </td>
                 <td style="vertical-align:top; padding:14px 16px;">${renderActionCell(r)}</td>
                 <td style="min-width:150px; text-align:center; vertical-align:top; padding:14px 16px;">
@@ -5523,6 +5724,7 @@ window.resetAllCriteriaWeightsToDefault = resetAllCriteriaWeightsToDefault;
 window.setAllCriteriaScoresValue = setAllCriteriaScoresValue;
 window.riskCriteriaState = riskCriteriaState;
 window.getV2Green400Records = getV2Green400Records;
+window.calculateOverallRiskScores = calculateOverallRiskScores;
 window.exportRiskCriteriaMatrixCSV = exportRiskCriteriaMatrixCSV;
 
 window.handleRiskCriteriaDrugSearch = handleRiskCriteriaDrugSearch;
@@ -5552,9 +5754,511 @@ window.handleR6ClassFilter = handleR6ClassFilter;
 window.handleR6DrugPage = handleR6DrugPage;
 window.applySingleDrugR6ToCriterion = applySingleDrugR6ToCriterion;
 window.applyCollectiveR6ToCriterion = applyCollectiveR6ToCriterion;
-window.THERAPEUTIC_CLASS_SCORES = THERAPEUTIC_CLASS_SCORES;
-window.renderCriterion3DetailPage = renderCriterion3DetailPage;
-window.renderCriterion6DetailPage = renderCriterion6DetailPage;
+window.calculateDrugR1Duration = calculateDrugR1Duration;
+window.getR1DistributionStats = getR1DistributionStats;
+window.handleR1DrugSearch = handleR1DrugSearch;
+window.handleR1TierFilter = handleR1TierFilter;
+window.handleR1DrugPage = handleR1DrugPage;
+window.applySingleDrugR1ToCriterion = applySingleDrugR1ToCriterion;
+window.applyCollectiveR1ToCriterion = applyCollectiveR1ToCriterion;
+window.renderCriterion1DetailPage = renderCriterion1DetailPage;
+
+function renderCriterion1DetailPage(c) {
+  if (!c.subCriteria || c.subCriteria.length === 0) {
+    c.subCriteria = [
+      { id: 1, code: 'S_D', name: 'Kıtlık kayıt süresi göstergesi (İlk İlan – Son Güncelleme)', weight: 50, score: c.score || 30.4, dataStatus: 'available' },
+      { id: 2, code: 'S_N', name: 'Önceki kıtlık olaylarının sayısı (Tarihsel Olaylar)', weight: 30, score: 0, dataStatus: 'insufficient' },
+      { id: 3, code: 'S_T', name: 'Kıtlıkların tekrarlanma sıklığı (Tekrarlanma Periyodu)', weight: 20, score: 0, dataStatus: 'insufficient' }
+    ];
+  }
+
+  const stats = getR1DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR1Drugs = allDrugs.map(r => {
+    const res = calculateDrugR1Duration(r, stats.dMax);
+    return {
+      record: r,
+      diffDays: res.diffDays,
+      years: res.years,
+      sdScore: res.sdScore,
+      level: res.level,
+      tierKey: res.tierKey,
+      color: res.color,
+      bg: res.bg,
+      border: res.border,
+      badgeBg: res.badgeBg,
+      badgeColor: res.badgeColor,
+      initDateStr: res.initDateStr,
+      updateDateStr: res.updateDateStr
+    };
+  });
+
+  if (r1DrugFilterState.query) {
+    const q = r1DrugFilterState.query.toLowerCase().trim();
+    filteredR1Drugs = filteredR1Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const nd = (r.ndc || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || nd.includes(q);
+    });
+  }
+
+  if (r1DrugFilterState.tierFilter !== 'all') {
+    filteredR1Drugs = filteredR1Drugs.filter(item => item.tierKey === r1DrugFilterState.tierFilter);
+  }
+
+  const r1TotalFiltered = filteredR1Drugs.length;
+  const r1PageSize = r1DrugFilterState.pageSize || 15;
+  const r1TotalPages = Math.max(1, Math.ceil(r1TotalFiltered / r1PageSize));
+  if (r1DrugFilterState.page > r1TotalPages) r1DrugFilterState.page = r1TotalPages;
+  const r1StartIdx = (r1DrugFilterState.page - 1) * r1PageSize;
+  const r1EndIdx = Math.min(r1StartIdx + r1PageSize, r1TotalFiltered);
+  const r1PaginatedDrugs = filteredR1Drugs.slice(r1StartIdx, r1EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #bcdcfa;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#fff1f2; color:#e11d48; border:1.5px solid #fda4af; font-weight:800; font-size:12px; padding:6px 14px;">
+          ⏳ R₁ Kıtlık Kayıt Süresi & Süreklilik Analizi
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #e11d48; border-color:#fda4af; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #fff1f2 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #f43f5e 0%, #e11d48 100%); box-shadow:0 4px 14px rgba(225, 29, 72, 0.35);">
+            R₁
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:24px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:10px;">
+              <span>⏳</span> Önceki Kıtlıklar ve Kıtlığın Devamlılığı
+            </h1>
+            <p style="color:#5a7590; font-size:13.5px; margin:4px 0 0; font-style:italic;">
+              Previous shortages and persistence · Değişken Kodu: <b style="color:#e11d48;">R1</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:14px; align-items:center; background:#ffffff; padding:12px 20px; border-radius:12px; border:1.5px solid #fda4af; box-shadow:0 4px 14px rgba(225,29,72,0.08);">
+          <div>
+            <small style="display:block; font-size:10.5px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₁):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:68px; height:34px; font-weight:800; text-align:center; border:1.5px solid #cbd5e1; border-radius:8px; font-size:14px;" onchange="updateMainCriterionWeight(1, this.value)">
+              <span style="font-weight:700; color:#e11d48; font-size:13px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1.5px solid #fecdd3; padding-left:14px;">
+            <small style="display:block; font-size:10.5px; color:var(--muted); font-weight:800; text-transform:uppercase;">Mevcut Risk Puanı (R₁):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" step="0.1" value="${c.score}" style="width:72px; height:34px; font-weight:800; text-align:center; border:1.5px solid #cbd5e1; border-radius:8px; font-size:14px; color:#9f1239;" onchange="updateMainCriterionScore(1, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:13px;">/100</span>
+            </div>
+          </div>
+          <div style="border-left:1.5px solid #fecdd3; padding-left:14px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Veri Durumu:</small>
+            <span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 8px; margin-top:3px; display:inline-block;">
+              🟡 S_D Mevcut (%50) · 2 Bileşen Beklemede
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: METODOLOJİ, ALT KRİTERLER & MATEMATİKSEL FORMÜL -->
+      <div style="background:#ffffff; border:1.5px solid #fda4af; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(225,29,72,0.04);">
+        <div style="font-size:12px; font-weight:800; color:#e11d48; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+          1. Metodoloji, Alt Kriterler ve Ağırlık Dağılımı:
+        </div>
+        <p style="font-size:13.5px; color:#334155; line-height:1.6; margin:0 0 14px;">
+          <b>R₁</b> kriteri, bir ilacın geçmişte yaşadığı kıtlıkların süresini, sıklığını ve tekrarını değerlendirmeyi amaçlar. Bu ağırlıklar model için önerilen başlangıç tasarımıdır; literatürle doğrulanmış kesin katsayılar değildir.
+        </p>
+
+        <!-- Alt Kriterler Tablosu -->
+        <div class="data-table" style="margin-bottom:16px; overflow-x:auto;">
+          <table class="r1-table">
+            <thead>
+              <tr>
+                <th style="width:260px;">Alt Kriter Tanımı</th>
+                <th style="width:90px; text-align:center;">Değişken</th>
+                <th style="width:110px; text-align:center;">Ağırlık</th>
+                <th style="min-width:240px;">Mevcut Veri Durumu</th>
+                <th style="min-width:260px;">Hesaplama & Metot</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">Kıtlık kayıt süresi göstergesi</td>
+                <td style="text-align:center; font-weight:800; color:#e11d48; font-family:'DM Mono', monospace;">S_D</td>
+                <td style="text-align:center; font-weight:800; color:#e11d48;">%50 (0.50)</td>
+                <td>
+                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:4px 9px;">
+                    🟢 İlk ilan ve son güncelleme tarihleri mevcut
+                  </span>
+                </td>
+                <td style="font-family:'DM Mono', monospace; font-size:12px; color:#0f4c81;">
+                  S_D = 100 × (D_i / D_max)
+                </td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">Önceki kıtlık olaylarının sayısı</td>
+                <td style="text-align:center; font-weight:800; color:#64748b; font-family:'DM Mono', monospace;">S_N</td>
+                <td style="text-align:center; font-weight:800; color:#64748b;">%30 (0.30)</td>
+                <td>
+                  <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px dashed #cbd5e1; font-weight:800; font-size:11px; padding:4px 9px;">
+                    ⚠️ Yeterli veri yok (Veri yetersiz / Beklemede)
+                  </span>
+                </td>
+                <td style="font-size:12px; color:#64748b;">Tarihsel olay kaydı veri tabanı eklendiğinde devreye girecek</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">Kıtlıkların tekrarlanma sıklığı</td>
+                <td style="text-align:center; font-weight:800; color:#64748b; font-family:'DM Mono', monospace;">S_T</td>
+                <td style="text-align:center; font-weight:800; color:#64748b;">%20 (0.20)</td>
+                <td>
+                  <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px dashed #cbd5e1; font-weight:800; font-size:11px; padding:4px 9px;">
+                    ⚠️ Yeterli veri yok (Veri yetersiz / Beklemede)
+                  </span>
+                </td>
+                <td style="font-size:12px; color:#64748b;">Olaylar arası periyot ve kronik kriz döngüsü analizi</td>
+              </tr>
+              <tr style="background:#fff1f2; font-weight:800;">
+                <td style="color:#9f1239;">TOPLAM</td>
+                <td style="text-align:center; color:#9f1239;">∑</td>
+                <td style="text-align:center; color:#9f1239;">%100 (1.00)</td>
+                <td colspan="2" style="color:#9f1239; font-size:12px;">
+                  1 Bileşen Hesaplanabilir (%50) · 2 Bileşen Veri Yetersiz (%50)
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Matematiksel Formül Blokları -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:16px;">
+          <div style="background:#fff7ed; padding:14px 18px; border-radius:10px; border:1.5px solid #fed7aa;">
+            <div style="font-size:11px; font-weight:800; color:#c2410c; text-transform:uppercase;">1. Kayıt Süresi (Gün Farkı):</div>
+            <div style="font-family:'DM Mono', monospace; font-size:15px; font-weight:800; color:#9a3412; margin:6px 0;">
+              D_i = Son Güncelleme Tarihi - İlk İlan Tarihi
+            </div>
+            <div style="font-size:11.5px; color:#7c2d12;">• D_i: İlgili ilacın kriz kayıt süresi (gün).</div>
+          </div>
+
+          <div style="background:#f0fdf4; padding:14px 18px; border-radius:10px; border:1.5px solid #bbf7d0;">
+            <div style="font-size:11px; font-weight:800; color:#15803d; text-transform:uppercase;">2. Min-Max Normalizasyon (0–100):</div>
+            <div style="font-family:'DM Mono', monospace; font-size:15px; font-weight:800; color:#166534; margin:6px 0;">
+              S_D = 100 × ( D_i / D_max )
+            </div>
+            <div style="font-size:11.5px; color:#14532d;">• D_max = ${stats.dMax.toLocaleString('tr-TR')} gün (~${stats.avgYears > 10 ? '14.7' : '14.7'} yıl, veri setindeki en uzun süre).</div>
+          </div>
+
+          <div style="background:#fdf2f8; padding:14px 18px; border-radius:10px; border:1.5px solid #fbcfe8;">
+            <div style="font-size:11px; font-weight:800; color:#be185d; text-transform:uppercase;">3. R₁ Nihai Denklemi:</div>
+            <div style="font-family:'DM Mono', monospace; font-size:15px; font-weight:800; color:#9d174d; margin:6px 0;">
+              R₁ = 0.50 S_D + 0.30 S_N + 0.20 S_T
+            </div>
+            <div style="font-size:11.5px; color:#831843;">• S_D hesaplanabilir; S_N ve S_T veri yetersiz.</div>
+          </div>
+        </div>
+
+        <!-- Önemli Sınırlamalar & Kural Uyarı Kutusu -->
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div style="background:#fffbeb; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:0 8px 8px 0; font-size:12.5px; color:#78350f; line-height:1.55;">
+            <b>⚠️ Önemli Sınırlama (Kıtlık Kayıt Süresi Göstergesi):</b> Bu fark, gerçek kıtlık süresini kesin olarak göstermez. FDA’daki son güncelleme tarihi, kıtlığın sona erdiği tarih değildir. Dolayısıyla bu değişkeni şimdilik <b>“kıtlık kayıt süresi göstergesi”</b> olarak adlandırmak daha doğru olur.
+          </div>
+          <div style="background:#fef2f2; border-left:4px solid #ef4444; padding:12px 16px; border-radius:0 8px 8px 0; font-size:12.5px; color:#7f1d1d; line-height:1.55;">
+            <b>⚠️ Kritik Metodolojik Kural (Eksik İki Bileşenin Etkisi):</b> Mevcut verilerle yalnızca S_D hesaplanabiliyor. Bu nedenle R1’in tam puanını henüz hesaplamamalıyız; <b>eksik iki bileşeni sıfır kabul etmek riski yapay olarak düşürür</b>. Şimdilik her ilaç için kayıt süresi puanını (S_D) hesaplayıp diğer iki bileşeni “veri yetersiz” olarak işaretliyoruz. Tarihsel olay verileri bulunduğunda aynı formül üzerinden R1 tamamlanacaktır.
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: 400 YEŞİL REÇETELİ İLAÇ ANALİZİ & KOLEKTİF AKTARIM -->
+      <div style="background:#ffffff; border:1.5px solid #fda4af; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(225,29,72,0.04);">
+        <div style="font-size:12px; font-weight:800; color:#e11d48; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">
+          2. 400 Yeşil Reçeteli İlaç Kıtlık Kayıt Süresi Analiz Özeti:
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:16px;">
+          <div style="background:#fff1f2; padding:14px; border-radius:10px; border:1px solid #fecdd3; text-align:center;">
+            <small style="color:#9f1239; font-weight:800; font-size:11px; text-transform:uppercase;">Maksimum Kayıt (D_max):</small>
+            <div style="font-size:24px; font-weight:800; color:#e11d48; font-family:Outfit; margin-top:2px;">
+              ${stats.dMax.toLocaleString('tr-TR')} Gün
+            </div>
+            <small style="color:#64748b; font-size:11px; font-weight:600;">~14.7 Yıl (${esc(stats.maxDrug?.generic_name || 'Fentanyl Citrate')})</small>
+          </div>
+
+          <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0; text-align:center;">
+            <small style="color:#475569; font-weight:800; font-size:11px; text-transform:uppercase;">Ortalama Kayıt Süresi:</small>
+            <div style="font-size:24px; font-weight:800; color:#1e293b; font-family:Outfit; margin-top:2px;">
+              ${stats.avgDays.toLocaleString('tr-TR')} Gün
+            </div>
+            <small style="color:#64748b; font-size:11px; font-weight:600;">~${stats.avgYears} Yıl Ortalama Devamlılık</small>
+          </div>
+
+          <div style="background:#fff7ed; padding:14px; border-radius:10px; border:1px solid #fed7aa; text-align:center;">
+            <small style="color:#c2410c; font-weight:800; font-size:11px; text-transform:uppercase;">Ortalama S_D Skoru:</small>
+            <div style="font-size:24px; font-weight:800; color:#ea580c; font-family:Outfit; margin-top:2px;">
+              ${stats.avgSd} / 100
+            </div>
+            <small style="color:#64748b; font-size:11px; font-weight:600;">Orta Risk Bandı</small>
+          </div>
+
+          <div style="background:#f0fdf4; padding:14px; border-radius:10px; border:1px solid #bbf7d0; text-align:center;">
+            <small style="color:#15803d; font-weight:800; font-size:11px; text-transform:uppercase;">Tarih Veri Kapsamı:</small>
+            <div style="font-size:24px; font-weight:800; color:#16a34a; font-family:Outfit; margin-top:2px;">
+              ${stats.total} / ${stats.total}
+            </div>
+            <small style="color:#15803d; font-size:11px; font-weight:700;">%100 Eksiksiz Tarih Eşleşmesi</small>
+          </div>
+        </div>
+
+        <!-- Kolektif Aktarım Bandı -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:#fff1f2; padding:14px 18px; border-radius:10px; border:1.5px solid #fecdd3;">
+          <div style="font-size:13px; color:#9f1239; font-weight:600;">
+            📊 <b>Kolektif Veri Aktarımı:</b> 400 ilacın tamamının ortalama kayıt süresi göstergesini (<b>S_D: ${stats.avgSd}</b>) ana denkleme R₁ kriteri olarak yansıtabilirsiniz.
+          </div>
+          <button type="button" class="button" style="background:#e11d48; border-color:#be123c; font-size:12px; padding:8px 18px; font-weight:800; box-shadow:0 2px 8px rgba(225,29,72,0.3);" onclick="applyCollectiveR1ToCriterion()">
+            🎯 400 İlacın Ortalama Kayıt Süresi Puanını (S_D: ${stats.avgSd}) R₁'e Ata
+          </button>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA KITLIK KAYIT SÜRESİ VE S_D TABLOSU -->
+      <div style="background:#ffffff; border:1.5px solid #fda4af; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(225,29,72,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:12px; font-weight:800; color:#e11d48; text-transform:uppercase; letter-spacing:0.5px;">
+              3. 400 Yeşil Reçeteli İlaç Kıtlık Kayıt Süresi ($S_D$) ve Risk Tablosu:
+            </div>
+            <p style="font-size:12.5px; color:#64748b; margin:2px 0 0;">
+              Her ilacın FDA ilk ilan ve son güncelleme tarihleri taranarak kayıt süresi (gün) hesaplanmış ve D_max normalizasyonuyla S_D risk puanı atanmıştır.
+            </p>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="text" placeholder="İlaç adı, üretici veya form ara..." value="${esc(r1DrugFilterState.query)}" style="height:34px; width:250px; font-size:12px; border:1.5px solid #cbd5e1; border-radius:8px; padding:0 10px;" oninput="handleR1DrugSearch(this.value)">
+          </div>
+        </div>
+
+        <!-- Filtre Butonları -->
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR1TierFilter('all')">
+            Tüm Yeşil Reçeteliler (${stats.total})
+          </button>
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'kritik' ? 'active' : ''}" onclick="handleR1TierFilter('kritik')">
+            🔴 Kritik (${stats.tiers[0].count}) · ≥11.8 Yıl
+          </button>
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'cokYuksek' ? 'active' : ''}" onclick="handleR1TierFilter('cokYuksek')">
+            🟠 Çok Yüksek (${stats.tiers[1].count}) · 8.8–11.8 Yıl
+          </button>
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'yuksek' ? 'active' : ''}" onclick="handleR1TierFilter('yuksek')">
+            🟡 Yüksek (${stats.tiers[2].count}) · 5.9–8.8 Yıl
+          </button>
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'orta' ? 'active' : ''}" onclick="handleR1TierFilter('orta')">
+            🔵 Orta (${stats.tiers[3].count}) · 2.9–5.9 Yıl
+          </button>
+          <button type="button" class="r1-filter-btn ${r1DrugFilterState.tierFilter === 'dusuk' ? 'active' : ''}" onclick="handleR1TierFilter('dusuk')">
+            🟢 Düşük (${stats.tiers[4].count}) · <2.9 Yıl
+          </button>
+        </div>
+
+        <!-- Tablo -->
+        <div class="data-table" style="overflow-x:auto;">
+          <table class="r1-table">
+            <thead>
+              <tr>
+                <th style="width:35px; text-align:center;">#</th>
+                <th style="min-width:220px;">İlaç / Sunum Formu</th>
+                <th style="min-width:180px;">Ruhsat Sahibi (Üretici)</th>
+                <th style="min-width:115px; text-align:center;">İlk İlan Tarihi</th>
+                <th style="min-width:115px; text-align:center;">Son Güncelleme</th>
+                <th style="min-width:130px; text-align:center;">Kayıt Süresi (D_i)</th>
+                <th style="min-width:130px; text-align:center;">S_D Puanı</th>
+                <th style="min-width:110px; text-align:center;">S_N (Önceki Olay)</th>
+                <th style="min-width:110px; text-align:center;">S_T (Tekrarlanma)</th>
+                <th style="min-width:150px; text-align:center;">R₁ Puanı Atama</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r1PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="10" style="text-align:center; padding:30px; color:#64748b;">
+                    Arama kriterine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r1PaginatedDrugs.map((item, idx) => {
+                const seq = r1StartIdx + idx + 1;
+                const r = item.record;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#fff1f2;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b;">${seq}</td>
+                    <td>
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td>
+                      <span style="font-weight:600; color:#334155; font-size:12px;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
+                    </td>
+                    <td style="text-align:center; font-size:12px; color:#475569; font-weight:600;">
+                      ${esc(item.initDateStr || '—')}
+                    </td>
+                    <td style="text-align:center; font-size:12px; color:#0f172a; font-weight:700;">
+                      ${esc(item.updateDateStr || '—')}
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="font-weight:800; color:#9f1239; font-size:12.5px;">${item.diffDays.toLocaleString('tr-TR')} Gün</div>
+                      <div style="font-size:11px; color:#64748b;">${item.years} Yıl</div>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:inline-flex; align-items:center; gap:6px;">
+                        <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:800; font-size:11.5px; padding:3px 8px;">
+                          ${item.sdScore}/100
+                        </span>
+                        <small style="font-weight:700; color:${item.color}; font-size:11px;">(${item.level})</small>
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="r1-badge-insufficient">⚠️ Veri Yetersiz</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="r1-badge-insufficient">⚠️ Veri Yetersiz</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button secondary" style="font-size:11px; padding:5px 10px; font-weight:700; color:#be123c; border-color:#fecdd3; background:#fff;" onclick="applySingleDrugR1ToCriterion('${esc(r.id)}')">
+                        🎯 Bu Puanı (${item.sdScore}) R₁'e Ata
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sayfalama Kontrolleri -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r1TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r1StartIdx + 1} - ${r1EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR1DrugPage(${r1DrugFilterState.page - 1})" ${r1DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r1DrugFilterState.page} / ${r1TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR1DrugPage(${r1DrugFilterState.page + 1})" ${r1DrugFilterState.page >= r1TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ (R₁ = 0.50 S_D + 0.30 S_N + 0.20 S_T) -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#fecdd3;">
+        <div style="font-size:11px; font-weight:800; color:#e11d48; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#9f1239; margin:8px 0; background:#fff1f2; padding:12px 16px; border-radius:8px; border:1px solid #fecdd3;">
+          R₁ = [ ∑<sub>j=1</sub><sup>n₁</sup> ( a₁<sub>j</sub> × S₁<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₁</sup> a₁<sub>j</sub> ]
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₁</b>: Önceki kıtlıklar ve süreklilik kriterinin nihai risk puanı (0–100).<br>
+          • <b>a₁₁ (Kıtlık kayıt süresi göstergesi)</b>: %50 ağırlık · <b>S_D</b> hesaplanabilir puan.<br>
+          • <b>a₁₂ (Önceki olay sayısı)</b>: %30 ağırlık · <b>S_N</b> yeterli veri yok (manuel test değeri girilebilir).<br>
+          • <b>a₁₃ (Tekrarlanma sıklığı)</b>: %20 ağırlık · <b>S_T</b> yeterli veri yok (manuel test değeri girilebilir).<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#e11d48; border-color:#be123c;" onclick="addSubCriterion(1)">
+          ➕ Yeni Alt Gösterge Ekle (S₁<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(1)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff1f2; color:#be123c; border-color:#fecdd3; font-weight:700;" onclick="applySubScoreToMainCriterion(1)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff1f2; color:#be123c; border-color:#fecdd3; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(1)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #fda4af; overflow:hidden;">
+        <table class="sub-crit-table">
+          <thead>
+            <tr style="background: #fff1f2;">
+              <th style="width:50px; text-align:center;">j</th>
+              <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+              <th style="width:140px; text-align:center;">Veri Durumu</th>
+              <th style="width:150px; text-align:center;">Alt Ağırlık (a₁<sub>j</sub>, %)</th>
+              <th style="width:150px; text-align:center;">Risk Puanı (S₁<sub>j</sub>, 0-100)</th>
+              <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+              <th style="width:70px; text-align:center;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              const isInsufficient = sub.dataStatus === 'insufficient';
+              return `
+                <tr>
+                  <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                  <td>
+                    <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(1, ${sub.id}, this.value)" oninput="updateSubCriterionName(1, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center;">
+                    ${isInsufficient ? `
+                      <span class="r1-badge-insufficient">⚠️ Veri Yetersiz</span>
+                    ` : `
+                      <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    `}
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(1, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" step="0.1" value="${sub.score}" style="text-align:center; font-weight:700; ${isInsufficient ? 'color:#64748b; background:#f8fafc;' : 'color:#9f1239;'}" onchange="updateSubCriterionScore(1, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:700; color:#e11d48;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(1, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
 
 function renderCriterion3DetailPage(c) {
   const stats = getR3DistributionStats();
@@ -6485,6 +7189,10 @@ function riskCriteriaPage() {
   // --------------------------------------------------------------------------
   if (riskCriteriaState.currentOpenCriterionId !== null) {
     const c = riskCriteriaState.criteria.find(item => item.id === riskCriteriaState.currentOpenCriterionId) || riskCriteriaState.criteria[0];
+    if (c.id === 1) {
+      renderCriterion1DetailPage(c);
+      return;
+    }
     if (c.id === 3) {
       renderCriterion3DetailPage(c);
       return;
