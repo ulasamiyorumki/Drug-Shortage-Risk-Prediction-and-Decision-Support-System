@@ -4330,13 +4330,17 @@ const defaultRiskCriteriaData = [
     nameEn: 'Production, raw-material and quality interruptions',
     weight: 15,
     weightDec: 0.15,
-    score: 50,
+    score: 50.0,
     icon: '🧪',
     color: '#db2777',
     colorBg: '#fdf2f8',
     colorBorder: '#f9a8d4',
     colorGradient: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_4_1', name: 'Hammadde / API sıkıntısı (Aktif veya inaktif girdi temin kesintisi)', weight: 35, score: 50.0, dataStatus: 'available' },
+      { id: 2, code: 'S_4_2', name: 'GMP / kalite uyumsuzluğu (İyi Üretim Uygulamaları ve kalite kısıtları)', weight: 30, score: 50.0, dataStatus: 'available' },
+      { id: 3, code: 'S_4_3', name: 'Ruhsat / piyasadan çekilme / üretim durdurma (Ruhsat askısı veya terk)', weight: 35, score: 50.0, dataStatus: 'available' }
+    ]
   },
   {
     id: 5,
@@ -5186,6 +5190,258 @@ function applyCollectiveR3ToCriterion() {
 }
 
 // ==========================================================================
+// R4 (ÜRETİM, HAMMADDE VE KALİTE KESİNTİLERİ) ÖZEL HESAPLAMA & DAĞILIM SİSTEMİ
+// Kapsam İçi (Hammadde/API, GMP/Kalite, Ruhsat/Çekilme/Üretim): 100 Puan
+// Kapsam Dışı Diğer Neden (Lojistik, Talep, Diğer): 20 Puan
+// Boş / Belirsiz / Sınıflandırılamayan: 0 Puan (⚠️ Eksik Veri Uyarısı)
+// ==========================================================================
+function calculateDrugR4Score(r) {
+  const raw = (r.shortage_reason || r.reasonText || '').trim();
+  const low = raw.toLowerCase();
+
+  // 1. Eksik Veri Kontrolü (Boş, Belirtilmemiş veya tanımsız)
+  if (!raw || low.includes('belirtilmemiş') || low === 'unknown' || low === 'boş' || low === '—' || low === '-') {
+    return {
+      score: 0,
+      rawScore: 0,
+      status: 'missing', // 'in_scope' | 'other' | 'missing'
+      isMissing: true,
+      categoryKey: 'missing',
+      categoryTitle: 'Eksik / Belirsiz Veri',
+      badgeLabel: '⚠️ Eksik Veri',
+      reasonDisplay: raw || 'Belirtilmemiş (Kriz Nedeni Eksik)',
+      level: 'Eksik Veri',
+      tierKey: 'missing',
+      color: '#b45309',
+      bg: '#fffbeb',
+      border: '#fde68a',
+      badgeBg: '#fef3c7',
+      badgeColor: '#92400e'
+    };
+  }
+
+  // 2. Kapsama Giren Nedenler (100 Puan)
+  // a) Hammadde / API Sıkıntısı
+  const isApi = low.includes('active ingredient') || low.includes('inactive ingredient') || low.includes('api delay') || low.includes('api sıkıntısı') || low.includes('hammadde');
+  // b) GMP / Kalite Uyumsuzluğu
+  const isGmp = low.includes('good manufacturing practice') || low.includes('gmp') || low.includes('quality') || low.includes('kalite');
+  // c) Ruhsat / Piyasadan Çekilme / Üretim Kesintisi (Discontinuation, Regulatory, Manufacturing delay)
+  const isRegDiscon = low.includes('discontinu') || low.includes('regulatory') || low.includes('manufacturing delay') || low.includes('piyasadan çekilme') || low.includes('ruhsat') || low.includes('üretim');
+
+  if (isApi || isGmp || isRegDiscon) {
+    let subCat = 'Hammadde / API Sıkıntısı';
+    let subKey = 'api';
+    if (isGmp) {
+      subCat = 'GMP / Kalite Uyumsuzluğu';
+      subKey = 'gmp';
+    } else if (isRegDiscon && !isApi) {
+      if (low.includes('manufacturing delay') || low.includes('üretim')) {
+        subCat = 'Üretim Kesintisi / Gecikmesi';
+        subKey = 'mfg_delay';
+      } else if (low.includes('regulatory') || low.includes('ruhsat')) {
+        subCat = 'Ruhsat Gecikmesi';
+        subKey = 'regulatory';
+      } else {
+        subCat = 'Ruhsat / Piyasadan Çekilme';
+        subKey = 'discontinuation';
+      }
+    }
+
+    return {
+      score: 100,
+      rawScore: 100,
+      status: 'in_scope',
+      isMissing: false,
+      categoryKey: subKey,
+      categoryTitle: subCat,
+      badgeLabel: subCat,
+      reasonDisplay: raw,
+      level: 'Kritik Risk (100 Puan)',
+      tierKey: 'in_scope',
+      color: '#be123c',
+      bg: '#fff1f2',
+      border: '#fecdd3',
+      badgeBg: '#fee2e2',
+      badgeColor: '#9f1239'
+    };
+  }
+
+  // 3. Başka bir sıkıntı nedeni belirtilmiş ve R4 kapsamına girmediği biliniyor (20 Puan)
+  let otherCat = 'Kapsam Dışı Diğer Neden';
+  let otherKey = 'other';
+  if (low.includes('shipping') || low.includes('lojistik') || low.includes('nakliye')) {
+    otherCat = 'Sevkiyat / Lojistik Gecikmesi (R₅ Kapsamı)';
+    otherKey = 'shipping';
+  } else if (low.includes('demand') || low.includes('talep')) {
+    otherCat = 'Talep Artışı Şoku (R₂ Kapsamı)';
+    otherKey = 'demand';
+  }
+
+  return {
+    score: 20,
+    rawScore: 20,
+    status: 'other',
+    isMissing: false,
+    categoryKey: otherKey,
+    categoryTitle: otherCat,
+    badgeLabel: otherCat,
+    reasonDisplay: raw,
+    level: 'Düşük-Orta Taban Risk (20 Puan)',
+    tierKey: 'other',
+    color: '#0369a1',
+    bg: '#f0f9ff',
+    border: '#bae6fd',
+    badgeBg: '#e0f2fe',
+    badgeColor: '#0369a1'
+  };
+}
+
+let r4DrugFilterState = {
+  query: '',
+  scopeFilter: 'all', // 'all', 'in_scope', 'other', 'missing'
+  page: 1,
+  pageSize: 15
+};
+
+function getR4DistributionStats() {
+  const records = getV2Green400Records();
+  let inScopeCount = 0;
+  let otherCount = 0;
+  let missingCount = 0;
+  let scoreSum = 0;
+
+  const subCounts = {
+    api: 0,
+    mfg_delay: 0,
+    reg_discon: 0,
+    gmp: 0,
+    shipping: 0,
+    demand: 0,
+    other: 0,
+    missing: 0
+  };
+
+  records.forEach(r => {
+    const res = calculateDrugR4Score(r);
+    scoreSum += res.score;
+    if (res.status === 'in_scope') {
+      inScopeCount++;
+      if (res.categoryKey === 'api') subCounts.api++;
+      else if (res.categoryKey === 'mfg_delay') subCounts.mfg_delay++;
+      else if (res.categoryKey === 'gmp') subCounts.gmp++;
+      else subCounts.reg_discon++;
+    } else if (res.status === 'other') {
+      otherCount++;
+      if (res.categoryKey === 'shipping') subCounts.shipping++;
+      else if (res.categoryKey === 'demand') subCounts.demand++;
+      else subCounts.other++;
+    } else {
+      missingCount++;
+      subCounts.missing++;
+    }
+  });
+
+  const total = records.length || 400;
+  const rawAvg = total > 0 ? (scoreSum / total) : 50.0;
+  const avgR4 = Math.round(rawAvg * 10) / 10;
+
+  return {
+    total,
+    inScopeCount,
+    otherCount,
+    missingCount,
+    avgR4,
+    subCounts,
+    tiers: [
+      { key: 'in_scope', label: 'R₄ Kapsamında (100 Puan)', count: inScopeCount, color: '#be123c', bg: '#fee2e2', border: '#fca5a5' },
+      { key: 'other', label: 'Kapsam Dışı Nedenler (20 Puan)', count: otherCount, color: '#0369a1', bg: '#e0f2fe', border: '#bae6fd' },
+      { key: 'missing', label: '⚠️ Eksik / Belirsiz Veri', count: missingCount, color: '#b45309', bg: '#fef3c7', border: '#fde68a' }
+    ]
+  };
+}
+
+function handleR4DrugSearch(q) {
+  r4DrugFilterState.query = q || '';
+  r4DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR4ScopeFilter(scope) {
+  r4DrugFilterState.scopeFilter = scope;
+  r4DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR4DrugPage(p) {
+  r4DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR4ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR4Score(d);
+  const c4 = riskCriteriaState.criteria.find(item => item.id === 4);
+  if (c4) {
+    c4.score = res.score;
+    if (c4.subCriteria && c4.subCriteria.length >= 3) {
+      if (res.isMissing) {
+        c4.subCriteria[0].score = 0;
+        c4.subCriteria[0].dataStatus = 'insufficient';
+        c4.subCriteria[1].score = 0;
+        c4.subCriteria[1].dataStatus = 'insufficient';
+        c4.subCriteria[2].score = 0;
+        c4.subCriteria[2].dataStatus = 'insufficient';
+      } else if (res.status === 'in_scope') {
+        c4.subCriteria[0].score = (res.categoryKey === 'api') ? 100 : 20;
+        c4.subCriteria[0].dataStatus = 'available';
+        c4.subCriteria[1].score = (res.categoryKey === 'gmp') ? 100 : 20;
+        c4.subCriteria[1].dataStatus = 'available';
+        c4.subCriteria[2].score = (res.categoryKey === 'mfg_delay' || res.categoryKey === 'regulatory' || res.categoryKey === 'discontinuation') ? 100 : 20;
+        c4.subCriteria[2].dataStatus = 'available';
+      } else {
+        c4.subCriteria[0].score = 20;
+        c4.subCriteria[0].dataStatus = 'available';
+        c4.subCriteria[1].score = 20;
+        c4.subCriteria[1].dataStatus = 'available';
+        c4.subCriteria[2].score = 20;
+        c4.subCriteria[2].dataStatus = 'available';
+      }
+    }
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  const statusNote = res.isMissing ? '⚠️ Kriz Nedeni Eksik Veri (0 Puan)' : `${res.categoryTitle} (${res.score} Puan)`;
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının kriz gerekçesi (${statusNote}) baz alınarak R₄ Puanı ${res.score}/100 (${res.level}) olarak atandı ve ana denkleme aktarıldı.`);
+  }
+}
+
+function applyCollectiveR4ToCriterion() {
+  const stats = getR4DistributionStats();
+  const c4 = riskCriteriaState.criteria.find(item => item.id === 4);
+  if (c4) {
+    c4.score = stats.avgR4;
+    if (c4.subCriteria && c4.subCriteria.length >= 3) {
+      c4.subCriteria[0].score = stats.avgR4;
+      c4.subCriteria[0].dataStatus = 'available';
+      c4.subCriteria[1].score = stats.avgR4;
+      c4.subCriteria[1].dataStatus = 'available';
+      c4.subCriteria[2].score = stats.avgR4;
+      c4.subCriteria[2].dataStatus = 'available';
+    }
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın üretim/hammadde/kalite kriz gerekçelerine dayalı ağırlıklı ortalama R₄ Puanı (${stats.avgR4}/100) ana denkleme başarıyla aktarıldı!`);
+  }
+}
+
+// ==========================================================================
 // R6 (İLİŞKİLİ TERAPÖTİK GRUPTAKI KITLIKLAR) RESMİ LOGARİTMİK RİSK PUANLAMA SİSTEMİ
 // S_g = 100 * [ ln(1 + N_g) ] / [ ln(1 + N_max) ], N_max = 259 (Psychiatry)
 // R_6 = ( ∑ S_g ) / k
@@ -5487,14 +5743,9 @@ function applyDrugToRiskCriteria(drugId) {
   const r3Info = calculateR3FromAlternativeCount(altCount);
   const r3 = r3Info.score;
 
-  // R4: Üretim, hammadde ve kalite kesintileri (kök neden)
-  let r4 = 50;
-  const reason = (d.shortage_reason || d.reasonText || '').toLowerCase();
-  if (reason.includes('api') || reason.includes('hammadde') || reason.includes('active pharmaceutical')) r4 = 92;
-  else if (reason.includes('manufacturing') || reason.includes('imalat') || reason.includes('kalite') || reason.includes('quality')) r4 = 85;
-  else if (reason.includes('delay') || reason.includes('shipping') || reason.includes('gecik')) r4 = 72;
-  else if (reason.includes('demand') || reason.includes('talep')) r4 = 65;
-  else r4 = 45;
+  // R4: Üretim, hammadde ve kalite kesintileri (resmi sınıflandırma ve puanlama)
+  const r4Res = calculateDrugR4Score(d);
+  const r4 = r4Res.score;
 
   // R5: Tedarik süresi ve lojistik riskleri (İthal vs Yerli, enjeksiyon/soğuk zincir)
   let r5 = 55;
@@ -5535,6 +5786,20 @@ function applyDrugToRiskCriteria(drugId) {
         c.subCriteria[0].dataStatus = r2Res.isMissingClaims ? 'insufficient' : 'available';
         c.subCriteria[1].score = r2Res.saScore;
         c.subCriteria[2].score = r2Res.snScore;
+      }
+      if (c.id === 4 && c.subCriteria && c.subCriteria.length >= 3) {
+        if (r4Res.isMissing) {
+          c.subCriteria.forEach(s => { s.score = 0; s.dataStatus = 'insufficient'; });
+        } else if (r4Res.status === 'in_scope') {
+          c.subCriteria[0].score = (r4Res.categoryKey === 'api') ? 100 : 20;
+          c.subCriteria[0].dataStatus = 'available';
+          c.subCriteria[1].score = (r4Res.categoryKey === 'gmp') ? 100 : 20;
+          c.subCriteria[1].dataStatus = 'available';
+          c.subCriteria[2].score = (r4Res.categoryKey === 'mfg_delay' || r4Res.categoryKey === 'regulatory' || r4Res.categoryKey === 'discontinuation') ? 100 : 20;
+          c.subCriteria[2].dataStatus = 'available';
+        } else {
+          c.subCriteria.forEach(s => { s.score = 20; s.dataStatus = 'available'; });
+        }
       }
     }
   });
@@ -5733,6 +5998,7 @@ function renderRiskCriteriaDrugTableOnly() {
             const seq = startIdx + idx + 1;
             const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
             const r2Drug = calculateDrugR2Score(r);
+            const r4Drug = calculateDrugR4Score(r);
             return `
               <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
                 <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
@@ -5760,9 +6026,12 @@ function renderRiskCriteriaDrugTableOnly() {
                 </td>
                 <td style="vertical-align:top; padding:14px 12px;">
                   ${renderReasonCell(r)}
-                  <div style="margin-top:5px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+                  <div style="margin-top:5px; padding-top:4px; border-top:1.5px solid #fed7aa; display:flex; flex-direction:column; gap:3px;">
                     <span class="badge" style="background:${r2Drug.snStatus === 'demand' ? '#fee2e2' : '#f1f5f9'}; color:${r2Drug.snStatus === 'demand' ? '#991b1b' : '#475569'}; border:1px solid ${r2Drug.snStatus === 'demand' ? '#fca5a5' : '#cbd5e1'}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
                       ⚡ S_N: ${r2Drug.snScore}/100 (${r2Drug.snStatus === 'demand' ? 'Talep/Kapasite' : 'Diğer/Taban'})
+                    </span>
+                    <span class="badge" style="background:${r4Drug.badgeBg}; color:${r4Drug.badgeColor}; border:1px solid ${r4Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R4 Kök Neden Değerlendirmesi: ${esc(r4Drug.reasonDisplay)}">
+                      🧪 R₄: ${r4Drug.score}/100 (${r4Drug.badgeLabel})
                     </span>
                   </div>
                 </td>
@@ -6073,6 +6342,15 @@ window.handleR2DrugPage = handleR2DrugPage;
 window.applySingleDrugR2ToCriterion = applySingleDrugR2ToCriterion;
 window.applyCollectiveR2ToCriterion = applyCollectiveR2ToCriterion;
 window.renderCriterion2DetailPage = renderCriterion2DetailPage;
+
+window.calculateDrugR4Score = calculateDrugR4Score;
+window.getR4DistributionStats = getR4DistributionStats;
+window.handleR4DrugSearch = handleR4DrugSearch;
+window.handleR4ScopeFilter = handleR4ScopeFilter;
+window.handleR4DrugPage = handleR4DrugPage;
+window.applySingleDrugR4ToCriterion = applySingleDrugR4ToCriterion;
+window.applyCollectiveR4ToCriterion = applyCollectiveR4ToCriterion;
+window.renderCriterion4DetailPage = renderCriterion4DetailPage;
 
 function renderCriterion1DetailPage(c) {
   if (!c.subCriteria || c.subCriteria.length === 0) {
@@ -7554,6 +7832,527 @@ function renderCriterion3DetailPage(c) {
   `;
 }
 
+function renderCriterion4DetailPage(c) {
+  const stats = getR4DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR4Drugs = allDrugs.map(r => {
+    const res = calculateDrugR4Score(r);
+    return {
+      record: r,
+      r4Score: res.score,
+      status: res.status,
+      isMissing: res.isMissing,
+      categoryKey: res.categoryKey,
+      categoryTitle: res.categoryTitle,
+      badgeLabel: res.badgeLabel,
+      reasonDisplay: res.reasonDisplay,
+      level: res.level,
+      tierKey: res.tierKey,
+      color: res.color,
+      bg: res.bg,
+      border: res.border,
+      badgeBg: res.badgeBg,
+      badgeColor: res.badgeColor
+    };
+  });
+
+  if (r4DrugFilterState.query) {
+    const q = r4DrugFilterState.query.toLowerCase().trim();
+    filteredR4Drugs = filteredR4Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const sr = (r.shortage_reason || r.reasonText || '').toLowerCase();
+      const cat = (item.categoryTitle || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || sr.includes(q) || cat.includes(q);
+    });
+  }
+
+  if (r4DrugFilterState.scopeFilter !== 'all') {
+    if (r4DrugFilterState.scopeFilter === 'in_scope') {
+      filteredR4Drugs = filteredR4Drugs.filter(item => item.status === 'in_scope');
+    } else if (r4DrugFilterState.scopeFilter === 'other') {
+      filteredR4Drugs = filteredR4Drugs.filter(item => item.status === 'other');
+    } else if (r4DrugFilterState.scopeFilter === 'missing') {
+      filteredR4Drugs = filteredR4Drugs.filter(item => item.status === 'missing');
+    } else {
+      filteredR4Drugs = filteredR4Drugs.filter(item => item.categoryKey === r4DrugFilterState.scopeFilter);
+    }
+  }
+
+  const r4TotalFiltered = filteredR4Drugs.length;
+  const r4PageSize = r4DrugFilterState.pageSize || 15;
+  const r4TotalPages = Math.max(1, Math.ceil(r4TotalFiltered / r4PageSize));
+  if (r4DrugFilterState.page > r4TotalPages) r4DrugFilterState.page = r4TotalPages;
+  const r4StartIdx = (r4DrugFilterState.page - 1) * r4PageSize;
+  const r4EndIdx = Math.min(r4StartIdx + r4PageSize, r4TotalFiltered);
+  const r4PaginatedDrugs = filteredR4Drugs.slice(r4StartIdx, r4EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #fbcfe8;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#fdf2f8; color:#db2777; border:1.5px solid #f9a8d4; font-weight:800; font-size:12px; padding:6px 14px;">
+          🧪 R₄ Kriter Analiz & Alt Ağırlık Sistemi
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #db2777; border-color:#f9a8d4; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #fdf2f8 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #ec4899 0%, #db2777 100%); box-shadow:0 4px 14px rgba(219, 39, 119, 0.35);">
+            R₄
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+              <span>🧪</span> Üretim, Hammadde ve Kalite Kesintileri
+            </h1>
+            <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+              Production, raw-material and quality interruptions · Değişken Kodu: <b style="color:#db2777;">R4</b> · Ana Denklem Ağırlığı: <b style="color:#db2777;">%15 (0.15)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:12px; align-items:center; background:#ffffff; padding:10px 18px; border-radius:12px; border:1.5px solid #f9a8d4; box-shadow:0 4px 12px rgba(219,39,119,0.08);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₄):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateMainCriterionWeight(4, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">R₄ Risk Puanı:</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.score}" id="r4MainScoreInput" style="width:65px; height:32px; font-weight:800; text-align:center; border:2px solid #db2777; border-radius:6px; color:#db2777;" onchange="updateMainCriterionScore(4, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: METODOLOJİ, KAPSAMA GİREN SIKINTI NEDENLERİ VE PUANLAMA SİSTEMİ -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #f9a8d4; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(219, 39, 119, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#831843; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 1. Metodoloji, Kapsama Giren Sıkıntı Nedenleri ve Puanlama Skalası
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              <b>R₄</b> kriteri, ilaç üretimini veya piyasaya arzını aksatabilecek hammadde, üretim ve kalite kaynaklı kök nedenlerin tedarik kıtlığı riskini değerlendirir.
+            </p>
+          </div>
+          <span class="badge" style="background:#fdf2f8; color:#db2777; border:1px solid #f9a8d4; font-weight:800; font-size:11.5px; padding:4px 10px;">
+            Resmi Kök Neden Sınıflandırması
+          </span>
+        </div>
+
+        <!-- Sıkıntı Nedenleri Tablosu -->
+        <div class="data-table" style="margin-bottom:16px; overflow-x:auto;">
+          <table class="r4-tier-table">
+            <thead>
+              <tr>
+                <th style="min-width:220px; text-align:left;">Sıkıntı Nedeni Durumu</th>
+                <th style="min-width:140px; text-align:center;">R₄ Kapsamı</th>
+                <th style="min-width:320px; text-align:left;">Açıklama & Kök Neden Tanımı</th>
+                <th style="width:120px; text-align:center;">Risk Puanı</th>
+                <th style="width:140px; text-align:center;">400 İlaçtaki Dağılım</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">1. Hammadde / API Sıkıntısı</td>
+                <td style="text-align:center;">
+                  <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-weight:800; font-size:11px; padding:3px 9px;">Evet (Kapsamda)</span>
+                </td>
+                <td style="font-size:12.5px; color:#334155;">Aktif farmasötik bileşen (API) veya diğer kritik üretim girdilerinin temin edilememesi</td>
+                <td style="text-align:center;">
+                  <span style="font-size:14px; font-weight:900; color:#be123c; font-family:Outfit;">100</span>
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">94 İlaç (%23.5)</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">2. GMP / Kalite Uyumsuzluğu</td>
+                <td style="text-align:center;">
+                  <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-weight:800; font-size:11px; padding:3px 9px;">Evet (Kapsamda)</span>
+                </td>
+                <td style="font-size:12.5px; color:#334155;">İyi Üretim Uygulamaları (GMP) veya kalite gerekliliklerine uyumsuzluk nedeniyle üretimin ya da ürün serbest bırakmanın aksaması</td>
+                <td style="text-align:center;">
+                  <span style="font-size:14px; font-weight:900; color:#be123c; font-family:Outfit;">100</span>
+                </td>
+                <td style="text-align:center; font-weight:700; color:#64748b;">0 İlaç (Tedarikçi Beyanı)</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">3. Ruhsat / Piyasadan Çekilme / Üretim Durdurma</td>
+                <td style="text-align:center;">
+                  <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-weight:800; font-size:11px; padding:3px 9px;">Evet, birlikte değerlendirilir</span>
+                </td>
+                <td style="font-size:12.5px; color:#334155;">Ruhsat veya piyasadan çekilme durumunun ilacın arzını kesintiye uğratması (tek seçenek olarak bulunduğu için bölünmez) ve üretim gecikmeleri</td>
+                <td style="text-align:center;">
+                  <span style="font-size:14px; font-weight:900; color:#be123c; font-family:Outfit;">100</span>
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">56 İlaç (%14.0)</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td style="font-weight:700; color:#0369a1;">4. Kapsam Dışı Belirtilen Diğer Nedenler</td>
+                <td style="text-align:center;">
+                  <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-weight:800; font-size:11px; padding:3px 9px;">Hayır (R₄ Dışı)</span>
+                </td>
+                <td style="font-size:12.5px; color:#334155;">Lojistik / sevkiyat gecikmesi (R₅ kapsamı), talep artışı / şoku (R₂ kapsamı), diğer genel kriz bildirimleri</td>
+                <td style="text-align:center;">
+                  <span style="font-size:14px; font-weight:900; color:#0284c7; font-family:Outfit;">20 (Taban)</span>
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0369a1;">250 İlaç (%62.5)</td>
+              </tr>
+              <tr style="background:#fffbeb;">
+                <td style="font-weight:700; color:#b45309;">5. Boş, Belirsiz veya Sınıflandırılamayan Nedenler</td>
+                <td style="text-align:center;">
+                  <span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 9px;">⚠️ Eksik Veri</span>
+                </td>
+                <td style="font-size:12.5px; color:#334155;">Sıkıntı nedeni boş, belirsiz veya sınıflandırılamayan ilaçlar için eksik veri uyarısı verilir ve 0 puan atanır</td>
+                <td style="text-align:center;">
+                  <span style="font-size:13px; font-weight:800; color:#b45309; font-family:Outfit;">⚠️ Eksik (0)</span>
+                </td>
+                <td style="text-align:center; font-weight:700; color:#16a34a;">0 İlaç (Tümü Tanımlı)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 3 Formül / Kural Kutusu -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+          <div style="background:#fef2f2; padding:14px 18px; border-radius:10px; border:1.5px solid #fecaca;">
+            <div style="font-size:11px; font-weight:800; color:#991b1b; text-transform:uppercase;">1. R₄ Kapsamında Kriz (100 Puan):</div>
+            <div style="font-size:16px; font-weight:800; color:#7f1d1d; margin:6px 0; font-family:'DM Mono', monospace;">
+              R₄ = 100
+            </div>
+            <div style="font-size:12px; color:#7f1d1d; line-height:1.45;">
+              • Hammadde/API sıkıntısı, GMP/Kalite aksaması veya Ruhsat/Çekilme/Üretim kesintisi açıkça belirtilmiş ilaçlar.
+            </div>
+          </div>
+
+          <div style="background:#eff6ff; padding:14px 18px; border-radius:10px; border:1.5px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase;">2. Kapsam Dışı Diğer Nedenler (20 Puan):</div>
+            <div style="font-size:16px; font-weight:800; color:#1e40af; margin:6px 0; font-family:'DM Mono', monospace;">
+              R₄ = 20 (Önerisel Taban Puan)
+            </div>
+            <div style="font-size:12px; color:#1e40af; line-height:1.45;">
+              • Başka bir kriz nedeni (lojistik gecikme, talep artışı vb.) bildirilmişse ve R₄ kapsamına girmediği biliniyorsa 20 taban puan atanır.
+            </div>
+          </div>
+
+          <div style="background:#fffbeb; padding:14px 18px; border-radius:10px; border:1.5px solid #fde68a;">
+            <div style="font-size:11px; font-weight:800; color:#b45309; text-transform:uppercase;">3. Eksik Veri Kuralı (0 Puan):</div>
+            <div style="font-size:16px; font-weight:800; color:#92400e; margin:6px 0; font-family:'DM Mono', monospace;">
+              ⚠️ Eksik Veri (R₄ = 0)
+            </div>
+            <div style="font-size:12px; color:#78350f; line-height:1.45;">
+              • Sıkıntı nedeni boş veya belirsizse sistem <b>⚠️ Eksik Veri</b> uyarısı verir ve alt gösterge durumunu yetersiz olarak işaretler.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: 400 YEŞİL REÇETELİ İLAÇ İSTATİSTİK ÖZETİ & KOLEKTİF AKTARIM -->
+      <div style="background:#ffffff; border:1.5px solid #f9a8d4; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(219,39,119,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:12px; font-weight:800; color:#db2777; text-transform:uppercase; letter-spacing:0.5px;">
+              2. 400 Yeşil Reçeteli İlaç Kriz Nedeni Dağılımı ve Kolektif Puan:
+            </div>
+            <p style="font-size:13px; color:#64748b; margin:3px 0 0;">
+              Veri tabanındaki 400 yeşil reçeteli ilacın FDA resmi kriz gerekçeleri R₄ kapsamına göre sınıflandırılmıştır:
+            </p>
+          </div>
+
+          <button type="button" class="button" style="background:#db2777; border-color:#be123c; font-weight:800; font-size:12.5px; padding:10px 22px; box-shadow:0 4px 12px rgba(219,39,119,0.25);" onclick="applyCollectiveR4ToCriterion()">
+            🎯 400 İlacın Ağırlıklı Ortalama R₄ Puanını (${stats.avgR4}) Ata
+          </button>
+        </div>
+
+        <!-- 4 Metrik Kartı -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:18px;">
+          <div style="background:#fef2f2; padding:12px 14px; border-radius:10px; border:1px solid #fecaca;">
+            <div style="font-size:11px; font-weight:700; color:#991b1b; text-transform:uppercase;">Kapsama Giren Krizler (100 Puan):</div>
+            <div style="font-size:18px; font-weight:800; color:#7f1d1d; margin-top:2px;">${stats.inScopeCount} İlaç</div>
+            <small style="font-size:11px; color:#991b1b; display:block; margin-top:2px;">94 API + 56 Ruhsat/Çekilme/Üretim (%37.5)</small>
+          </div>
+
+          <div style="background:#eff6ff; padding:12px 14px; border-radius:10px; border:1px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:700; color:#1d4ed8; text-transform:uppercase;">Kapsam Dışı Krizler (20 Puan):</div>
+            <div style="font-size:18px; font-weight:800; color:#1e40af; margin-top:2px;">${stats.otherCount} İlaç</div>
+            <small style="font-size:11px; color:#3b82f6; display:block; margin-top:2px;">75 Lojistik + 104 Talep + 71 Diğer (%62.5)</small>
+          </div>
+
+          <div style="background:#fffbeb; padding:12px 14px; border-radius:10px; border:1px solid #fde68a;">
+            <div style="font-size:11px; font-weight:700; color:#b45309; text-transform:uppercase;">Eksik / Belirsiz Veri:</div>
+            <div style="font-size:18px; font-weight:800; color:#92400e; margin-top:2px;">${stats.missingCount} İlaç</div>
+            <small style="font-size:11px; color:#b45309; display:block; margin-top:2px;">
+              ${stats.missingCount > 0 ? '⚠️ Eksik veri tespit edildi' : '🟢 400 İlacın Tümü Tanımlı'}
+            </small>
+          </div>
+
+          <div style="background:linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%); padding:12px 14px; border-radius:10px; border:1.5px solid #f9a8d4; box-shadow:0 2px 8px rgba(219,39,119,0.1);">
+            <div style="font-size:11px; font-weight:800; color:#be123c; text-transform:uppercase;">Kolektif Ağırlıklı R₄:</div>
+            <div style="font-size:19px; font-weight:800; color:#9f1239; margin-top:2px;">${stats.avgR4} / 100</div>
+            <small style="font-size:11px; font-weight:700; color:#be123c; display:block; margin-top:2px;">Orta-Yüksek Risk Bandı</small>
+          </div>
+        </div>
+
+        <!-- Risk Kademe Filtreleri / Butonları -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <span style="font-size:12px; font-weight:700; color:#64748b; margin-right:4px;">Kapsama Göre Filtrele:</span>
+          <button type="button" class="r2-filter-btn ${r4DrugFilterState.scopeFilter === 'all' ? 'active' : ''}" onclick="handleR4ScopeFilter('all')">
+            🌐 Tümü (${stats.total})
+          </button>
+          <button type="button" class="r2-filter-btn ${r4DrugFilterState.scopeFilter === 'in_scope' ? 'active' : ''}" style="${r4DrugFilterState.scopeFilter === 'in_scope' ? 'background:#fee2e2; border-color:#fca5a5; color:#991b1b;' : 'border-color:#fecaca; color:#be123c;'}" onclick="handleR4ScopeFilter('in_scope')">
+            🚨 R₄ Kapsamında (100 Puan): <b>${stats.inScopeCount}</b>
+          </button>
+          <button type="button" class="r2-filter-btn ${r4DrugFilterState.scopeFilter === 'other' ? 'active' : ''}" style="${r4DrugFilterState.scopeFilter === 'other' ? 'background:#e0f2fe; border-color:#bae6fd; color:#0369a1;' : 'border-color:#bfdbfe; color:#1d4ed8;'}" onclick="handleR4ScopeFilter('other')">
+            📦 Kapsam Dışı Diğer Nedenler (20 Puan): <b>${stats.otherCount}</b>
+          </button>
+          ${stats.missingCount > 0 ? `
+            <button type="button" class="r2-filter-btn ${r4DrugFilterState.scopeFilter === 'missing' ? 'active' : ''}" style="border-color:#fde68a; color:#b45309;" onclick="handleR4ScopeFilter('missing')">
+              ⚠️ Eksik Veri: <b>${stats.missingCount}</b>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA KRİZ GEREKÇESİ, KAPSAM VE NİHAİ R₄ TABLOSU -->
+      <div style="background:#ffffff; border:1.5px solid #f9a8d4; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(219,39,119,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#831843; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 400 Yeşil Reçeteli İlaç İçin Kriz Kök Nedeni ve Nihai R₄ Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b;">
+              Her ilacın FDA bildirimindeki kriz kök nedeni analiz edilmiş, R₄ kapsamına göre 100 veya 20 puan atanmıştır.
+            </p>
+          </div>
+
+          <div style="position:relative; width:260px;">
+            <input type="text" value="${esc(r4DrugFilterState.query)}" placeholder="İlaç adı, üretici veya neden ara..." style="width:100%; height:34px; padding:0 12px 0 30px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; outline:none; box-sizing:border-box;" oninput="handleR4DrugSearch(this.value)">
+            <span style="position:absolute; left:9px; top:8px; font-size:13px; color:#94a3b8;">🔍</span>
+          </div>
+        </div>
+
+        <div class="data-table" style="overflow-x:auto;">
+          <table class="r4-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">#</th>
+                <th style="min-width:180px;">İlaç / Etkin Madde & Dozaj Formu</th>
+                <th style="min-width:160px;">Üretici Firma</th>
+                <th style="min-width:260px;">FDA Sıkıntı Nedeni (Kök Neden)</th>
+                <th style="min-width:140px; text-align:center;">R₄ Kapsamı</th>
+                <th style="min-width:170px;">Sıkıntı Kategorisi</th>
+                <th style="min-width:120px; text-align:center;">Nihai R₄ Skoru</th>
+                <th style="min-width:140px; text-align:center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r4PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center; padding:32px; color:#64748b;">
+                    Arama kriterlerine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r4PaginatedDrugs.map((item, idx) => {
+                const r = item.record;
+                const seq = r4StartIdx + idx + 1;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#fdf2f8;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b;">${seq}</td>
+                    <td>
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td>
+                      <span style="font-weight:600; color:#334155; font-size:12px;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
+                    </td>
+                    <td style="font-size:12px; color:#334155;">
+                      <div style="line-height:1.45; font-weight:500;">${esc(item.reasonDisplay)}</div>
+                    </td>
+                    <td style="text-align:center;">
+                      ${item.isMissing ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ⚠️ Eksik Veri
+                        </span>
+                      ` : (item.status === 'in_scope' ? `
+                        <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ✓ Kapsamda (Evet)
+                        </span>
+                      ` : `
+                        <span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-weight:700; font-size:11px; padding:3px 8px;">
+                          Kapsam Dışı (Hayır)
+                        </span>
+                      `)}
+                    </td>
+                    <td>
+                      <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:700; font-size:11px; padding:3px 8px;">
+                        ${esc(item.categoryTitle)}
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:inline-flex; align-items:center; gap:6px;">
+                        <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:900; font-size:13px; padding:4px 10px;">
+                          ${item.r4Score}/100
+                        </span>
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button secondary" style="font-size:11px; padding:5px 10px; font-weight:700; color:#be123c; border-color:#f9a8d4; background:#fff;" onclick="applySingleDrugR4ToCriterion('${esc(r.id)}')">
+                        🎯 Bu Puanı (${item.r4Score}) R₄'e Ata
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sayfalama Kontrolleri -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r4TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r4StartIdx + 1} - ${r4EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR4DrugPage(${r4DrugFilterState.page - 1})" ${r4DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r4DrugFilterState.page} / ${r4TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR4DrugPage(${r4DrugFilterState.page + 1})" ${r4DrugFilterState.page >= r4TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#f9a8d4;">
+        <div style="font-size:11px; font-weight:800; color:#db2777; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#9f1239; margin:8px 0; background:#fdf2f8; padding:12px 16px; border-radius:8px; border:1px solid #f9a8d4;">
+          R₄ = [ ∑<sub>j=1</sub><sup>n₄</sup> ( a₄<sub>j</sub> × S₄<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₄</sup> a₄<sub>j</sub> ] = 0.35 S₄,₁ + 0.30 S₄,₂ + 0.35 S₄,₃
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₄</b>: Üretim, hammadde ve kalite kesintileri kriterinin nihai risk puanı (0–100).<br>
+          • <b>a₄₁ (Hammadde / API sıkıntısı)</b>: %35 ağırlık · Aktif veya inaktif girdi temin kesintisi.<br>
+          • <b>a₄₂ (GMP / kalite uyumsuzluğu)</b>: %30 ağırlık · İyi Üretim Uygulamaları ve kalite kısıtları.<br>
+          • <b>a₄₃ (Ruhsat / çekilme / üretim kesintisi)</b>: %35 ağırlık · Ruhsat askısı, piyasadan çekilme veya terk.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#db2777; border-color:#be123c;" onclick="addSubCriterion(4)">
+          ➕ Yeni Alt Gösterge Ekle (S₄<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(4)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fdf2f8; color:#be123c; border-color:#f9a8d4; font-weight:700;" onclick="applySubScoreToMainCriterion(4)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fdf2f8; color:#be123c; border-color:#f9a8d4; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(4)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #f9a8d4; overflow:hidden;">
+        <table class="sub-crit-table">
+          <thead>
+            <tr style="background: #fdf2f8;">
+              <th style="width:50px; text-align:center;">j</th>
+              <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+              <th style="width:140px; text-align:center;">Veri Durumu</th>
+              <th style="width:150px; text-align:center;">Alt Ağırlık (a₄<sub>j</sub>, %)</th>
+              <th style="width:150px; text-align:center;">Risk Puanı (S₄<sub>j</sub>, 0-100)</th>
+              <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+              <th style="width:70px; text-align:center;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              return `
+                <tr>
+                  <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                  <td>
+                    <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(4, ${sub.id}, this.value)" oninput="updateSubCriterionName(4, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center;">
+                    ${sub.dataStatus === 'insufficient' ? `
+                      <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:10.5px; padding:2px 7px;" title="Kriz nedeni bilinmediği için eksik veri uyarısı verilmiştir">⚠️ Eksik Veri</span>
+                    ` : `
+                      <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    `}
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(4, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" step="0.1" value="${sub.score}" style="text-align:center; font-weight:700; color:#be123c;" onchange="updateSubCriterionScore(4, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:800; color:#0f2942; font-family:'DM Mono', monospace;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(4, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#f8fafc; font-weight:800; border-top:2px solid #e2e8f0;">
+              <td colspan="3" style="text-align:right; color:var(--ink);">Ağırlıklar Toplamı & Ağırlıklı Ortalama Risk:</td>
+              <td style="text-align:center; color:${subWeightSum === 100 ? 'var(--green)' : '#ea580c'};">
+                ${subWeightSum}% ${subWeightSum === 100 ? '✓' : '⚠️'}
+              </td>
+              <td style="text-align:center; font-size:15px; color:#be123c;">
+                ${subScore.toFixed(2)} / 100
+              </td>
+              <td style="text-align:center; color:#be123c; font-family:'DM Mono', monospace;">
+                ${subScore.toFixed(2)}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function renderCriterion6DetailPage(c) {
   const stats = getR6DistributionStats();
   const allDrugs = getV2Green400Records();
@@ -8056,6 +8855,10 @@ function riskCriteriaPage() {
     }
     if (c.id === 3) {
       renderCriterion3DetailPage(c);
+      return;
+    }
+    if (c.id === 4) {
+      renderCriterion4DetailPage(c);
       return;
     }
     if (c.id === 6) {
