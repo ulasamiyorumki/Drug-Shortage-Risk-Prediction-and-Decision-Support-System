@@ -1665,7 +1665,7 @@ function enrichShortageRecord(r) {
   };
 }
 
-function shortageTableV2(rows, isFdaSource = true) {
+function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Source) {
   if (!rows.length) return '<p class="empty notice" style="font-size:13px; font-weight:600; padding:32px;">🔍 Seçili filtrelere veya arama kriterine uygun kriz kaydı bulunamadı. Lütfen filtreleri gevşetmeyi veya sıfırlamayı deneyin.</p>';
 
   const renderReasonCell = (r) => {
@@ -1730,7 +1730,8 @@ function shortageTableV2(rows, isFdaSource = true) {
     `;
   };
 
-  const isEmaSource = source === 'EMA Shortages';
+  const activeSource = source || currentShortageV2Source || (rows[0] && rows[0].source);
+  const isEmaSource = activeSource === 'EMA Shortages' || (rows[0] && rows[0].source === 'EMA Shortages');
   if (isEmaSource) {
     return `
       <div class="data-table">
@@ -3066,7 +3067,7 @@ async function shortagePageV2(
           </button>
         </div>
 
-        ${shortageTableV2(paginatedRows, isFdaSource)}
+        ${shortageTableV2(paginatedRows, isFdaSource, source)}
 
         <!-- Sayfalama (Pagination) -->
         <div class="pagination" style="margin-top:16px;">
