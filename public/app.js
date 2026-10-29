@@ -1878,18 +1878,10 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
   };
 
   const renderDrugCell = (r) => {
-    const isCross = hasCrossShortage(r);
     return `
       <td class="drug-cell">
         <b style="font-size:13px; color:#0f172a; line-height:1.35;">${esc(label(r))}</b>
         <small style="font-size:11px; color:#64748b; margin-top:2px;">${esc(r.brand_name || r.product_ndc || r.ndc || '—')}</small>
-        ${isCross ? `
-          <div style="margin-top:4px;">
-            <span class="cross-tag-both" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu molekül hem FDA hem EMA kriz listesinde! Birleşik küresel analizi görmek için tıkla.">
-              🌐 EMA'da da Krizde! (Transatlantik) →
-            </span>
-          </div>
-        ` : ''}
         ${r.greenData ? `
           <div class="green-rx-meta">
             <span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:10.5px; width:fit-content; font-weight:700;">
@@ -2116,11 +2108,6 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
                     </div>
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
                       <span class="ema-source-badge">🇪🇺 EMA</span>
-                      ${hasCrossShortage(r) ? `
-                        <span class="cross-tag-both" onclick="event.stopPropagation(); setShortageV2Source('cross_fda_ema');" title="Bu molekül hem FDA hem EMA kriz listesinde! Birleşik analizi görmek için tıkla.">
-                          🌐 FDA'da da Krizde! →
-                        </span>
-                      ` : ''}
                       ${r.isGreen ? '<span class="badge" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:10px; font-weight:700;">🟢 Yeşil Reçete</span>' : ''}
                       <span class="badge" style="background:#f1f5f9; color:#475569; font-size:10px;">${esc(raw.category || 'Human')}</span>
                     </div>
