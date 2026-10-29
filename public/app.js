@@ -4210,6 +4210,11 @@ const defaultRiskCriteriaData = [
     weight: 18,
     weightDec: 0.18,
     score: 50,
+    icon: '⏳',
+    color: '#e11d48',
+    colorBg: '#fff1f2',
+    colorBorder: '#fda4af',
+    colorGradient: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)',
     subCriteria: []
   },
   {
@@ -4221,6 +4226,11 @@ const defaultRiskCriteriaData = [
     weight: 18,
     weightDec: 0.18,
     score: 50,
+    icon: '⚖️',
+    color: '#ea580c',
+    colorBg: '#fff7ed',
+    colorBorder: '#fdba74',
+    colorGradient: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
     subCriteria: []
   },
   {
@@ -4232,6 +4242,11 @@ const defaultRiskCriteriaData = [
     weight: 15,
     weightDec: 0.15,
     score: 50,
+    icon: '🏭',
+    color: '#7c3aed',
+    colorBg: '#f5f3ff',
+    colorBorder: '#c4b5fd',
+    colorGradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
     subCriteria: []
   },
   {
@@ -4243,6 +4258,11 @@ const defaultRiskCriteriaData = [
     weight: 15,
     weightDec: 0.15,
     score: 50,
+    icon: '🧪',
+    color: '#db2777',
+    colorBg: '#fdf2f8',
+    colorBorder: '#f9a8d4',
+    colorGradient: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
     subCriteria: []
   },
   {
@@ -4254,6 +4274,11 @@ const defaultRiskCriteriaData = [
     weight: 10,
     weightDec: 0.10,
     score: 50,
+    icon: '🚢',
+    color: '#0284c7',
+    colorBg: '#f0f9ff',
+    colorBorder: '#7dd3fc',
+    colorGradient: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
     subCriteria: []
   },
   {
@@ -4265,6 +4290,11 @@ const defaultRiskCriteriaData = [
     weight: 10,
     weightDec: 0.10,
     score: 50,
+    icon: '💊',
+    color: '#059669',
+    colorBg: '#ecfdf5',
+    colorBorder: '#6ee7b7',
+    colorGradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
     subCriteria: []
   },
   {
@@ -4276,6 +4306,11 @@ const defaultRiskCriteriaData = [
     weight: 7,
     weightDec: 0.07,
     score: 50,
+    icon: '🔄',
+    color: '#4f46e5',
+    colorBg: '#eef2ff',
+    colorBorder: '#a5b4fc',
+    colorGradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
     subCriteria: []
   },
   {
@@ -4287,6 +4322,11 @@ const defaultRiskCriteriaData = [
     weight: 7,
     weightDec: 0.07,
     score: 50,
+    icon: '🏛️',
+    color: '#d97706',
+    colorBg: '#fffbeb',
+    colorBorder: '#fcd34d',
+    colorGradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
     subCriteria: []
   }
 ];
@@ -4540,16 +4580,18 @@ function riskCriteriaPage() {
         </button>
       </div>
 
-      <section class="glass panel" style="border-left: 5px solid #187ce5; padding: 26px; margin-bottom: 22px;">
+      <section class="glass panel" style="border-left: 6px solid ${c.color}; border-color:${c.colorBorder}; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, ${c.colorBg} 100%);">
         <!-- Kriter Başlık Bandı -->
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 20px;">
           <div>
-            <div style="display:flex; align-items:center; gap:12px;">
-              <div class="dsrds-crit-badge" style="width:50px; height:50px; font-size:20px;">${c.symbol}</div>
+            <div style="display:flex; align-items:center; gap:14px;">
+              <div class="dsrds-crit-badge" style="width:52px; height:52px; font-size:20px; background:${c.colorGradient}; box-shadow:0 4px 14px ${c.color}40;">${c.symbol}</div>
               <div>
-                <h1 style="margin:0; font-size:22px; font-family:Outfit; color:var(--ink);">${esc(c.name)}</h1>
-                <p style="color:var(--muted); font-size:13px; margin:3px 0 0; font-style:italic;">
-                  ${esc(c.nameEn)} · Değişken Kodu: <b>${c.code}</b>
+                <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+                  <span>${c.icon}</span> ${esc(c.name)}
+                </h1>
+                <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+                  ${esc(c.nameEn)} · Değişken Kodu: <b style="color:${c.color};">${c.code}</b>
                 </p>
               </div>
             </div>
@@ -4711,21 +4753,34 @@ function riskCriteriaPage() {
         </div>
       </div>
 
-      <!-- 8 Buton Izgarası (Gerçek Buton Tasarımı) -->
+      <!-- 8 Buton Izgarası (Gerçek Buton Tasarımı - Renkli & Göze Hitap Eden) -->
       <div class="dsrds-crit-grid">
         ${riskCriteriaState.criteria.map(c => `
-          <button type="button" class="dsrds-crit-btn" onclick="enterCriterion(${c.id})">
-            <div class="dsrds-crit-badge">
-              ${c.symbol}
-            </div>
-            <div class="dsrds-crit-text">
-              <div class="dsrds-crit-title">${esc(c.name)}</div>
-              <div class="dsrds-crit-sub">${esc(c.nameEn)}</div>
+          <button type="button" class="dsrds-crit-btn" onclick="enterCriterion(${c.id})" style="border-color:${c.colorBorder}; background: linear-gradient(180deg, #ffffff 0%, ${c.colorBg} 100%);">
+            <div style="display:flex; align-items:center; gap:14px; min-width:0; flex:1;">
+              <div class="dsrds-crit-badge" style="background:${c.colorGradient}; box-shadow:0 4px 14px ${c.color}40;">
+                ${c.symbol}
+              </div>
+              <div class="dsrds-crit-text">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+                  <span style="font-size:15px;">${c.icon}</span>
+                  <div class="dsrds-crit-title" style="color:#0f2942;">${esc(c.name)}</div>
+                </div>
+                <div class="dsrds-crit-sub" style="color:#5a7590;">${esc(c.nameEn)}</div>
+              </div>
             </div>
             <div class="dsrds-crit-meta">
-              <span class="dsrds-crit-pill-weight">%${c.weight} (0.${c.weight < 10 ? '0' + c.weight : c.weight})</span>
-              <span style="font-size:11.5px; color:var(--muted); font-weight:700;">${c.symbol} = <b>${c.score}</b></span>
-              <span class="dsrds-crit-pill-action">İçine Gir ➔</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="dsrds-crit-pill-weight" style="background:${c.colorBg}; color:${c.color}; border:1px solid ${c.colorBorder};">
+                  %${c.weight} <small style="font-weight:700; opacity:0.85;">(0.${c.weight < 10 ? '0' + c.weight : c.weight})</small>
+                </span>
+                <span style="font-size:11.5px; font-weight:800; background:#ffffff; color:#334155; border:1px solid #cbd5e1; padding:3px 8px; border-radius:8px;">
+                  ${c.symbol}: <b style="color:${c.color};">${c.score}</b>
+                </span>
+              </div>
+              <span class="dsrds-crit-pill-action" style="border-color:${c.colorBorder}; color:${c.color};">
+                Kriteri Aç & Hesapla ➔
+              </span>
             </div>
           </button>
         `).join('')}
@@ -4780,18 +4835,18 @@ function riskCriteriaPage() {
             const wDec = (c.weight / 100).toFixed(2);
             const contrib = (wDec * c.score).toFixed(2);
             return `
-              <div style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:12px; display:flex; flex-direction:column; justify-content:space-between;">
+              <div style="background:${c.colorBg}; border:1.5px solid ${c.colorBorder}; border-top:3.5px solid ${c.color}; border-radius:10px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 2px 6px rgba(0,0,0,0.03);">
                 <div>
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <span style="font-weight:800; color:#187ce5; font-size:13px;">${c.symbol} (${c.code})</span>
-                    <span style="font-size:11px; font-weight:800; color:#0369a1; background:#e0f2fe; padding:2px 7px; border-radius:6px;">Katkı: +${contrib}</span>
+                    <span style="font-weight:800; color:${c.color}; font-size:13px;">${c.icon} ${c.symbol} (${c.code})</span>
+                    <span style="font-size:11px; font-weight:800; color:${c.color}; background:#ffffff; padding:2px 7px; border-radius:6px; border:1px solid ${c.colorBorder};">Katkı: +${contrib}</span>
                   </div>
                   <div style="font-size:12px; font-weight:700; color:var(--ink); margin-bottom:8px; line-height:1.3;">
                     ${esc(c.name)}
                   </div>
                 </div>
 
-                <div style="display:flex; gap:8px; align-items:center; background:#ffffff; padding:8px; border-radius:8px; border:1px solid #cbd5e1;">
+                <div style="display:flex; gap:8px; align-items:center; background:#ffffff; padding:8px; border-radius:8px; border:1px solid ${c.colorBorder};">
                   <div style="flex:1;">
                     <small style="display:block; font-size:9.5px; font-weight:800; color:var(--muted);">AĞIRLIK (%):</small>
                     <div style="display:flex; align-items:center; gap:2px;">
@@ -4799,7 +4854,7 @@ function riskCriteriaPage() {
                       <span style="font-size:10px; font-weight:700; color:var(--muted);">%</span>
                     </div>
                   </div>
-                  <span style="font-weight:800; color:var(--muted); font-size:14px; margin-top:10px;">×</span>
+                  <span style="font-weight:800; color:${c.color}; font-size:14px; margin-top:10px;">×</span>
                   <div style="flex:1;">
                     <small style="display:block; font-size:9.5px; font-weight:800; color:var(--muted);">PUAN (${c.symbol}):</small>
                     <div style="display:flex; align-items:center; gap:2px;">
