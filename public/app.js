@@ -1565,7 +1565,7 @@ function getMedicareDataMatch(r) {
   return null;
 }
 
-function renderMedicareCells(r) {
+function renderMedicareCells(r, showSdScore = false) {
   const m = getMedicareDataMatch(r);
   if (!m) {
     return `
@@ -1574,6 +1574,13 @@ function renderMedicareCells(r) {
           ⚪ Belirtilmemiş
         </span>
         <div style="font-size:9.5px; color:#94a3b8; margin-top:3px; font-weight:500;">2025–2026 Q1</div>
+        ${showSdScore ? `
+          <div style="margin-top:4px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+            <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
+              📊 S_D: 0.0/100
+            </span>
+          </div>
+        ` : ''}
       </td>
       <td style="vertical-align:top; padding:12px 14px;">
         <span style="color:var(--muted); font-size:11px;">—</span>
@@ -1595,6 +1602,16 @@ function renderMedicareCells(r) {
         <div style="font-size:9.5px; color:#0369a1; font-weight:700; margin-top:2px; display:inline-flex; align-items:center; gap:3px;">
           <span>⏱</span> <span>2025–2026 Q1 (15 Ay)</span>
         </div>
+        ${showSdScore ? (() => {
+          const r2D = calculateDrugR2Score(r);
+          return `
+            <div style="margin-top:4px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+              <span class="badge" style="background:${r2D.sdScore >= 75 ? '#ffedd5' : '#eff6ff'}; color:${r2D.sdScore >= 75 ? '#9a3412' : '#1d4ed8'}; border:1px solid ${r2D.sdScore >= 75 ? '#fed7aa' : '#bfdbfe'}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
+                📊 S_D: ${r2D.sdScore}/100
+              </span>
+            </div>
+          `;
+        })() : ''}
       </div>
     </td>
     <td style="vertical-align:top; padding:12px 14px;">
@@ -4268,13 +4285,17 @@ const defaultRiskCriteriaData = [
     nameEn: 'Demand–stock imbalance',
     weight: 18,
     weightDec: 0.18,
-    score: 50,
+    score: 46.9,
     icon: '⚖️',
     color: '#ea580c',
     colorBg: '#fff7ed',
     colorBorder: '#fdba74',
     colorGradient: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_D', name: 'Talep düzeyi puanı (15 Aylık Medicare Reçete Sayısı Q_i)', weight: 30, score: 57.8, formula: '100 * ln(1+Q_i) / ln(1+Q_max)' },
+      { id: 2, code: 'S_A', name: 'Bulunabilirlik risk puanı (FDA Availability)', weight: 40, score: 43.2, formula: 'Available: 20, Limited: 60, Unavail/Lim: 80, Unavail: 100' },
+      { id: 3, code: 'S_N', name: 'Talep artışı / kapasite yetersizliği puanı (Sıkıntı Nedeni)', weight: 30, score: 40.8, formula: 'Talep/Kapasite Nedeni: 100, Diğer Nedenler: 20' }
+    ]
   },
   {
     id: 3,
@@ -4800,6 +4821,246 @@ function applyCollectiveR1ToCriterion() {
 }
 
 // ==========================================================================
+// R2 (TALEP–STOK DENGESİZLİĞİ) RESMİ 3 ALT BİLEŞENLİ HESAPLAMA SİSTEMİ
+// S_D: Talep düzeyi puanı (%30, 15 aylık Medicare reçete sayısı log normalizasyonu)
+//      S_D = 100 * ln(1 + Q_i) / ln(1 + Q_max), Q_max = 10,757,524 (Clonazepam)
+// S_A: Bulunabilirlik risk puanı (%40, FDA Availability)
+//      Available: 20, Limited Availability: 60, Unavailable / Limited: 80, Unavailable: 100
+// S_N: Talep artışı / kapasite yetersizliği puanı (%30, Sıkıntı Nedeni)
+//      Bu neden açıkça belirtilmiş: 100, Başka bir neden belirtilmiş: 20 (taban), Boş/belirsiz: 0
+// R_2 = 0.30 * S_D + 0.40 * S_A + 0.30 * S_N
+// ==========================================================================
+let r2DrugFilterState = {
+  query: '',
+  tierFilter: 'all',
+  page: 1,
+  pageSize: 15
+};
+
+function calculateDrugR2Score(r, customMaxQ = null) {
+  // 1. S_D: 15 aylık Medicare reçete sayısı log normalizasyonu
+  const m = getMedicareDataMatch(r);
+  const claims = (m && m.claims) ? Number(m.claims) : 0;
+  const maxQ = customMaxQ || 10757524;
+  const lnMaxQ = Math.log(1 + maxQ);
+  const sdScore = (lnMaxQ > 0 && claims > 0) ? Math.min(100, Math.max(0, Math.round((100 * Math.log(1 + claims) / lnMaxQ) * 10) / 10)) : 0;
+
+  // 2. S_A: FDA bulunabilirlik durumu
+  const av = (r.availability || '').toLowerCase().trim();
+  let saScore = 20;
+  let saLabel = 'Available';
+  let saLevel = 'Düşük';
+  if (av === 'unavailable') {
+    saScore = 100; saLabel = 'Unavailable'; saLevel = 'Kritik';
+  } else if (av.includes('unavailable') || av.includes('limited / unavailable') || av.includes('unavailable / limited')) {
+    saScore = 80; saLabel = 'Unavailable / Limited'; saLevel = 'Yüksek';
+  } else if (av.includes('limited')) {
+    saScore = 60; saLabel = 'Limited Availability'; saLevel = 'Orta-Yüksek';
+  } else {
+    saScore = 20; saLabel = 'Available'; saLevel = 'Düşük';
+  }
+
+  // 3. S_N: Talep artışı / kapasite yetersizliği sıkıntı nedeni
+  const rz = (r.shortage_reason || r.reasonText || '').toLowerCase().trim();
+  let snScore = 20;
+  let snLabel = 'Başka Sıkıntı Nedeni (Taban)';
+  let snStatus = 'other';
+  if (!rz) {
+    snScore = 0; snLabel = 'Eksik Veri'; snStatus = 'empty';
+  } else if (rz.includes('talep') || rz.includes('demand') || rz.includes('kapasite') || rz.includes('capacity')) {
+    snScore = 100; snLabel = 'Talep Artışı / Kapasite Yetersizliği'; snStatus = 'demand';
+  } else {
+    snScore = 20; snLabel = 'Başka Sıkıntı Nedeni'; snStatus = 'other';
+  }
+
+  // 4. Nihai R_2 = 0.30 * S_D + 0.40 * S_A + 0.30 * S_N
+  const rawScore = (0.30 * sdScore) + (0.40 * saScore) + (0.30 * snScore);
+  const score = Math.min(100, Math.max(0, Math.round(rawScore * 10) / 10));
+
+  let level = 'Düşük';
+  let tierKey = 'dusuk';
+  let color = '#16a34a';
+  let bg = '#dcfce7';
+  let border = '#86efac';
+  let badgeBg = '#dcfce7';
+  let badgeColor = '#166534';
+
+  if (score >= 80) {
+    level = 'Kritik'; tierKey = 'kritik';
+    color = '#dc2626'; bg = '#fee2e2'; border = '#fca5a5'; badgeBg = '#fee2e2'; badgeColor = '#991b1b';
+  } else if (score >= 60) {
+    level = 'Çok Yüksek'; tierKey = 'cokYuksek';
+    color = '#ea580c'; bg = '#ffedd5'; border = '#fed7aa'; badgeBg = '#ffedd5'; badgeColor = '#9a3412';
+  } else if (score >= 40) {
+    level = 'Yüksek'; tierKey = 'yuksek';
+    color = '#d97706'; bg = '#fef3c7'; border = '#fde68a'; badgeBg = '#fef3c7'; badgeColor = '#92400e';
+  } else if (score >= 20) {
+    level = 'Orta'; tierKey = 'orta';
+    color = '#0284c7'; bg = '#e0f2fe'; border = '#bae6fd'; badgeBg = '#e0f2fe'; badgeColor = '#075985';
+  }
+
+  return {
+    claims,
+    claimsDisplay: formatMedicareClaims(claims),
+    sdScore,
+    saScore,
+    saLabel,
+    saLevel,
+    snScore,
+    snLabel,
+    snStatus,
+    rawScore,
+    score,
+    level,
+    tierKey,
+    color,
+    bg,
+    border,
+    badgeBg,
+    badgeColor
+  };
+}
+
+function getR2DistributionStats() {
+  const records = getV2Green400Records();
+  let maxQ = 0;
+  let maxQDrug = null;
+  let sumSd = 0;
+  let sumSa = 0;
+  let sumSn = 0;
+  let sumR2 = 0;
+
+  records.forEach(r => {
+    const m = getMedicareDataMatch(r);
+    const q = (m && m.claims) ? Number(m.claims) : 0;
+    if (q > maxQ) {
+      maxQ = q;
+      maxQDrug = r;
+    }
+  });
+
+  const safeMaxQ = maxQ || 10757524;
+
+  const tiers = [
+    { key: 'kritik', label: 'Kritik Risk (80–100 Puan)', minScore: 80, maxScore: 100, count: 0, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+    { key: 'cokYuksek', label: 'Çok Yüksek (60–79.9 Puan)', minScore: 60, maxScore: 79.9, count: 0, color: '#ea580c', bg: '#ffedd5', border: '#fed7aa' },
+    { key: 'yuksek', label: 'Yüksek (40–59.9 Puan)', minScore: 40, maxScore: 59.9, count: 0, color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
+    { key: 'orta', label: 'Orta (20–39.9 Puan)', minScore: 20, maxScore: 39.9, count: 0, color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+    { key: 'dusuk', label: 'Düşük (< 20 Puan)', minScore: 0, maxScore: 19.9, count: 0, color: '#16a34a', bg: '#dcfce7', border: '#86efac' }
+  ];
+
+  let demandReasonCount = 0;
+  let otherReasonCount = 0;
+  let availableCount = 0;
+  let limitedCount = 0;
+  let unavailLimitedCount = 0;
+  let unavailableCount = 0;
+
+  records.forEach(r => {
+    const res = calculateDrugR2Score(r, safeMaxQ);
+    sumSd += res.sdScore;
+    sumSa += res.saScore;
+    sumSn += res.snScore;
+    sumR2 += res.score;
+
+    if (res.score >= 80) tiers[0].count++;
+    else if (res.score >= 60) tiers[1].count++;
+    else if (res.score >= 40) tiers[2].count++;
+    else if (res.score >= 20) tiers[3].count++;
+    else tiers[4].count++;
+
+    if (res.snStatus === 'demand') demandReasonCount++;
+    else otherReasonCount++;
+
+    if (res.saScore === 100) unavailableCount++;
+    else if (res.saScore === 80) unavailLimitedCount++;
+    else if (res.saScore === 60) limitedCount++;
+    else availableCount++;
+  });
+
+  const total = records.length;
+  const avgSd = total > 0 ? Math.round((sumSd / total) * 10) / 10 : 0;
+  const avgSa = total > 0 ? Math.round((sumSa / total) * 10) / 10 : 0;
+  const avgSn = total > 0 ? Math.round((sumSn / total) * 10) / 10 : 0;
+  const avgR2 = total > 0 ? Math.round((sumR2 / total) * 10) / 10 : 0;
+
+  return {
+    total,
+    maxQ: safeMaxQ,
+    maxQDrug,
+    avgSd,
+    avgSa,
+    avgSn,
+    avgR2,
+    tiers,
+    demandReasonCount,
+    otherReasonCount,
+    availableCount,
+    limitedCount,
+    unavailLimitedCount,
+    unavailableCount
+  };
+}
+
+function handleR2DrugSearch(val) {
+  r2DrugFilterState.query = val;
+  r2DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR2TierFilter(tier) {
+  r2DrugFilterState.tierFilter = tier;
+  r2DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR2DrugPage(p) {
+  r2DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR2ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR2Score(d);
+  const c2 = riskCriteriaState.criteria.find(item => item.id === 2);
+  if (c2) {
+    c2.score = res.score;
+    if (c2.subCriteria && c2.subCriteria.length >= 3) {
+      c2.subCriteria[0].score = res.sdScore;
+      c2.subCriteria[1].score = res.saScore;
+      c2.subCriteria[2].score = res.snScore;
+    }
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının talep–stok parametreleri (S_D: ${res.sdScore}, S_A: ${res.saScore}, S_N: ${res.snScore}) baz alınarak R₂ Puanı ${res.score}/100 (${res.level}) olarak atandı ve ana denkleme aktarıldı.`);
+  }
+}
+
+function applyCollectiveR2ToCriterion() {
+  const stats = getR2DistributionStats();
+  const c2 = riskCriteriaState.criteria.find(item => item.id === 2);
+  if (c2) {
+    c2.score = stats.avgR2;
+    if (c2.subCriteria && c2.subCriteria.length >= 3) {
+      c2.subCriteria[0].score = stats.avgSd;
+      c2.subCriteria[1].score = stats.avgSa;
+      c2.subCriteria[2].score = stats.avgSn;
+    }
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın ağırlıklı ortalama talep–stok dengesizliği risk puanı (R₂: ${stats.avgR2}/100 · S_D: ${stats.avgSd}, S_A: ${stats.avgSa}, S_N: ${stats.avgSn}) ana denkleme başarıyla aktarıldı!`);
+  }
+}
+
+// ==========================================================================
 // R3 (ÜRETİCİ VE TEDARİKÇİ YOĞUNLAŞMASI) ÖZEL HESAPLAMA & DAĞILIM SİSTEMİ
 // ==========================================================================
 let r3DrugFilterState = {
@@ -5191,15 +5452,9 @@ function applyDrugToRiskCriteria(drugId) {
   const r1Res = calculateDrugR1Duration(d);
   const r1 = r1Res.sdScore;
 
-  // R2: Talep–stok dengesizliği (CMS Medicare talebi & bulunabilirlik)
-  let r2 = 55;
-  const m = getMedicareDataMatch(d);
-  if (m && m.claims > 500000) r2 += 30;
-  else if (m && m.claims > 100000) r2 += 20;
-  else if (m && m.claims > 20000) r2 += 10;
-  const avLow = (d.availability || '').toLowerCase();
-  if (avLow.includes('un') || avLow.includes('limit')) r2 += 15;
-  r2 = Math.min(100, Math.max(20, r2));
+  // R2: Talep–stok dengesizliği (S_D, S_A, S_N 3 bileşenli resmi formülü)
+  const r2Res = calculateDrugR2Score(d);
+  const r2 = r2Res.score;
 
   // R3: Üretici ve tedarikçi yoğunlaşması (Alternatif üretici sayısı resmi tablosu)
   const alts = getAlternativeManufacturers(d);
@@ -5249,6 +5504,11 @@ function applyDrugToRiskCriteria(drugId) {
       if (c.id === 1 && c.subCriteria && c.subCriteria.length > 0) {
         const subD = c.subCriteria.find(s => s.code === 'S_D' || s.id === 1);
         if (subD) subD.score = r1;
+      }
+      if (c.id === 2 && c.subCriteria && c.subCriteria.length >= 3) {
+        c.subCriteria[0].score = r2Res.sdScore;
+        c.subCriteria[1].score = r2Res.saScore;
+        c.subCriteria[2].score = r2Res.snScore;
       }
     }
   });
@@ -5423,8 +5683,8 @@ function renderRiskCriteriaDrugTableOnly() {
             <th style="min-width:220px;" title="Veri Seti: ABD FDA Resmi Kriz Kataloğu & TİTCK Yeşil Reçete">1. İlaç / Etkin Madde & Marka (FDA)</th>
             <th title="Veri Seti: ABD FDA Drug Shortages Veri Tabanı">2. FDA Kriz Durumu (FDA)</th>
             <th style="min-width:145px;" title="Veri Seti: Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğu">3. EMA Kriz Durumu (EMA)</th>
-            <th style="min-width:160px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims)">
-              <div style="font-weight:700;">4. Medicare Reçete Talebi (CMS)</div>
+            <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Reçete Talebi (Claims) ve R₂ S_D Skoru">
+              <div style="font-weight:700;">4. Medicare Reçete & S_D (CMS)</div>
               <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
             </th>
             <th style="min-width:165px; padding:12px 14px;" title="Veri Seti: CMS Part D 15 Aylık Kamu Bütçesi Harcaması ($)">
@@ -5432,8 +5692,8 @@ function renderRiskCriteriaDrugTableOnly() {
               <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
             </th>
             <th style="min-width:190px;" title="Veri Seti: ABD FDA Drug Shortages Terapötik Sınıflandırma ve R₆ Puanlaması">6. Terapötik Kategori & R₆ Skoru (FDA)</th>
-            <th style="min-width:180px;" title="Veri Seti: ABD FDA Kriz Bildirim Gerekçesi & Kök Neden">7. Sıkıntı Nedeni & Kök Neden (FDA)</th>
-            <th title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi">8. Bulunabilirlik (Stok) (FDA)</th>
+            <th style="min-width:185px;" title="Veri Seti: ABD FDA Kriz Bildirim Gerekçesi & Kök Neden ve R₂ S_N Skoru">7. Sıkıntı Nedeni & S_N (FDA)</th>
+            <th style="min-width:165px;" title="Veri Seti: ABD FDA Tedarik & Dağıtım Stok Bildirimi ve R₂ S_A Skoru">8. Bulunabilirlik & S_A (FDA)</th>
             <th style="min-width:280px; padding:12px 16px;" title="Veri Seti: ABD FDA Sunum, Dozaj Formu & NDC Kodları">9. Sunum & Dozaj Formu (FDA)</th>
             <th style="min-width:260px; padding:12px 16px;" title="Veri Seti: ABD FDA Üretici Firma & Tedarik İletişim Bilgisi">10. Üretici Firma & İletişim (FDA)</th>
             <th style="min-width:240px; padding:12px 16px;" title="Veri Seti: FDA Kataloğu Eş Zamanlı Etken Madde & Form Üretici Analizi ve Resmi R₃ Puanlaması">11. Alternatif Üretici & R₃ Skoru (FDA)</th>
@@ -5446,6 +5706,7 @@ function renderRiskCriteriaDrugTableOnly() {
           ${paginated.map((r, idx) => {
             const seq = startIdx + idx + 1;
             const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+            const r2Drug = calculateDrugR2Score(r);
             return `
               <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
                 <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
@@ -5454,7 +5715,7 @@ function renderRiskCriteriaDrugTableOnly() {
                 ${renderDrugCell(r)}
                 <td style="vertical-align:top; padding:14px 12px;">${r.statusBadgeHtml}</td>
                 <td style="vertical-align:top; padding:14px 12px;">${renderEmaCrisisStatusCell(r)}</td>
-                ${renderMedicareCells(r)}
+                ${renderMedicareCells(r, true)}
                 <td style="vertical-align:top; padding:14px 12px;">
                   ${(() => {
                     const r6Drug = calculateDrugR6Score(r);
@@ -5471,8 +5732,22 @@ function renderRiskCriteriaDrugTableOnly() {
                     `;
                   })()}
                 </td>
-                <td style="vertical-align:top; padding:14px 12px;">${renderReasonCell(r)}</td>
-                <td style="vertical-align:top; padding:14px 12px;">${r.availBadgeHtml}</td>
+                <td style="vertical-align:top; padding:14px 12px;">
+                  ${renderReasonCell(r)}
+                  <div style="margin-top:5px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+                    <span class="badge" style="background:${r2Drug.snStatus === 'demand' ? '#fee2e2' : '#f1f5f9'}; color:${r2Drug.snStatus === 'demand' ? '#991b1b' : '#475569'}; border:1px solid ${r2Drug.snStatus === 'demand' ? '#fca5a5' : '#cbd5e1'}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
+                      ⚡ S_N: ${r2Drug.snScore}/100 (${r2Drug.snStatus === 'demand' ? 'Talep/Kapasite' : 'Diğer/Taban'})
+                    </span>
+                  </div>
+                </td>
+                <td style="vertical-align:top; padding:14px 12px;">
+                  ${r.availBadgeHtml}
+                  <div style="margin-top:5px; padding-top:4px; border-top:1.5px solid #fed7aa;">
+                    <span class="badge" style="background:${r2Drug.saScore >= 80 ? '#fee2e2' : (r2Drug.saScore >= 60 ? '#ffedd5' : '#dcfce7')}; color:${r2Drug.saScore >= 80 ? '#991b1b' : (r2Drug.saScore >= 60 ? '#9a3412' : '#166534')}; border:1px solid ${r2Drug.saScore >= 80 ? '#fca5a5' : (r2Drug.saScore >= 60 ? '#fed7aa' : '#86efac')}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;">
+                      📦 S_A: ${r2Drug.saScore}/100 (${r2Drug.saLevel})
+                    </span>
+                  </div>
+                </td>
                 <td style="min-width:280px; max-width:340px; vertical-align:top; padding:14px 16px; white-space:normal;">
                   <div style="font-size:12.5px; color:#1e293b; line-height:1.55; word-break:break-word; font-weight:500;">
                     ${esc(r.presentation)}
@@ -5725,6 +6000,7 @@ window.setAllCriteriaScoresValue = setAllCriteriaScoresValue;
 window.riskCriteriaState = riskCriteriaState;
 window.getV2Green400Records = getV2Green400Records;
 window.calculateOverallRiskScores = calculateOverallRiskScores;
+window.getMedicareDataMatch = getMedicareDataMatch;
 window.exportRiskCriteriaMatrixCSV = exportRiskCriteriaMatrixCSV;
 
 window.handleRiskCriteriaDrugSearch = handleRiskCriteriaDrugSearch;
@@ -5762,6 +6038,15 @@ window.handleR1DrugPage = handleR1DrugPage;
 window.applySingleDrugR1ToCriterion = applySingleDrugR1ToCriterion;
 window.applyCollectiveR1ToCriterion = applyCollectiveR1ToCriterion;
 window.renderCriterion1DetailPage = renderCriterion1DetailPage;
+
+window.calculateDrugR2Score = calculateDrugR2Score;
+window.getR2DistributionStats = getR2DistributionStats;
+window.handleR2DrugSearch = handleR2DrugSearch;
+window.handleR2TierFilter = handleR2TierFilter;
+window.handleR2DrugPage = handleR2DrugPage;
+window.applySingleDrugR2ToCriterion = applySingleDrugR2ToCriterion;
+window.applyCollectiveR2ToCriterion = applyCollectiveR2ToCriterion;
+window.renderCriterion2DetailPage = renderCriterion2DetailPage;
 
 function renderCriterion1DetailPage(c) {
   if (!c.subCriteria || c.subCriteria.length === 0) {
@@ -6247,6 +6532,520 @@ function renderCriterion1DetailPage(c) {
                   </td>
                   <td style="text-align:center;">
                     <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(1, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderCriterion2DetailPage(c) {
+  if (!c.subCriteria || c.subCriteria.length < 3) {
+    c.subCriteria = [
+      { id: 1, code: 'S_D', name: 'Talep düzeyi göstergesi (15 Aylık Medicare Part D Reçete Sayısı - Q_i)', weight: 30, score: 57.8, dataStatus: 'available' },
+      { id: 2, code: 'S_A', name: 'Bulunabilirlik risk göstergesi (FDA Stok / Tedarik Durumu)', weight: 40, score: 43.2, dataStatus: 'available' },
+      { id: 3, code: 'S_N', name: 'Talep artışı ve kapasite yetersizliği kök neden göstergesi', weight: 30, score: 40.8, dataStatus: 'available' }
+    ];
+  }
+
+  const stats = getR2DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR2Drugs = allDrugs.map(r => {
+    const r2 = calculateDrugR2Score(r, stats.maxQ);
+    return {
+      record: r,
+      claims: r2.claims,
+      claimsDisplay: r2.claimsDisplay,
+      sdScore: r2.sdScore,
+      saScore: r2.saScore,
+      saLabel: r2.saLabel,
+      saLevel: r2.saLevel,
+      snScore: r2.snScore,
+      snLabel: r2.snLabel,
+      snStatus: r2.snStatus,
+      rawScore: r2.rawScore,
+      score: r2.score,
+      level: r2.level,
+      tierKey: r2.tierKey,
+      color: r2.color,
+      bg: r2.bg,
+      border: r2.border,
+      badgeBg: r2.badgeBg,
+      badgeColor: r2.badgeColor
+    };
+  });
+
+  if (r2DrugFilterState.query) {
+    const q = r2DrugFilterState.query.toLowerCase().trim();
+    filteredR2Drugs = filteredR2Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const nd = (r.ndc || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || nd.includes(q);
+    });
+  }
+
+  if (r2DrugFilterState.tierFilter !== 'all') {
+    filteredR2Drugs = filteredR2Drugs.filter(item => item.tierKey === r2DrugFilterState.tierFilter);
+  }
+
+  const r2TotalFiltered = filteredR2Drugs.length;
+  const r2PageSize = r2DrugFilterState.pageSize || 15;
+  const r2TotalPages = Math.max(1, Math.ceil(r2TotalFiltered / r2PageSize));
+  if (r2DrugFilterState.page > r2TotalPages) r2DrugFilterState.page = r2TotalPages;
+  const r2StartIdx = (r2DrugFilterState.page - 1) * r2PageSize;
+  const r2EndIdx = Math.min(r2StartIdx + r2PageSize, r2TotalFiltered);
+  const r2PaginatedDrugs = filteredR2Drugs.slice(r2StartIdx, r2EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #bcdcfa;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#fff7ed; color:#ea580c; border:1.5px solid #fdba74; font-weight:800; font-size:12px; padding:6px 14px;">
+          ⚖️ R₂ Talep–Stok Dengesizliği Risk Modeli
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #ea580c; border-color:#fdba74; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #fff7ed 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #f97316 0%, #ea580c 100%); box-shadow:0 4px 14px rgba(234, 88, 12, 0.35);">
+            R₂
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:24px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:10px;">
+              <span>⚖️</span> Talep–Stok Dengesizliği Analizi
+            </h1>
+            <p style="color:#5a7590; font-size:13.5px; margin:4px 0 0; font-style:italic;">
+              Demand–stock imbalance · Değişken Kodu: <b style="color:#ea580c;">R2</b> · Ana Denklem Ağırlığı: <b style="color:#ea580c;">%18 (0.18)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:14px; align-items:center; background:#ffffff; padding:12px 20px; border-radius:12px; border:1.5px solid #fdba74; box-shadow:0 4px 14px rgba(234,88,12,0.08);">
+          <div>
+            <small style="display:block; font-size:10.5px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₂):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:68px; height:34px; font-weight:800; text-align:center; border:1.5px solid #cbd5e1; border-radius:8px; font-size:14px;" onchange="updateMainCriterionWeight(2, this.value)">
+              <span style="font-weight:700; color:#ea580c; font-size:13px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1.5px solid #fed7aa; padding-left:14px;">
+            <small style="display:block; font-size:10.5px; color:var(--muted); font-weight:800; text-transform:uppercase;">Mevcut Risk Puanı (R₂):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" step="0.1" value="${c.score}" style="width:72px; height:34px; font-weight:800; text-align:center; border:1.5px solid #cbd5e1; border-radius:8px; font-size:14px; color:#c2410c;" onchange="updateMainCriterionScore(2, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:13px;">/100</span>
+            </div>
+          </div>
+          <div style="border-left:1.5px solid #fed7aa; padding-left:14px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Veri Durumu:</small>
+            <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:3px 8px; margin-top:3px; display:inline-block;">
+              🟢 3 Bileşen de Aktif (%100 Hesaplanabilir)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: METODOLOJİ, ALT KRİTERLER & MATEMATİKSEL FORMÜL -->
+      <div style="background:#ffffff; border:1.5px solid #fdba74; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(234,88,12,0.04);">
+        <div style="font-size:12px; font-weight:800; color:#ea580c; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+          1. Metodoloji, Alt Kriterler ve Ağırlık Dağılımı:
+        </div>
+        <p style="font-size:13.5px; color:#334155; line-height:1.6; margin:0 0 14px;">
+          <b>R₂</b> kriteri, piyasadaki reçete talep hacmi (CMS Medicare Part D), üreticinin beyan ettiği fiziksel stok bulunabilirlik durumu (FDA Availability) ve krizin talep artışı/kapasite yetersizliğinden kaynaklanma durumunu ağırlıklandırarak 0–100 aralığında bileşik bir talep-stok dengesizlik riski üretir.
+        </p>
+
+        <!-- Alt Kriterler Tablosu -->
+        <div class="data-table" style="margin-bottom:16px; overflow-x:auto;">
+          <table class="r2-table">
+            <thead>
+              <tr>
+                <th style="width:260px;">Alt Kriter Tanımı</th>
+                <th style="width:90px; text-align:center;">Değişken</th>
+                <th style="width:110px; text-align:center;">Ağırlık</th>
+                <th style="min-width:260px;">Mevcut Veri Durumu</th>
+                <th style="min-width:280px;">Hesaplama & Metot</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">1. Talep Düzeyi Puanı (Medicare Reçete Sayısı)</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c; font-family:'DM Mono', monospace;">S_D</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c;">%30 (0.30)</td>
+                <td>
+                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:4px 9px;">
+                    🟢 CMS Part D Verisi Mevcut (294 İlaç Reçeteli)
+                  </span>
+                </td>
+                <td style="font-family:'DM Mono', monospace; font-size:12px; color:#0f4c81;">
+                  S_D = 100 × [ ln(1 + Q_i) / ln(1 + Q_max) ]
+                </td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">2. Bulunabilirlik Risk Puanı (FDA Stok Durumu)</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c; font-family:'DM Mono', monospace;">S_A</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c;">%40 (0.40)</td>
+                <td>
+                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:4px 9px;">
+                    🟢 FDA Bildirimi Mevcut (400 İlaç Birebir Eşleşti)
+                  </span>
+                </td>
+                <td style="font-size:12px; color:#334155;">
+                  Available: <b>20</b> · Limited: <b>60</b> · Lim/Unavail: <b>80</b> · Unavailable: <b>100</b>
+                </td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">3. Talep Artışı / Kapasite Yetersizliği Puanı</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c; font-family:'DM Mono', monospace;">S_N</td>
+                <td style="text-align:center; font-weight:800; color:#ea580c;">%30 (0.30)</td>
+                <td>
+                  <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:11px; padding:4px 9px;">
+                    🟢 FDA Kriz Nedeni Mevcut (104 Talep/Kapasite Şoku)
+                  </span>
+                </td>
+                <td style="font-size:12px; color:#334155;">
+                  Talep/Kapasite Nedeni: <b>100</b> · Başka Neden: <b>20 (Taban)</b> · Boş: <b>0</b>
+                </td>
+              </tr>
+              <tr style="background:#fff7ed; font-weight:800;">
+                <td style="color:#9a3412;">TOPLAM AĞIRLIKLI R₂ MODELİ</td>
+                <td style="text-align:center; color:#9a3412;">∑</td>
+                <td style="text-align:center; color:#9a3412;">%100 (1.00)</td>
+                <td colspan="2" style="color:#9a3412; font-size:12.5px; font-family:'DM Mono', monospace;">
+                  R₂ = 0.30 × S_D + 0.40 × S_A + 0.30 × S_N
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Matematiksel Formül Blokları -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:16px;">
+          <div style="background:#fff7ed; padding:14px 18px; border-radius:10px; border:1.5px solid #fed7aa;">
+            <div style="font-size:11px; font-weight:800; color:#c2410c; text-transform:uppercase;">1. S_D — Talep Düzeyi Formülü:</div>
+            <div style="font-family:'DM Mono', monospace; font-size:14px; font-weight:800; color:#9a3412; margin:6px 0;">
+              S_D = 100 × [ ln(1 + Q_i) / ln(1 + Q_max) ]
+            </div>
+            <div style="font-size:12px; color:#7c2d12; line-height:1.45;">
+              • <b>Q_i</b>: İlacın 15 aylık Medicare reçete sayısı.<br>
+              • <b>Q_max</b>: <b>10,757,524</b> (Clonazepam Tablet).<br>
+              • Log normalizasyonu uçurum farkları dengeler.
+            </div>
+          </div>
+
+          <div style="background:#f0fdf4; padding:14px 18px; border-radius:10px; border:1.5px solid #bbf7d0;">
+            <div style="font-size:11px; font-weight:800; color:#15803d; text-transform:uppercase;">2. S_A — Bulunabilirlik Risk Skalası:</div>
+            <div style="font-family:'DM Mono', monospace; font-size:12.5px; font-weight:800; color:#166534; margin:6px 0;">
+              Available: 20 · Limited: 60<br>
+              Unavailable / Limited: 80 · Unavailable: 100
+            </div>
+            <div style="font-size:12px; color:#14532d; line-height:1.45;">
+              • FDA stok bildirimine göre piyasada ilacın fiziksel tedarik edilebilirlik kısıtını puanlar.
+            </div>
+          </div>
+
+          <div style="background:#fef2f2; padding:14px 18px; border-radius:10px; border:1.5px solid #fecaca;">
+            <div style="font-size:11px; font-weight:800; color:#b91c1c; text-transform:uppercase;">3. S_N — Talep Artışı / Kapasite Kuralı:</div>
+            <div style="font-family:'DM Mono', monospace; font-size:12.5px; font-weight:800; color:#991b1b; margin:6px 0;">
+              Talep/Kapasite: 100 · Başka Neden: 20 · Boş: 0
+            </div>
+            <div style="font-size:12px; color:#7f1d1d; line-height:1.45;">
+              • Kriz gerekçesinde talep artışı/kapasite yetersizliği varsa 100, başka neden varsa 20 taban puan atanır.
+            </div>
+          </div>
+
+          <div style="background:#faf5ff; padding:14px 18px; border-radius:10px; border:1.5px solid #e9d5ff;">
+            <div style="font-size:11px; font-weight:800; color:#7e22ce; text-transform:uppercase;">4. Nihai Ağırlıklı R₂ Skoru:</div>
+            <div style="font-family:'DM Mono', monospace; font-size:13.5px; font-weight:800; color:#6b21a8; margin:6px 0;">
+              R₂ = 0.30 S_D + 0.40 S_A + 0.30 S_N
+            </div>
+            <div style="font-size:12px; color:#581c87; line-height:1.45;">
+              • 3 alt bileşenin ağırlıklı toplamı ile 0–100 aralığında bileşik talep-stok dengesizlik endeksi.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: 400 YEŞİL REÇETELİ İLAÇ İSTATİSTİK ÖZETİ & KOLEKTİF AKTARIM -->
+      <div style="background:#ffffff; border:1.5px solid #fdba74; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(234,88,12,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:12px; font-weight:800; color:#ea580c; text-transform:uppercase; letter-spacing:0.5px;">
+              2. 400 Yeşil Reçeteli İlaç İstatistik Dağılımı ve Kolektif Puan:
+            </div>
+            <p style="font-size:13px; color:#64748b; margin:3px 0 0;">
+              Veri tabanındaki 400 yeşil reçeteli ilacın CMS Medicare Part D reçeteleri, FDA stok bildirimleri ve kriz gerekçeleri analiz edilmiştir:
+            </p>
+          </div>
+
+          <button type="button" class="button" style="background:#ea580c; border-color:#c2410c; font-weight:800; font-size:12.5px; padding:10px 22px; box-shadow:0 4px 12px rgba(234,88,12,0.25);" onclick="applyCollectiveR2ToCriterion()">
+            🎯 400 İlacın Ağırlıklı Ortalama R₂ Puanını (${stats.avgR2}) Ata
+          </button>
+        </div>
+
+        <!-- 5 Metrik Kartı -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:18px;">
+          <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; border:1px solid #e2e8f0;">
+            <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">En Yüksek Reçete (Q_max):</div>
+            <div style="font-size:17px; font-weight:800; color:#0369a1; margin-top:2px;">${stats.maxQ.toLocaleString('tr-TR')}</div>
+            <small style="font-size:11px; color:#64748b; display:block; margin-top:2px;">Clonazepam Tablet (S_D: 100.0)</small>
+          </div>
+
+          <div style="background:#eff6ff; padding:12px 14px; border-radius:10px; border:1px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:700; color:#1d4ed8; text-transform:uppercase;">Ortalama S_D (%30):</div>
+            <div style="font-size:17px; font-weight:800; color:#1e40af; margin-top:2px;">${stats.avgSd} / 100</div>
+            <small style="font-size:11px; color:#3b82f6; display:block; margin-top:2px;">294 Reçeteli · 106 Klinik</small>
+          </div>
+
+          <div style="background:#ecfdf5; padding:12px 14px; border-radius:10px; border:1px solid #a7f3d0;">
+            <div style="font-size:11px; font-weight:700; color:#047857; text-transform:uppercase;">Ortalama S_A (%40):</div>
+            <div style="font-size:17px; font-weight:800; color:#065f46; margin-top:2px;">${stats.avgSa} / 100</div>
+            <small style="font-size:11px; color:#059669; display:block; margin-top:2px;">243 Avail · 75 Ltd · 82 Kısıtlı</small>
+          </div>
+
+          <div style="background:#fff1f2; padding:12px 14px; border-radius:10px; border:1px solid #fecdd3;">
+            <div style="font-size:11px; font-weight:700; color:#be123c; text-transform:uppercase;">Ortalama S_N (%30):</div>
+            <div style="font-size:17px; font-weight:800; color:#9f1239; margin-top:2px;">${stats.avgSn} / 100</div>
+            <small style="font-size:11px; color:#e11d48; display:block; margin-top:2px;">104 Talep/Kapasite Şoku</small>
+          </div>
+
+          <div style="background:linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); padding:12px 14px; border-radius:10px; border:1.5px solid #fdba74; box-shadow:0 2px 8px rgba(234,88,12,0.1);">
+            <div style="font-size:11px; font-weight:800; color:#c2410c; text-transform:uppercase;">Kolektif Ağırlıklı R₂:</div>
+            <div style="font-size:19px; font-weight:800; color:#9a3412; margin-top:2px;">${stats.avgR2} / 100</div>
+            <small style="font-size:11px; font-weight:700; color:#c2410c; display:block; margin-top:2px;">Orta-Yüksek Risk Bandı</small>
+          </div>
+        </div>
+
+        <!-- Risk Kademe Filtreleri / Butonları -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <span style="font-size:12px; font-weight:700; color:#64748b; margin-right:4px;">Risk Düzeyine Göre Filtrele:</span>
+          <button type="button" class="r2-filter-btn ${r2DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR2TierFilter('all')">
+            🌐 Tümü (${stats.total})
+          </button>
+          ${stats.tiers.map(t => `
+            <button type="button" class="r2-filter-btn ${r2DrugFilterState.tierFilter === t.key ? 'active' : ''}" onclick="handleR2TierFilter('${t.key}')">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${t.color};"></span>
+              ${t.label}: <b>${t.count}</b>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA TALEP-STOK (S_D, S_A, S_N) VE NİHAİ R₂ TABLOSU -->
+      <div style="background:#ffffff; border:1.5px solid #fdba74; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 16px rgba(234,88,12,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#1e1b4b; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 400 Yeşil Reçeteli İlaç İçin Talep–Stok Puanları (S_D, S_A, S_N) ve Nihai R₂ Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b;">
+              Her ilacın Medicare reçete sayısı (S_D), FDA bulunabilirlik durumu (S_A) ve kriz kök nedeni (S_N) hesaplanmış ve nihai R₂ skoru belirlenmiştir.
+            </p>
+          </div>
+
+          <div style="position:relative; width:260px;">
+            <input type="text" value="${esc(r2DrugFilterState.query)}" placeholder="İlaç adı veya üretici ara..." style="width:100%; height:34px; padding:0 12px 0 30px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; outline:none; box-sizing:border-box;" oninput="handleR2DrugSearch(this.value)">
+            <span style="position:absolute; left:9px; top:8px; font-size:13px; color:#94a3b8;">🔍</span>
+          </div>
+        </div>
+
+        <div class="data-table" style="overflow-x:auto;">
+          <table class="r2-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">#</th>
+                <th style="min-width:180px;">İlaç / Etkin Madde & Dozaj Formu</th>
+                <th style="min-width:160px;">Üretici Firma</th>
+                <th style="min-width:130px; text-align:center;">15 Aylık Reçete (Q_i)</th>
+                <th style="min-width:110px; text-align:center;">S_D Puanı (%30)</th>
+                <th style="min-width:140px; text-align:center;">FDA Bulunabilirlik</th>
+                <th style="min-width:110px; text-align:center;">S_A Puanı (%40)</th>
+                <th style="min-width:170px;">Sıkıntı Nedeni (Kök Neden)</th>
+                <th style="min-width:110px; text-align:center;">S_N Puanı (%30)</th>
+                <th style="min-width:120px; text-align:center;">Nihai R₂ Skoru</th>
+                <th style="min-width:140px; text-align:center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r2PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="11" style="text-align:center; padding:32px; color:#64748b;">
+                    Arama kriterlerine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r2PaginatedDrugs.map((item, idx) => {
+                const r = item.record;
+                const seq = r2StartIdx + idx + 1;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#fff7ed;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b;">${seq}</td>
+                    <td>
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td>
+                      <span style="font-weight:600; color:#334155; font-size:12px;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="font-weight:800; color:#0284c7; font-size:12.5px;">${esc(item.claimsDisplay || '—')}</div>
+                      <small style="font-size:10px; color:#64748b;">Medicare Part D</small>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:800; font-size:11.5px; padding:3px 8px;">
+                        ${item.sdScore}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span style="font-weight:700; font-size:12px; color:#334155;">${esc(item.saLabel)}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:${item.saScore >= 80 ? '#fee2e2' : (item.saScore >= 60 ? '#ffedd5' : '#dcfce7')}; color:${item.saScore >= 80 ? '#991b1b' : (item.saScore >= 60 ? '#9a3412' : '#166534')}; border:1px solid ${item.saScore >= 80 ? '#fca5a5' : (item.saScore >= 60 ? '#fed7aa' : '#86efac')}; font-weight:800; font-size:11.5px; padding:3px 8px;">
+                        ${item.saScore}/100
+                      </span>
+                    </td>
+                    <td style="font-size:12px; color:#334155;">
+                      <div style="line-height:1.4;">${esc(r.shortage_reason || r.reasonText || '—')}</div>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:${item.snStatus === 'demand' ? '#fee2e2' : '#f1f5f9'}; color:${item.snStatus === 'demand' ? '#991b1b' : '#475569'}; border:1px solid ${item.snStatus === 'demand' ? '#fca5a5' : '#cbd5e1'}; font-weight:800; font-size:11.5px; padding:3px 8px;">
+                        ${item.snScore}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:inline-flex; align-items:center; gap:6px;">
+                        <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:800; font-size:12px; padding:4px 9px;">
+                          ${item.score}/100
+                        </span>
+                        <small style="font-weight:700; color:${item.color}; font-size:11px;">(${item.level})</small>
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button secondary" style="font-size:11px; padding:5px 10px; font-weight:700; color:#c2410c; border-color:#fdba74; background:#fff;" onclick="applySingleDrugR2ToCriterion('${esc(r.id)}')">
+                        🎯 Bu Puanı (${item.score}) R₂'ye Ata
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sayfalama Kontrolleri -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r2TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r2StartIdx + 1} - ${r2EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR2DrugPage(${r2DrugFilterState.page - 1})" ${r2DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r2DrugFilterState.page} / ${r2TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR2DrugPage(${r2DrugFilterState.page + 1})" ${r2DrugFilterState.page >= r2TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ (R₂ = 0.30 S_D + 0.40 S_A + 0.30 S_N) -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#fdba74;">
+        <div style="font-size:11px; font-weight:800; color:#ea580c; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#9a3412; margin:8px 0; background:#fff7ed; padding:12px 16px; border-radius:8px; border:1px solid #fdba74;">
+          R₂ = [ ∑<sub>j=1</sub><sup>n₂</sup> ( a₂<sub>j</sub> × S₂<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₂</sup> a₂<sub>j</sub> ] = 0.30 S_D + 0.40 S_A + 0.30 S_N
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₂</b>: Talep–stok dengesizliği kriterinin nihai risk puanı (0–100).<br>
+          • <b>a₂₁ (Talep düzeyi)</b>: %30 ağırlık · <b>S_D</b> logaritmik reçete hacmi puanı.<br>
+          • <b>a₂₂ (Bulunabilirlik durumu)</b>: %40 ağırlık · <b>S_A</b> FDA stok bulunabilirlik puanı.<br>
+          • <b>a₂₃ (Talep artışı / kapasite kök nedeni)</b>: %30 ağırlık · <b>S_N</b> talep şoku / kapasite kısıtı puanı.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#ea580c; border-color:#c2410c;" onclick="addSubCriterion(2)">
+          ➕ Yeni Alt Gösterge Ekle (S₂<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(2)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff7ed; color:#c2410c; border-color:#fdba74; font-weight:700;" onclick="applySubScoreToMainCriterion(2)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#fff7ed; color:#c2410c; border-color:#fdba74; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(2)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #fdba74; overflow:hidden;">
+        <table class="sub-crit-table">
+          <thead>
+            <tr style="background: #fff7ed;">
+              <th style="width:50px; text-align:center;">j</th>
+              <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+              <th style="width:140px; text-align:center;">Veri Durumu</th>
+              <th style="width:150px; text-align:center;">Alt Ağırlık (a₂<sub>j</sub>, %)</th>
+              <th style="width:150px; text-align:center;">Risk Puanı (S₂<sub>j</sub>, 0-100)</th>
+              <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+              <th style="width:70px; text-align:center;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              return `
+                <tr>
+                  <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                  <td>
+                    <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(2, ${sub.id}, this.value)" oninput="updateSubCriterionName(2, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center;">
+                    <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(2, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" step="0.1" value="${sub.score}" style="text-align:center; font-weight:700; color:#c2410c;" onchange="updateSubCriterionScore(2, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:700; color:#ea580c;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(2, ${sub.id})">
                       🗑
                     </button>
                   </td>
@@ -7191,6 +7990,10 @@ function riskCriteriaPage() {
     const c = riskCriteriaState.criteria.find(item => item.id === riskCriteriaState.currentOpenCriterionId) || riskCriteriaState.criteria[0];
     if (c.id === 1) {
       renderCriterion1DetailPage(c);
+      return;
+    }
+    if (c.id === 2) {
+      renderCriterion2DetailPage(c);
       return;
     }
     if (c.id === 3) {

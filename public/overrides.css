@@ -2274,5 +2274,55 @@ th:hover {
     gap: 4px;
 }
 
+/* ==========================================================================
+   15. R2 TALEP-STOK DENGESİZLİĞİ RİSK SİSTEMİ
+   ========================================================================== */
+.r2-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+.r2-table th {
+    background: #fff7ed;
+    color: #9a3412;
+    font-weight: 800;
+    padding: 11px 14px;
+    border-bottom: 2px solid #fed7aa;
+    text-align: left;
+}
+.r2-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    vertical-align: middle;
+}
+.r2-filter-btn {
+    font-size: 11.5px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1.5px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.r2-filter-btn:hover {
+    border-color: #ea580c;
+    color: #ea580c;
+    background: #fff7ed;
+    transform: translateY(-1px);
+}
+.r2-filter-btn.active {
+    background: #ea580c !important;
+    color: #ffffff !important;
+    border-color: #ea580c !important;
+    box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
+}
+
+
 
 
