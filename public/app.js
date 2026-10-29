@@ -2077,6 +2077,23 @@ async function shortagePageV2(
             const fallback = await api('/api/ema-shortages');
             allRows = (fallback && Array.isArray(fallback.rows)) ? fallback.rows : [];
           } catch {}
+          if (allRows.length === 0) {
+            try {
+              const staticRes = await fetch('ema_medicine_shortages.json').then(r => r.json());
+              if (Array.isArray(staticRes)) {
+                allRows = staticRes.map((r, idx) => ({
+                  id: 900000 + idx + 1,
+                  source: 'EMA Shortages',
+                  generic_name: r.international_non_proprietary_name_inn_or_common_name || '',
+                  brand_name: r.medicine_affected || '',
+                  shortage_status: r.supply_shortage_status || '',
+                  shortage_reason: `Alternatif: ${r.availability_of_alternatives || 'Belirtilmemiş'} | Terapötik Alan: ${r.therapeutic_area_mesh || 'Genel'}`,
+                  search_text: `${r.medicine_affected || ''} ${r.international_non_proprietary_name_inn_or_common_name || ''} ${r.therapeutic_area_mesh || ''} ${r.pharmaceutical_forms_affected || ''} ${r.supply_shortage_status || ''}`,
+                  raw_json: r
+                }));
+              }
+            } catch {}
+          }
         }
         v2EmaRecordsCache = allRows;
       } else {

@@ -13,7 +13,10 @@ let emaJsonCache = null;
 function getEmaShortages() {
   if (!emaJsonCache) {
     try {
-      const p = path.join(root, 'Datasets', 'EMA', 'ema_medicine_shortages.json');
+      let p = path.join(root, 'Datasets', 'EMA', 'ema_medicine_shortages.json');
+      if (!fs.existsSync(p)) {
+        p = path.join(root, 'public', 'ema_medicine_shortages.json');
+      }
       if (fs.existsSync(p)) {
         const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
         emaJsonCache = raw.map((r, idx) => ({
