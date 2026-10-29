@@ -4387,13 +4387,17 @@ const defaultRiskCriteriaData = [
     nameEn: 'Product characteristics and substitutability',
     weight: 7,
     weightDec: 0.07,
-    score: 50,
+    score: 41.2,
     icon: '🔄',
     color: '#4f46e5',
     colorBg: '#eef2ff',
     colorBorder: '#a5b4fc',
     colorGradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_F', name: 'Dozaj formu ikame riski (Tablet, kapsül, XR/ER, enjeksiyon vb.)', weight: 50, score: 41.9, dataStatus: 'available' },
+      { id: 2, code: 'S_D', name: 'Doz ve konsantrasyon özgüllüğü (Doz, mg/mL konsantrasyonu, koruyucusuz sunum)', weight: 30, score: 37.8, dataStatus: 'available' },
+      { id: 3, code: 'S_U', name: 'Uygulama yolunun özgüllüğü (Oral, intravenöz, intramüsküler, rektal vb.)', weight: 20, score: 44.8, dataStatus: 'available' }
+    ]
   },
   {
     id: 8,
@@ -5996,6 +6000,320 @@ function applyCollectiveR6ToCriterion() {
   }
 }
 
+// ==========================================================================
+// R7 (ÜRÜN ÖZELLİKLERİ VE İKAME EDİLEBİLİRLİK) ÖZEL HESAPLAMA SİSTEMİ
+// Alt Bileşenler ve Ağırlıklar:
+// S_F: Dozaj Formu İkame Güçlüğü (%50)
+// S_D: Doz ve Konsantrasyon Özgüllüğü (%30)
+// S_U: Uygulama Yolunun Özgüllüğü (%20)
+// Formül: R_7 = 0.50 S_F + 0.30 S_D + 0.20 S_U
+// Gerekçeli Puanlama Kuralı: Bir özelliğin tek başına risk yaratmadığı,
+// alternatif klinik kullanımı gerçekten zorlaştırdığı durumlarda yüksek puan.
+// ==========================================================================
+function calculateDrugR7Score(r) {
+  const pRaw = (r.presentation || '').trim();
+  const p = pRaw.toLowerCase();
+  const dfRaw = (r.dosage_form || '').trim();
+  const df = dfRaw.toLowerCase();
+
+  // 1. S_F: Dozaj Formu (%50)
+  let sF = 25;
+  let sFLabel = 'Standart Ani Salımlı Oral Form (IR Tablet/Kapsül)';
+  let isMissingSf = false;
+
+  const isXR = p.includes('extended release') || p.includes('sustained release') || p.includes('delayed release') || df.includes('extended release') || df.includes('sustained release');
+  const isSpecialForm = df.includes('suppository') || df.includes('film') || p.includes('suppository') || p.includes('film') || p.includes('rektal');
+  const isInjection = df.includes('injection') || p.includes('injection') || p.includes('vial') || p.includes('ampul') || p.includes('şırınga') || p.includes('syringe');
+
+  if (!dfRaw && !pRaw) {
+    sF = 0;
+    sFLabel = '⚠️ Eksik Veri (Dozaj Formu Belirtilmemiş)';
+    isMissingSf = true;
+  } else if (isXR) {
+    sF = 90;
+    sFLabel = '🚨 Uzatılmış / Modifiye Salımlı (XR/ER) Form (Bölünemez / Dar Salım Aralığı)';
+  } else if (isSpecialForm) {
+    sF = 85;
+    sFLabel = 'Nadir / Özel Dozaj Formu (Rektal Süpozituvar / Mukozal Film)';
+  } else if (isInjection) {
+    sF = 60;
+    sFLabel = 'Steril Parenteral Enjeksiyon / İnfüzyon (Aseptik Üretim Şartı)';
+  } else {
+    sF = 25;
+    sFLabel = 'Standart Ani Salımlı Oral Form (Rutin İkameye Uygun)';
+  }
+
+  // 2. S_D: Doz ve Konsantrasyon Özgüllüğü (%30)
+  let sD = 25;
+  let sDLabel = 'Standart Sabit Dozaj (Miligram Oral Form)';
+  let isMissingSd = false;
+
+  const isMcg = p.includes('mcg') || p.includes('microgram') || p.includes('µg');
+  const isPF = p.includes('preservative-free') || p.includes('preservative free');
+  const hasMgMl = p.includes('/ml') || p.includes('/1 ml') || p.includes('/2 ml') || p.includes('/5 ml') || p.includes('/10 ml') || p.includes('/20 ml') || p.includes('/50 ml');
+
+  if (!pRaw) {
+    sD = 0;
+    sDLabel = '⚠️ Eksik Veri (Doz/Konsantrasyon Belirtilmemiş)';
+    isMissingSd = true;
+  } else if (isMcg) {
+    sD = 95;
+    sDLabel = '🚨 Mikrogram (mcg) Düzeyinde Kritik Dar Terapötik İndeks / Yüksek Potens';
+  } else if (isPF) {
+    sD = 90;
+    sDLabel = '🚨 Koruyucusuz (Preservative-Free) Spesifik Form (Nörotoksisite Bariyeri)';
+  } else if (hasMgMl) {
+    sD = 65;
+    sDLabel = 'Özgül Enjektabl Konsantrasyon (mg/mL Oranı / İnfüzyon Kısıtı)';
+  } else {
+    sD = 25;
+    sDLabel = 'Standart Sabit Miligram Oral Dozaj (Kolay İkame)';
+  }
+
+  // 3. S_U: Uygulama Yolunun Özgüllüğü (%20)
+  let sU = 25;
+  let sULabel = 'Oral (Ağız Yolu) - Rutin İkameye Uygun';
+  let isMissingSu = false;
+
+  const isParenteral = isInjection || /\b(iv|i\.v\.|im|i\.m\.|intravenous|intramuscular|subcutaneous)\b/i.test(p);
+  const isRectalMucosal = isSpecialForm || p.includes('rectal') || p.includes('buccal') || p.includes('sublingual');
+
+  if (!pRaw && !dfRaw) {
+    sU = 0;
+    sULabel = '⚠️ Eksik Veri (Uygulama Yolu Belirtilmemiş)';
+    isMissingSu = true;
+  } else if (isParenteral) {
+    sU = 90;
+    sULabel = '🚨 Parenteral / İntravenöz (Yoğun Bakım & Acil Alternatifsiz Yol)';
+  } else if (isRectalMucosal) {
+    sU = 80;
+    sULabel = 'Rektal / Transmükozal (Oral Alamayan Hastalarda Klinik Şart)';
+  } else {
+    sU = 25;
+    sULabel = 'Oral (Ağız Yolu) - En Esnek & Yüksek Tolere Edilebilir Yol';
+  }
+
+  const isMissing = isMissingSf || isMissingSd || isMissingSu;
+
+  // Ağırlıklı Toplam: R7 = 0.50 SF + 0.30 SD + 0.20 SU
+  const rawScore = (0.50 * sF) + (0.30 * sD) + (0.20 * sU);
+  const score = Math.round(rawScore * 10) / 10;
+
+  let level = 'Orta Risk';
+  let tierKey = 'orta';
+  let color = '#4f46e5';
+  let bg = '#eef2ff';
+  let border = '#a5b4fc';
+  let badgeBg = '#e0e7ff';
+  let badgeColor = '#3730a3';
+
+  if (score >= 80) {
+    level = 'Kritik Risk (80–100 Puan)';
+    tierKey = 'kritik';
+    color = '#be123c';
+    bg = '#fff1f2';
+    border = '#fecdd3';
+    badgeBg = '#fee2e2';
+    badgeColor = '#9f1239';
+  } else if (score >= 60) {
+    level = 'Çok Yüksek Risk (60–79.9 Puan)';
+    tierKey = 'cokYuksek';
+    color = '#ea580c';
+    bg = '#fff7ed';
+    border = '#fed7aa';
+    badgeBg = '#ffedd5';
+    badgeColor = '#9a3412';
+  } else if (score >= 40) {
+    level = 'Yüksek Risk (40–59.9 Puan)';
+    tierKey = 'yuksek';
+    color = '#4f46e5';
+    bg = '#eef2ff';
+    border = '#c7d2fe';
+    badgeBg = '#e0e7ff';
+    badgeColor = '#3730a3';
+  } else if (score >= 20) {
+    level = 'Orta Risk (20–39.9 Puan)';
+    tierKey = 'orta';
+    color = '#0284c7';
+    bg = '#f0f9ff';
+    border = '#bae6fd';
+    badgeBg = '#e0f2fe';
+    badgeColor = '#0369a1';
+  } else {
+    level = 'Düşük Risk (< 20 Puan)';
+    tierKey = 'dusuk';
+    color = '#16a34a';
+    bg = '#dcfce7';
+    border = '#86efac';
+    badgeBg = '#bbf7d0';
+    badgeColor = '#166534';
+  }
+
+  return {
+    score,
+    rawScore,
+    sF,
+    sFLabel,
+    isMissingSf,
+    sD,
+    sDLabel,
+    isMissingSd,
+    sU,
+    sULabel,
+    isMissingSu,
+    isMissing,
+    isXR,
+    isSpecialForm,
+    isInjection,
+    isMcg,
+    isPF,
+    hasMgMl,
+    isParenteral,
+    isRectalMucosal,
+    level,
+    tierKey,
+    color,
+    bg,
+    border,
+    badgeBg,
+    badgeColor
+  };
+}
+
+let r7DrugFilterState = {
+  query: '',
+  tierFilter: 'all', // 'all', 'xr', 'sterile', 'mcg', 'pf', 'special', 'kritik', 'cokYuksek', 'yuksek', 'orta', 'dusuk'
+  page: 1,
+  pageSize: 15
+};
+
+function getR7DistributionStats() {
+  const records = getV2Green400Records();
+  let sumF = 0;
+  let sumD = 0;
+  let sumU = 0;
+  let sumR7 = 0;
+  let xrCount = 0;
+  let sterileCount = 0;
+  let mcgCount = 0;
+  let pfCount = 0;
+  let specialCount = 0;
+  let missingCount = 0;
+
+  const tiers = [
+    { key: 'kritik', label: 'Kritik Risk (80–100 Puan)', minScore: 80, maxScore: 100, count: 0, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+    { key: 'cokYuksek', label: 'Çok Yüksek (60–79.9 Puan)', minScore: 60, maxScore: 79.9, count: 0, color: '#ea580c', bg: '#ffedd5', border: '#fed7aa' },
+    { key: 'yuksek', label: 'Yüksek (40–59.9 Puan)', minScore: 40, maxScore: 59.9, count: 0, color: '#4f46e5', bg: '#e0e7ff', border: '#c7d2fe' },
+    { key: 'orta', label: 'Orta (20–39.9 Puan)', minScore: 20, maxScore: 39.9, count: 0, color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+    { key: 'dusuk', label: 'Düşük (< 20 Puan)', minScore: 0, maxScore: 19.9, count: 0, color: '#16a34a', bg: '#dcfce7', border: '#86efac' }
+  ];
+
+  records.forEach(r => {
+    const res = calculateDrugR7Score(r);
+    sumF += res.sF;
+    sumD += res.sD;
+    sumU += res.sU;
+    sumR7 += res.score;
+    if (res.isXR) xrCount++;
+    if (res.isInjection) sterileCount++;
+    if (res.isMcg) mcgCount++;
+    if (res.isPF) pfCount++;
+    if (res.isSpecialForm) specialCount++;
+    if (res.isMissing) missingCount++;
+
+    const t = tiers.find(item => item.key === res.tierKey);
+    if (t) t.count++;
+  });
+
+  const total = records.length || 400;
+  const avgF = Math.round((sumF / total) * 10) / 10;
+  const avgD = Math.round((sumD / total) * 10) / 10;
+  const avgU = Math.round((sumU / total) * 10) / 10;
+  const avgR7 = Math.round((sumR7 / total) * 10) / 10;
+
+  return {
+    total,
+    avgF,
+    avgD,
+    avgU,
+    avgR7,
+    xrCount,
+    sterileCount,
+    mcgCount,
+    pfCount,
+    specialCount,
+    missingCount,
+    tiers
+  };
+}
+
+function handleR7DrugSearch(q) {
+  r7DrugFilterState.query = q;
+  r7DrugFilterState.page = 1;
+  const c = riskCriteriaState.criteria.find(item => item.id === 7);
+  if (c) renderCriterion7DetailPage(c);
+}
+
+function handleR7TierFilter(f) {
+  r7DrugFilterState.tierFilter = f;
+  r7DrugFilterState.page = 1;
+  const c = riskCriteriaState.criteria.find(item => item.id === 7);
+  if (c) renderCriterion7DetailPage(c);
+}
+
+function handleR7DrugPage(p) {
+  r7DrugFilterState.page = Math.max(1, p);
+  const c = riskCriteriaState.criteria.find(item => item.id === 7);
+  if (c) renderCriterion7DetailPage(c);
+}
+
+function applySingleDrugR7ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR7Score(d);
+  const c = riskCriteriaState.criteria.find(item => item.id === 7);
+  if (!c) return;
+
+  c.score = res.score;
+  if (c.subCriteria && c.subCriteria.length >= 3) {
+    c.subCriteria[0].score = res.sF;
+    c.subCriteria[0].dataStatus = res.isMissingSf ? 'insufficient' : 'available';
+    c.subCriteria[1].score = res.sD;
+    c.subCriteria[1].dataStatus = res.isMissingSd ? 'insufficient' : 'available';
+    c.subCriteria[2].score = res.sU;
+    c.subCriteria[2].dataStatus = res.isMissingSu ? 'insufficient' : 'available';
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  renderCriterion7DetailPage(c);
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının ürün özellikleri (S_F: ${res.sF}, S_D: ${res.sD}, S_U: ${res.sU}) baz alınarak R₇ Puanı ${res.score}/100 (${res.level}) olarak atandı ve 3 alt göstergeye yansıtıldı.`);
+  }
+}
+
+function applyCollectiveR7ToCriterion() {
+  const stats = getR7DistributionStats();
+  const c = riskCriteriaState.criteria.find(item => item.id === 7);
+  if (!c) return;
+
+  c.score = stats.avgR7;
+  if (c.subCriteria && c.subCriteria.length >= 3) {
+    c.subCriteria[0].score = stats.avgF;
+    c.subCriteria[0].dataStatus = 'available';
+    c.subCriteria[1].score = stats.avgD;
+    c.subCriteria[1].dataStatus = 'available';
+    c.subCriteria[2].score = stats.avgU;
+    c.subCriteria[2].dataStatus = 'available';
+  }
+  renderCriterion7DetailPage(c);
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın kolektif ağırlıklı ortalama R₇ Puanı (${stats.avgR7}/100) ve 3 alt gösterge ortalamaları (S_F: ${stats.avgF}, S_D: ${stats.avgD}, S_U: ${stats.avgU}) Criterion 7'ye başarıyla aktarıldı!`);
+  }
+}
+
 function getV2Green400Records() {
   if (!v2FdaRecordsCache || !Array.isArray(v2FdaRecordsCache)) return [];
   const enriched = v2FdaRecordsCache.map(enrichShortageRecord);
@@ -6062,13 +6380,9 @@ function applyDrugToRiskCriteria(drugId) {
   const r6Info = calculateDrugR6Score(d);
   const r6 = r6Info.score;
 
-  // R7: Ürün özellikleri ve ikame edilebilirlik (Türkiye yerli muadil sayısı)
-  let r7 = 50;
-  const equivCount = d.greenData?.localEquivCount;
-  if (equivCount === 0) r7 = 95;
-  else if (equivCount !== undefined && equivCount <= 2) r7 = 68;
-  else if (equivCount !== undefined && equivCount > 2) r7 = 35;
-  else r7 = 55;
+  // R7: Ürün özellikleri ve ikame edilebilirlik (3 alt bileşenli resmi formül: 0.50 SF + 0.30 SD + 0.20 SU)
+  const r7Res = calculateDrugR7Score(d);
+  const r7 = r7Res.score;
 
   // R8: Finansal, yasal ve bilgi akışı riskleri (yeşil reçete kotası & kur hassasiyeti)
   let r8 = 75;
@@ -6112,6 +6426,14 @@ function applyDrugToRiskCriteria(drugId) {
         c.subCriteria[2].dataStatus = r5Res.isMissingSg ? 'insufficient' : 'available';
         c.subCriteria[3].score = r5Res.sB;
         c.subCriteria[3].dataStatus = 'available';
+      }
+      if (c.id === 7 && c.subCriteria && c.subCriteria.length >= 3) {
+        c.subCriteria[0].score = r7Res.sF;
+        c.subCriteria[0].dataStatus = r7Res.isMissingSf ? 'insufficient' : 'available';
+        c.subCriteria[1].score = r7Res.sD;
+        c.subCriteria[1].dataStatus = r7Res.isMissingSd ? 'insufficient' : 'available';
+        c.subCriteria[2].score = r7Res.sU;
+        c.subCriteria[2].dataStatus = r7Res.isMissingSu ? 'insufficient' : 'available';
       }
     }
   });
@@ -6312,6 +6634,7 @@ function renderRiskCriteriaDrugTableOnly() {
             const r2Drug = calculateDrugR2Score(r);
             const r4Drug = calculateDrugR4Score(r);
             const r5Drug = calculateDrugR5Score(r);
+            const r7Drug = calculateDrugR7Score(r);
             return `
               <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
                 <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
@@ -6360,9 +6683,12 @@ function renderRiskCriteriaDrugTableOnly() {
                   <div style="font-size:12.5px; color:#1e293b; line-height:1.55; word-break:break-word; font-weight:500;">
                     ${esc(r.presentation)}
                   </div>
-                  <div style="margin-top:6px;">
+                  <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:5px;">
                     <span class="badge" style="background:${r5Drug.badgeBg}; color:${r5Drug.badgeColor}; border:1px solid ${r5Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R5 Lojistik & Tedarik Süresi: S_L: ${r5Drug.sL}, S_V: ${r5Drug.sV}, S_G: ${r5Drug.sG}, S_B: ${r5Drug.sB}">
                       🚢 R₅: ${r5Drug.score}/100 (${r5Drug.level})
+                    </span>
+                    <span class="badge" style="background:${r7Drug.badgeBg}; color:${r7Drug.badgeColor}; border:1px solid ${r7Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R7 Ürün Özellikleri & İkame: S_F: ${r7Drug.sF}, S_D: ${r7Drug.sD}, S_U: ${r7Drug.sU}">
+                      🔄 R₇: ${r7Drug.score}/100 (${r7Drug.level})
                     </span>
                   </div>
                   ${(r.ndc || r.application_no) ? `
@@ -6678,6 +7004,15 @@ window.handleR5DrugPage = handleR5DrugPage;
 window.applySingleDrugR5ToCriterion = applySingleDrugR5ToCriterion;
 window.applyCollectiveR5ToCriterion = applyCollectiveR5ToCriterion;
 window.renderCriterion5DetailPage = renderCriterion5DetailPage;
+
+window.calculateDrugR7Score = calculateDrugR7Score;
+window.getR7DistributionStats = getR7DistributionStats;
+window.handleR7DrugSearch = handleR7DrugSearch;
+window.handleR7TierFilter = handleR7TierFilter;
+window.handleR7DrugPage = handleR7DrugPage;
+window.applySingleDrugR7ToCriterion = applySingleDrugR7ToCriterion;
+window.applyCollectiveR7ToCriterion = applyCollectiveR7ToCriterion;
+window.renderCriterion7DetailPage = renderCriterion7DetailPage;
 
 function renderCriterion1DetailPage(c) {
   if (!c.subCriteria || c.subCriteria.length === 0) {
@@ -9717,6 +10052,589 @@ function renderCriterion6DetailPage(c) {
   `;
 }
 
+function renderCriterion7DetailPage(c) {
+  const stats = getR7DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR7Drugs = allDrugs.map(r => {
+    const res = calculateDrugR7Score(r);
+    return {
+      record: r,
+      r7Score: res.score,
+      sF: res.sF,
+      sFLabel: res.sFLabel,
+      isMissingSf: res.isMissingSf,
+      sD: res.sD,
+      sDLabel: res.sDLabel,
+      isMissingSd: res.isMissingSd,
+      sU: res.sU,
+      sULabel: res.sULabel,
+      isMissingSu: res.isMissingSu,
+      isMissing: res.isMissing,
+      isXR: res.isXR,
+      isSpecialForm: res.isSpecialForm,
+      isInjection: res.isInjection,
+      isMcg: res.isMcg,
+      isPF: res.isPF,
+      hasMgMl: res.hasMgMl,
+      isParenteral: res.isParenteral,
+      isRectalMucosal: res.isRectalMucosal,
+      level: res.level,
+      tierKey: res.tierKey,
+      color: res.color,
+      bg: res.bg,
+      border: res.border,
+      badgeBg: res.badgeBg,
+      badgeColor: res.badgeColor
+    };
+  });
+
+  if (r7DrugFilterState.query) {
+    const q = r7DrugFilterState.query.toLowerCase().trim();
+    filteredR7Drugs = filteredR7Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const df = (r.dosage_form || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || df.includes(q);
+    });
+  }
+
+  if (r7DrugFilterState.tierFilter !== 'all') {
+    if (r7DrugFilterState.tierFilter === 'xr') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isXR);
+    } else if (r7DrugFilterState.tierFilter === 'sterile') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isInjection);
+    } else if (r7DrugFilterState.tierFilter === 'mcg') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isMcg);
+    } else if (r7DrugFilterState.tierFilter === 'pf') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isPF);
+    } else if (r7DrugFilterState.tierFilter === 'special') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isSpecialForm);
+    } else if (r7DrugFilterState.tierFilter === 'missing') {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.isMissing);
+    } else {
+      filteredR7Drugs = filteredR7Drugs.filter(item => item.tierKey === r7DrugFilterState.tierFilter);
+    }
+  }
+
+  const r7TotalFiltered = filteredR7Drugs.length;
+  const r7PageSize = r7DrugFilterState.pageSize || 15;
+  const r7TotalPages = Math.max(1, Math.ceil(r7TotalFiltered / r7PageSize));
+  if (r7DrugFilterState.page > r7TotalPages) r7DrugFilterState.page = r7TotalPages;
+  const r7StartIdx = (r7DrugFilterState.page - 1) * r7PageSize;
+  const r7EndIdx = Math.min(r7StartIdx + r7PageSize, r7TotalFiltered);
+  const r7PaginatedDrugs = filteredR7Drugs.slice(r7StartIdx, r7EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #c7d2fe;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#eef2ff; color:#4f46e5; border:1.5px solid #a5b4fc; font-weight:800; font-size:12px; padding:6px 14px;">
+          🔄 R₇ Kriter Analiz & Alt Ağırlık Sistemi
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #4f46e5; border-color:#a5b4fc; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #eef2ff 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); box-shadow:0 4px 14px rgba(79, 70, 229, 0.35);">
+            R₇
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f172a; display:flex; align-items:center; gap:8px;">
+              <span>🔄</span> Ürün Özellikleri ve İkame Edilebilirlik
+            </h1>
+            <p style="color:#64748b; font-size:13px; margin:3px 0 0; font-style:italic;">
+              Product characteristics and substitutability · Değişken Kodu: <b style="color:#4f46e5;">R7</b> · Ana Denklem Ağırlığı: <b style="color:#4f46e5;">%7 (0.07)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:12px; align-items:center; background:#ffffff; padding:10px 18px; border-radius:12px; border:1.5px solid #a5b4fc; box-shadow:0 4px 12px rgba(79,70,229,0.08);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₇):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateMainCriterionWeight(7, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">R₇ Risk Puanı:</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.score}" id="r7MainScoreInput" style="width:65px; height:32px; font-weight:800; text-align:center; border:2px solid #4f46e5; border-radius:6px; color:#4f46e5;" onchange="updateMainCriterionScore(7, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: METODOLOJİ, 3 ALT BİLEŞEN VE GEREKÇELİ PUANLAMA MODELİ -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #a5b4fc; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(79, 70, 229, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#3730a3; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 1. Metodoloji, 3 Alt Bileşen ve Gerekçeli Puanlama Modeli
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              <b>R₇</b> kriteri, bir ilacın dozaj formunu (%50), doz/konsantrasyon hassasiyetini (%30) ve uygulama yolunu (%20) değerlendirir. <b>Temel Puanlama İlkesi:</b> Bir formun, dozun veya yolun tek başına yüksek risk yarattığı varsayılmaz. Yüksek puan yalnızca alternatif klinik ikameyi gerçekten zorlaştıran teknik ve farmakolojik kurallarla gerekçelendirilir; veri yetersizse uydurulmaz, <b>⚠️ Eksik Veri</b> olarak işaretlenir.
+            </p>
+          </div>
+          <span class="badge" style="background:#eef2ff; color:#4f46e5; border:1px solid #a5b4fc; font-weight:800; font-size:11.5px; padding:4px 10px;">
+            3 Alt Göstergeli İkame Modeli
+          </span>
+        </div>
+
+        <!-- 3 Alt Kriter Tablosu -->
+        <div class="data-table" style="margin-bottom:16px; overflow-x:auto;">
+          <table class="r5-tier-table">
+            <thead>
+              <tr>
+                <th style="min-width:240px; text-align:left;">Alt Bileşen Tanımı</th>
+                <th style="width:100px; text-align:center;">Değişken</th>
+                <th style="width:120px; text-align:center;">İç Ağırlık</th>
+                <th style="min-width:300px; text-align:left;">Ölçülen Gösterge & Gerekçeli İkame Kuralı</th>
+                <th style="width:130px; text-align:center;">Risk Puan Aralığı</th>
+                <th style="width:130px; text-align:center;">400 İlaç Ortalaması</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">1. Dozaj Formu İkame Riski</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#4f46e5;">S_F</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">%50 (0.50)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Uzatılmış/Modifiye salım (XR/ER) (90 Puan), Nadir/Özel form (Süpozituvar/Film) (85 Puan), Steril Enjeksiyon (60 Puan), Standart Oral IR Tablet/Kapsül (25 Puan), Eksik Veri (0 Puan)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">25 – 90</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">${stats.avgF} / 100</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">2. Doz ve Konsantrasyon Özgüllüğü</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#4f46e5;">S_D</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">%30 (0.30)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Mikrogram (mcg) dar terapötik indeks (95 Puan), Koruyucusuz (PF) steril form (90 Puan), Belirli mg/mL infüzyon konsantrasyonu (65 Puan), Standart sabit miligram oral doz (25 Puan), Eksik Veri (0 Puan)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">25 – 95</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">${stats.avgD} / 100</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">3. Uygulama Yolunun Özgüllüğü</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#4f46e5;">S_U</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">%20 (0.20)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Parenteral / İntravenöz / İntramüsküler acil alternatifsiz yol (90 Puan), Rektal/Transmükozal klinik şart (80 Puan), Oral ağız yolu rutin ikame (25 Puan), Eksik Veri (0 Puan)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">25 – 90</td>
+                <td style="text-align:center; font-weight:800; color:#4f46e5;">${stats.avgU} / 100</td>
+              </tr>
+              <tr style="background:#eef2ff; font-weight:800;">
+                <td style="color:#3730a3;">TOPLAM AĞIRLIKLI R₇ MODELİ</td>
+                <td style="text-align:center; color:#3730a3;">∑</td>
+                <td style="text-align:center; color:#3730a3;">%100 (1.00)</td>
+                <td colspan="2" style="font-family:'DM Mono', monospace; font-size:12.5px; color:#3730a3;">
+                  R₇ = 0.50 S_F + 0.30 S_D + 0.20 S_U
+                </td>
+                <td style="text-align:center; font-size:14px; color:#3730a3;">
+                  ${stats.avgR7} / 100
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 3 Gerekçeli Kural Kutusu -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+          <div style="background:#f8fafc; padding:14px 18px; border-radius:10px; border:1.5px solid #cbd5e1;">
+            <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase;">1. S_F — Dozaj Formu (%50):</div>
+            <div style="font-size:14px; font-weight:800; color:#0f172a; margin:6px 0; font-family:'DM Mono', monospace;">
+              XR/ER: 90 · Nadir: 85 · Steril: 60 · IR: 25
+            </div>
+            <div style="font-size:12px; color:#475569; line-height:1.45;">
+              • Uzatılmış salım formu bölünemez, ani salımla ikame toksisiteye (dose dumping) yol açar. Standart oral tabletler piyasada en kolay ikame edilir.
+            </div>
+          </div>
+
+          <div style="background:#eff6ff; padding:14px 18px; border-radius:10px; border:1.5px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase;">2. S_D — Doz / Konsantrasyon (%30):</div>
+            <div style="font-size:14px; font-weight:800; color:#1e40af; margin:6px 0; font-family:'DM Mono', monospace;">
+              mcg: 95 · PF: 90 · mg/mL: 65 · Sabit: 25
+            </div>
+            <div style="font-size:12px; color:#1e40af; line-height:1.45;">
+              • Mikrogram düzeyindeki dar terapötik aralık ve koruyucusuz (PF) steril formlar hayati risk taşır; standart miligram tabletler kolayca bölünebilir.
+            </div>
+          </div>
+
+          <div style="background:#fdf4ff; padding:14px 18px; border-radius:10px; border:1.5px solid #f0abfc;">
+            <div style="font-size:11px; font-weight:800; color:#86198f; text-transform:uppercase;">3. S_U — Uygulama Yolu (%20):</div>
+            <div style="font-size:14px; font-weight:800; color:#701a75; margin:6px 0; font-family:'DM Mono', monospace;">
+              Parenteral: 90 · Rektal: 80 · Oral: 25
+            </div>
+            <div style="font-size:12px; color:#701a75; line-height:1.45;">
+              • Yoğun bakım ve acilde intravenöz yol alternatifsizdir; oral yola çevrilemez. Oral yol ayaktan tedavide en tolere edilebilir ve ikame edilebilir yoldur.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: 400 YEŞİL REÇETELİ İLAÇ İSTATİSTİK ÖZETİ & KOLEKTİF PUAN -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #a5b4fc; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(79, 70, 229, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#3730a3; display:flex; align-items:center; gap:8px;">
+              <span>📊</span> 2. Alt Bileşenler & Dağılım İstatistikleri (400 Yeşil Reçeteli İlaç)
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b;">
+              Türkiye yeşil reçete listesindeki 400 ilacın form, doz ve uygulama yolu bazlı ikame riski analizi.
+            </p>
+          </div>
+          <button type="button" class="button" style="background:#4f46e5; border-color:#3730a3; font-size:12.5px; padding:10px 20px; font-weight:700; box-shadow:0 2px 10px rgba(79,70,229,0.3); display:inline-flex; align-items:center; gap:8px;" onclick="applyCollectiveR7ToCriterion()">
+            <span>🎯</span> 400 İlacın Kolektif İkame Risk Puanını (${stats.avgR7}) ve Alt Göstergeleri Ata
+          </button>
+        </div>
+
+        <!-- 5 Metrik Kartı -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
+          <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; border:1px solid #cbd5e1;">
+            <div style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase;">Ortalama S_F (%50):</div>
+            <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${stats.avgF} / 100</div>
+            <small style="font-size:11px; color:#64748b; display:block; margin-top:2px;">${stats.xrCount} İlaç XR/ER Formda</small>
+          </div>
+
+          <div style="background:#eff6ff; padding:12px 14px; border-radius:10px; border:1px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:700; color:#1e40af; text-transform:uppercase;">Ortalama S_D (%30):</div>
+            <div style="font-size:18px; font-weight:800; color:#1d4ed8; margin-top:2px;">${stats.avgD} / 100</div>
+            <small style="font-size:11px; color:#2563eb; display:block; margin-top:2px;">${stats.mcgCount} Mcg + ${stats.pfCount} PF Form</small>
+          </div>
+
+          <div style="background:#fdf4ff; padding:12px 14px; border-radius:10px; border:1px solid #f0abfc;">
+            <div style="font-size:11px; font-weight:700; color:#86198f; text-transform:uppercase;">Ortalama S_U (%20):</div>
+            <div style="font-size:18px; font-weight:800; color:#701a75; margin-top:2px;">${stats.avgU} / 100</div>
+            <small style="font-size:11px; color:#9333ea; display:block; margin-top:2px;">${stats.sterileCount} Parenteral / IV İlaç</small>
+          </div>
+
+          <div style="background:linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); padding:12px 14px; border-radius:10px; border:1.5px solid #a5b4fc; box-shadow:0 2px 8px rgba(79,70,229,0.1);">
+            <div style="font-size:11px; font-weight:800; color:#3730a3; text-transform:uppercase;">Kolektif Ağırlıklı R₇:</div>
+            <div style="font-size:19px; font-weight:800; color:#1e1b4b; margin-top:2px;">${stats.avgR7} / 100</div>
+            <small style="font-size:11px; font-weight:700; color:#4338ca; display:block; margin-top:2px;">Orta-Yüksek Risk Bandı</small>
+          </div>
+
+          <div style="background:#fffbeb; padding:12px 14px; border-radius:10px; border:1px solid #fde68a;">
+            <div style="font-size:11px; font-weight:700; color:#b45309; text-transform:uppercase;">Eksik Veri Durumu:</div>
+            <div style="font-size:18px; font-weight:800; color:#92400e; margin-top:2px;">${stats.missingCount} İlaç</div>
+            <small style="font-size:11px; color:#b45309; display:block; margin-top:2px;">
+              ${stats.missingCount > 0 ? '⚠️ Eksik veri tespit edildi' : '🟢 400 İlacın Tümü Tanımlı'}
+            </small>
+          </div>
+        </div>
+
+        <!-- Risk Kademe ve Filtre Çipleri -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <span style="font-size:12px; font-weight:700; color:#64748b; margin-right:4px;">Ürün Özelliği Filtreleri:</span>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR7TierFilter('all')">
+            🌐 Tümü (${stats.total})
+          </button>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'xr' ? 'active' : ''}" style="${r7DrugFilterState.tierFilter === 'xr' ? 'background:#fee2e2; border-color:#fca5a5; color:#991b1b;' : 'border-color:#fecaca; color:#b91c1c;'}" onclick="handleR7TierFilter('xr')">
+            ⏱️ Uzatılmış Salımlı (XR/ER) (${stats.xrCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'sterile' ? 'active' : ''}" style="${r7DrugFilterState.tierFilter === 'sterile' ? 'background:#e0f2fe; border-color:#bae6fd; color:#0369a1;' : 'border-color:#bfdbfe; color:#0284c7;'}" onclick="handleR7TierFilter('sterile')">
+            💉 Steril Enjeksiyonluk (${stats.sterileCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'mcg' ? 'active' : ''}" style="${r7DrugFilterState.tierFilter === 'mcg' ? 'background:#fef3c7; border-color:#fde68a; color:#92400e;' : 'border-color:#fed7aa; color:#b45309;'}" onclick="handleR7TierFilter('mcg')">
+            🔬 Mikrogram / Dar İndeks (${stats.mcgCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'pf' ? 'active' : ''}" style="${r7DrugFilterState.tierFilter === 'pf' ? 'background:#faf5ff; border-color:#e9d5ff; color:#6b21a8;' : 'border-color:#e9d5ff; color:#7e22ce;'}" onclick="handleR7TierFilter('pf')">
+            🛡️ Koruyucusuz (PF) (${stats.pfCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === 'special' ? 'active' : ''}" style="${r7DrugFilterState.tierFilter === 'special' ? 'background:#fdf2f8; border-color:#fbcfe8; color:#9d174d;' : 'border-color:#fbcfe8; color:#be185d;'}" onclick="handleR7TierFilter('special')">
+            💊 Rektal / Özel (${stats.specialCount})
+          </button>
+          ${stats.tiers.map(t => `
+            <button type="button" class="r2-filter-btn ${r7DrugFilterState.tierFilter === t.key ? 'active' : ''}" onclick="handleR7TierFilter('${t.key}')">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${t.color};"></span>
+              ${t.label}: <b>${t.count}</b>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA 3 ALT GÖSTERGE VE NİHAİ R₇ TABLOSU -->
+      <div style="background:#ffffff; border:1.5px solid #a5b4fc; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(79,70,229,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#3730a3; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 400 Yeşil Reçeteli İlaç İçin Ürün Özellikleri ve Nihai R₇ Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b;">
+              Her ilacın dozaj formu (S_F), doz ve konsantrasyonu (S_D) ile uygulama yolu (S_U) gerekçeli kurallarla puanlanmıştır.
+            </p>
+          </div>
+
+          <div style="position:relative; width:260px;">
+            <input type="text" value="${esc(r7DrugFilterState.query)}" placeholder="İlaç adı, üretici veya form ara..." style="width:100%; height:34px; padding:0 12px 0 30px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; outline:none; box-sizing:border-box;" oninput="handleR7DrugSearch(this.value)">
+            <span style="position:absolute; left:9px; top:8px; font-size:13px; color:#94a3b8;">🔍</span>
+          </div>
+        </div>
+
+        <div class="data-table" style="overflow-x:auto;">
+          <table class="dsrds-crit-detail-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">#</th>
+                <th style="min-width:200px;">İlaç / Etkin Madde & Marka (FDA)</th>
+                <th style="min-width:220px;">Sunum, Dozaj Formu & Paket (FDA)</th>
+                <th style="min-width:140px; text-align:center;">Dozaj Formu (S_F, %50)</th>
+                <th style="min-width:150px; text-align:center;">Doz / Konsantrasyon (S_D, %30)</th>
+                <th style="min-width:140px; text-align:center;">Uygulama Yolu (S_U, %20)</th>
+                <th style="min-width:140px; text-align:center;">Nihai R₇ Skoru</th>
+                <th style="width:120px; text-align:center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r7PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center; padding:30px; color:#94a3b8;">
+                    Arama kriterlerine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r7PaginatedDrugs.map((item, idx) => {
+                const seq = r7StartIdx + idx + 1;
+                const r = item.record;
+                return `
+                  <tr>
+                    <td style="text-align:center; font-weight:700; color:#64748b;">${seq}</td>
+                    <td>
+                      <div style="font-weight:700; font-size:13px; color:#0f172a;">
+                        ${esc(r.generic_name || r.brand_name)}
+                      </div>
+                      ${r.brand_name && r.generic_name !== r.brand_name ? `
+                        <div style="font-size:11px; color:#64748b; font-style:italic;">
+                          ${esc(r.brand_name)}
+                        </div>
+                      ` : ''}
+                      <div style="font-size:10.5px; color:#94a3b8; margin-top:2px;">
+                        ${esc(r.manufacturer || r.vendor || '—')}
+                      </div>
+                    </td>
+                    <td>
+                      <div style="font-size:12px; color:#334155; line-height:1.45;">
+                        ${esc(r.presentation)}
+                      </div>
+                      <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
+                        <span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; font-size:10px; padding:2px 6px;">
+                          Form: <b>${esc(r.dosage_form || 'Standart')}</b>
+                        </span>
+                        ${item.isXR ? `<span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-size:10px; padding:2px 6px; font-weight:800;">⏱️ XR/ER</span>` : ''}
+                        ${item.isInjection ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; padding:2px 6px; font-weight:800;">💉 Enjeksiyon</span>` : ''}
+                        ${item.isMcg ? `<span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; font-size:10px; padding:2px 6px; font-weight:800;">🔬 Mcg</span>` : ''}
+                        ${item.isPF ? `<span class="badge" style="background:#faf5ff; color:#6b21a8; border:1px solid #e9d5ff; font-size:10px; padding:2px 6px; font-weight:800;">🛡️ PF</span>` : ''}
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      ${item.isMissingSf ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ⚠️ Eksik Veri
+                        </span>
+                      ` : `
+                        <div style="font-size:13px; font-weight:800; color:${item.sF >= 85 ? '#dc2626' : (item.sF >= 60 ? '#ea580c' : '#16a34a')}; font-family:'DM Mono', monospace;">
+                          ${item.sF} / 100
+                        </div>
+                        <small style="font-size:10px; color:#64748b; display:block; margin-top:2px;">
+                          ${esc(item.sFLabel)}
+                        </small>
+                      `}
+                    </td>
+                    <td style="text-align:center;">
+                      ${item.isMissingSd ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ⚠️ Eksik Veri
+                        </span>
+                      ` : `
+                        <div style="font-size:13px; font-weight:800; color:${item.sD >= 90 ? '#dc2626' : (item.sD >= 65 ? '#ea580c' : '#16a34a')}; font-family:'DM Mono', monospace;">
+                          ${item.sD} / 100
+                        </div>
+                        <small style="font-size:10px; color:#64748b; display:block; margin-top:2px;">
+                          ${esc(item.sDLabel)}
+                        </small>
+                      `}
+                    </td>
+                    <td style="text-align:center;">
+                      ${item.isMissingSu ? `
+                        <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:11px; padding:3px 8px;">
+                          ⚠️ Eksik Veri
+                        </span>
+                      ` : `
+                        <div style="font-size:13px; font-weight:800; color:${item.sU >= 80 ? '#dc2626' : '#16a34a'}; font-family:'DM Mono', monospace;">
+                          ${item.sU} / 100
+                        </div>
+                        <small style="font-size:10px; color:#64748b; display:block; margin-top:2px;">
+                          ${esc(item.sULabel)}
+                        </small>
+                      `}
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:inline-block; padding:4px 10px; border-radius:8px; background:${item.bg}; border:1.5px solid ${item.border};">
+                        <div style="font-size:14px; font-weight:800; color:${item.color}; font-family:'DM Mono', monospace;">
+                          ${item.r7Score}
+                        </div>
+                        <div style="font-size:9.5px; font-weight:800; color:${item.color}; margin-top:1px;">
+                          ${item.level}
+                        </div>
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button" style="font-size:11px; padding:6px 12px; background:#4f46e5; border-color:#3730a3; white-space:nowrap; font-weight:700;" onclick="applySingleDrugR7ToCriterion('${item.record.id}')" title="Bu ilacın S_F, S_D, S_U değerlerini Criterion 7'ye aktar">
+                        🎯 R₇'ye Ata
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sayfalama Kontrolleri -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:16px; padding-top:12px; border-top:1px solid #e2e8f0;">
+          <div style="font-size:12px; color:#64748b;">
+            Toplam <b>${r7TotalFiltered}</b> ilaçtan <b>${r7TotalFiltered === 0 ? 0 : r7StartIdx + 1}–${r7EndIdx}</b> arası gösteriliyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11.5px; padding:5px 12px;" ${r7DrugFilterState.page <= 1 ? 'disabled' : ''} onclick="handleR7DrugPage(${r7DrugFilterState.page - 1})">
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; color:#3730a3; padding:0 8px;">
+              Sayfa ${r7DrugFilterState.page} / ${r7TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11.5px; padding:5px 12px;" ${r7DrugFilterState.page >= r7TotalPages ? 'disabled' : ''} onclick="handleR7DrugPage(${r7DrugFilterState.page + 1})">
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#a5b4fc;">
+        <div style="font-size:11px; font-weight:800; color:#4f46e5; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#3730a3; margin:8px 0; background:#eef2ff; padding:12px 16px; border-radius:8px; border:1px solid #a5b4fc;">
+          R₇ = [ ∑<sub>j=1</sub><sup>n₇</sup> ( a₇<sub>j</sub> × S₇<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₇</sup> a₇<sub>j</sub> ] = 0.50 S_F + 0.30 S_D + 0.20 S_U
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₇</b>: Ürün özellikleri ve ikame edilebilirlik kriterinin nihai risk puanı (0–100).<br>
+          • <b>a₇₁ (Dozaj formu ikame riski S_F)</b>: %50 ağırlık · Uzatılmış salım (XR/ER), steril enjeksiyon veya standart oral ikame güçlüğü.<br>
+          • <b>a₇₂ (Doz ve konsantrasyon özgüllüğü S_D)</b>: %30 ağırlık · Mikrogram hassas dozaj, koruyucusuz (PF) sterilite ve mg/mL oranı.<br>
+          • <b>a₇₃ (Uygulama yolunun özgüllüğü S_U)</b>: %20 ağırlık · Parenteral/IV acil alternatifsizlik, rektal veya rutin oral uygulama yolu.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#4f46e5; border-color:#3730a3;" onclick="addSubCriterion(7)">
+          ➕ Yeni Alt Gösterge Ekle (S₇<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(7)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#eef2ff; color:#3730a3; border-color:#a5b4fc; font-weight:700;" onclick="applySubScoreToMainCriterion(7)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#eef2ff; color:#3730a3; border-color:#a5b4fc; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(7)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #a5b4fc; overflow:hidden;">
+        <table class="sub-crit-table">
+          <thead>
+            <tr style="background: #eef2ff;">
+              <th style="width:50px; text-align:center;">j</th>
+              <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+              <th style="width:140px; text-align:center;">Veri Durumu</th>
+              <th style="width:150px; text-align:center;">Alt Ağırlık (a₇<sub>j</sub>, %)</th>
+              <th style="width:150px; text-align:center;">Risk Puanı (S₇<sub>j</sub>, 0-100)</th>
+              <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+              <th style="width:70px; text-align:center;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              return `
+                <tr>
+                  <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                  <td>
+                    <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(7, ${sub.id}, this.value)" oninput="updateSubCriterionName(7, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center;">
+                    ${sub.dataStatus === 'insufficient' ? `
+                      <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:10.5px; padding:2px 7px;" title="Veri eksikliği uyarısı">⚠️ Eksik Veri</span>
+                    ` : `
+                      <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    `}
+                  </td>
+                  <td style="text-align:center;">
+                    <div style="display:inline-flex; align-items:center; gap:4px;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="width:65px; height:32px; font-weight:700; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateSubCriterionWeight(7, ${sub.id}, this.value)">
+                      <span style="font-weight:700; color:var(--muted); font-size:12px;">%</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center;">
+                    <div style="display:inline-flex; align-items:center; gap:4px;">
+                      <input type="number" min="0" max="100" value="${sub.score}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1.5px solid #a5b4fc; border-radius:6px; color:#4f46e5;" onchange="updateSubCriterionScore(7, ${sub.id}, this.value)">
+                      <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#4f46e5;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(7, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #eef2ff; font-weight:800;">
+              <td></td>
+              <td style="color:#3730a3;">Alt Ağırlıklı Ortalama Risk Skoru (R₇)</td>
+              <td></td>
+              <td style="text-align:center; color:${subWeightSum === 100 ? '#16a34a' : '#d97706'}; font-size:13px;">
+                ${subWeightSum}% ${subWeightSum === 100 ? '✓' : '⚠️'}
+              </td>
+              <td style="text-align:center; font-size:15px; color:#4f46e5;">
+                ${subScore.toFixed(2)} / 100
+              </td>
+              <td style="text-align:center; color:#4f46e5; font-family:'DM Mono', monospace;">
+                ${subScore.toFixed(2)}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function riskCriteriaPage() {
   const { totalWeightPercent, totalWeightDecimal, rTotal, isBalanced } = calculateOverallRiskScores();
   const tier = getCriteriaRiskTier(rTotal);
@@ -9748,6 +10666,10 @@ function riskCriteriaPage() {
     }
     if (c.id === 6) {
       renderCriterion6DetailPage(c);
+      return;
+    }
+    if (c.id === 7) {
+      renderCriterion7DetailPage(c);
       return;
     }
     const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
