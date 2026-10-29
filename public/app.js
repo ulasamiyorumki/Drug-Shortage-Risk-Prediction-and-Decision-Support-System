@@ -1567,12 +1567,13 @@ function renderMedicareCells(r) {
   const m = getMedicareDataMatch(r);
   if (!m) {
     return `
-      <td>
+      <td style="vertical-align:top; padding:12px 14px;">
         <span class="badge" style="background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; font-size:10.5px; font-weight:600;" title="Medicare Part D reçete kaydı bulunmuyor veya hastane/klinik protokolü">
           ⚪ Belirtilmemiş
         </span>
+        <div style="font-size:9.5px; color:#94a3b8; margin-top:3px; font-weight:500;">2025–2026 Q1</div>
       </td>
-      <td>
+      <td style="vertical-align:top; padding:12px 14px;">
         <span style="color:var(--muted); font-size:11px;">—</span>
       </td>
     `;
@@ -1583,19 +1584,27 @@ function renderMedicareCells(r) {
   const isHospital = (m.claims <= 0) || String(claimsText).includes('Part B');
 
   return `
-    <td>
-      <div style="display:flex; flex-direction:column; gap:2px;">
+    <td style="vertical-align:top; padding:12px 14px;">
+      <div style="display:flex; flex-direction:column; gap:3px;">
         <span class="badge" style="background:${isHospital ? '#f1f5f9' : '#eff6ff'}; color:${isHospital ? '#475569' : '#1d4ed8'}; border:1px solid ${isHospital ? '#cbd5e1' : '#bfdbfe'}; font-weight:800; font-size:11px; width:fit-content;">
           ${isHospital ? '🏥 ' : '💊 '}${esc(claimsText)}
         </span>
-        ${m.benes > 0 ? `<small style="font-size:10px; color:#64748b;">${Number(m.benes).toLocaleString('tr-TR')} Yararlanıcı</small>` : (isHospital ? '<small style="font-size:10px; color:#64748b;">Klinik / IV Uygulama</small>' : '')}
+        ${m.benes > 0 ? `<small style="font-size:10.5px; color:#475569; font-weight:500;">${Number(m.benes).toLocaleString('tr-TR')} Yararlanıcı</small>` : (isHospital ? '<small style="font-size:10px; color:#64748b;">Klinik / IV Uygulama</small>' : '')}
+        <div style="font-size:9.5px; color:#0369a1; font-weight:700; margin-top:2px; display:inline-flex; align-items:center; gap:3px;">
+          <span>⏱</span> <span>2025–2026 Q1 (15 Ay)</span>
+        </div>
       </div>
     </td>
-    <td>
-      <div style="font-weight:800; font-size:12.5px; color:${isHospital ? '#475569' : '#047857'};">
+    <td style="vertical-align:top; padding:12px 14px;">
+      <div style="font-weight:800; font-size:13px; color:${isHospital ? '#475569' : '#047857'};">
         ${esc(spendingText)}
       </div>
-      <small style="font-size:10px; color:#64748b;">CMS Part D</small>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px;">
+        <small style="font-size:10px; color:#64748b; font-weight:600;">CMS Part D</small>
+        <div style="font-size:9.5px; color:#059669; font-weight:700; display:inline-flex; align-items:center; gap:3px;">
+          <span>⏱</span> <span>15 Aylık Toplam Bütçe</span>
+        </div>
+      </div>
     </td>
   `;
 }
@@ -1618,7 +1627,7 @@ window.exportShortagesV2Csv = function() {
       'Molekül Adı', 'Ticari Markalar', 'Yeşil Reçete', 'Sistemik Risk Skoru', 'Risk Seviyesi',
       'FDA Kriz Durumu', 'FDA Kayıt Sayısı', 'FDA Kök Nedenleri',
       'EMA Kriz Durumu', 'EMA Alternatif Durumu (Monopol)', 'EMA Beklenen Çözülme', 'EMA MeSH Alanı',
-      'Medicare Reçete Talebi (Claims)', 'Medicare Toplam Harcama ($)',
+      'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)',
       'Endüstri Mühendisliği Aksiyonu', 'Aksiyon Detayı'
     ];
     const csvContent = '\uFEFF' + [
@@ -1654,7 +1663,7 @@ window.exportShortagesV2Csv = function() {
   }
   const headers = [
     'ID', 'Kaynak', 'İlaç Adı / Generic', 'Marka Adı', 'FDA Kriz Durumu', 'EMA Kriz Durumu',
-    'Medicare Reçete Talebi (Claims)', 'Medicare Toplam Harcama ($)', 'Sıkıntı Nedeni',
+    'Medicare Reçete Talebi (Claims · 2025-2026 Q1 / 15 Aylık)', 'Medicare Toplam Harcama ($ · 2025-2026 Q1 / 15 Aylık)', 'Sıkıntı Nedeni',
     'Terapötik Kategori', 'Bulunabilirlik (Stok)', 'Sunum & Dozaj Formu', 'Üretici Firma',
     'İletişim Bilgisi', 'FDA Başvuru No (ANDA/NDA)', 'NDC Kodu', 'İlk İlan Tarihi',
     'Son Güncelleme', 'Kırılganlık Riski (Puan)', 'Risk Seviyesi', 'Önerilen Mühendislik Aksiyonu', 'Yeşil Reçete'
@@ -2119,8 +2128,14 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th>Transatlantik Risk</th>
               <th style="min-width:240px;">🇺🇸 ABD FDA Kriz Verileri</th>
               <th style="min-width:240px;">🇪🇺 AB EMA Kriz Verileri</th>
-              <th style="min-width:140px;">Medicare Reçete Talebi</th>
-              <th style="min-width:145px;">Medicare Harcama ($)</th>
+              <th style="min-width:160px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+                <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
+              <th style="min-width:165px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Harcama ($)</div>
+                <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
               <th>Beklenen Çözülme (EMA)</th>
               <th style="min-width:260px;">Küresel Endüstri Mühendisliği Aksiyonu</th>
               <th>Resmi Bildirim</th>
@@ -2228,8 +2243,14 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th style="min-width:210px;">İlaç Adı & Etken Madde (INN)</th>
               <th>AB (EMA) Kriz Durumu</th>
               <th style="min-width:145px;">FDA Kriz Durumu</th>
-              <th style="min-width:140px;">Medicare Reçete Talebi</th>
-              <th style="min-width:145px;">Medicare Harcama ($)</th>
+              <th style="min-width:160px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+                <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
+              <th style="min-width:165px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Harcama ($)</div>
+                <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
               <th style="min-width:180px;">Terapötik Alan (MeSH)</th>
               <th style="min-width:240px; padding:12px 16px;">Etkilenen Form & Dozaj</th>
               <th>Alternatif Bulunabilirliği</th>
@@ -2359,8 +2380,14 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
               <th style="min-width:200px;">İlaç / Etkin Madde & Marka</th>
               <th>FDA Kriz Durumu</th>
               <th style="min-width:145px;">EMA Kriz Durumu</th>
-              <th style="min-width:140px;">Medicare Reçete Talebi</th>
-              <th style="min-width:145px;">Medicare Harcama ($)</th>
+              <th style="min-width:160px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Reçete Talebi</div>
+                <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
+              <th style="min-width:165px; padding:12px 14px;">
+                <div style="font-weight:700;">Medicare Harcama ($)</div>
+                <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+              </th>
               <th>Terapötik Kategori</th>
               <th style="min-width:180px;">Sıkıntı Nedeni & Kök Neden</th>
               <th>Bulunabilirlik (Stok)</th>
@@ -2455,8 +2482,14 @@ function shortageTableV2(rows, isFdaSource = true, source = currentShortageV2Sou
             <th>NDC / Kod</th>
             <th>FDA Kriz Durumu</th>
             <th style="min-width:145px;">EMA Kriz Durumu</th>
-            <th style="min-width:140px;">Medicare Reçete Talebi</th>
-            <th style="min-width:145px;">Medicare Harcama ($)</th>
+            <th style="min-width:160px; padding:12px 14px;">
+              <div style="font-weight:700;">Medicare Reçete Talebi</div>
+              <div style="font-size:10px; font-weight:600; color:#0284c7; text-transform:none; margin-top:3px; background:#e0f2fe; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #bae6fd;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+            </th>
+            <th style="min-width:165px; padding:12px 14px;">
+              <div style="font-weight:700;">Medicare Harcama ($)</div>
+              <div style="font-size:10px; font-weight:600; color:#059669; text-transform:none; margin-top:3px; background:#ecfdf5; padding:2px 6px; border-radius:4px; width:fit-content; border:1px solid #a7f3d0;">⏱ 2025 – 2026 Q1 (15 Ay)</div>
+            </th>
             <th style="min-width:180px;">Sıkıntı Nedeni</th>
             <th style="min-width:220px;">Kırılganlık / EM Aksiyonu</th>
             <th>İşlem</th>
@@ -2511,18 +2544,18 @@ async function shortagePageV2(
   const guide = source === 'cross_fda_ema'
     ? guideBanner(
         "ABD FDA ve Avrupa İlaç Ajansı (EMA) resmi kriz listelerinde AYNI ANDA yer alan transatlantik krizdeki moleküllerin birleşik analizidir.",
-        "17 temel molekül altında toplanan 240+ kriz kaydı; hem FDA hem EMA statüsü, alternatif mevcudiyeti ve küresel sistemik risk puanıyla tek kalemde sunulur.",
+        "17 temel molekül altında toplanan 240+ kriz kaydı; hem FDA hem EMA statüsü, alternatif mevcudiyeti, CMS Medicare 15 aylık (2025–2026 Q1) reçete talep/harcama verisi ve küresel sistemik risk puanıyla tek kalemde sunulur.",
         "Hem ABD hem Avrupa pazarında açık veren moleküller, yerel distribütör sorunundan öte küresel hammadde (API) ve üretim darboğazına işaret eder."
       )
     : (source === 'EMA Shortages'
       ? guideBanner(
           "Avrupa İlaç Ajansı (EMA) Resmi Kriz Kataloğundaki 85 ilacın güncel kriz verilerini, etken maddelerini ve alternatif bulunabilirlik durumlarını sunar.",
-          "EMA kriz durumları (Shortage ongoing, Shortage resolved, Medicine discontinued), MeSH terapötik alanları, farmasötik formları ve beklenen çözüm tarihlerini içerir.",
+          "EMA kriz durumları, MeSH terapötik alanları, alternatif bulunabilirlik analizleri ve CMS Medicare 15 aylık (2025–2026 Q1) reçete talep/kamu harcama büyüklüklerini içerir.",
           "Alternatif bulunabilirliği olmayan ilaçlar 'Monopol Tedarik Riski' olarak işaretlenmiş olup doğrudan resmi EMA duyuru sayfasına bağlantı içerir."
         )
       : guideBanner(
           "ABD FDA Drug Shortages veri tabanındaki 1.587 kriz kaydının tamamını resmi FDA sitesiyle birebir senkronize şekilde sunan karar destek merkezidir.",
-          "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını (Onkoloji, Anestezi, Nöroloji), sunum ve dozaj formlarını, bulunabilirlik durumlarını ve kök nedenlerini tek ekranda inceler.",
+          "FDA resmi portalındaki tüm güncel ve çözülen ilaç krizlerini, terapötik sınıflarını, stok durumlarını ve CMS Medicare 15 aylık (2025–2026 Q1) reçete talep ve bütçe büyüklüklerini tek ekranda inceler.",
           "Dilediğiniz ilacı veya NDC kodunu arayın; terapötik kategori ve stok durumu süzgeçleriyle filtreleyin veya tüm FDA kriz kayıtlarını tek ekranda listeleyin."
         ));
 
