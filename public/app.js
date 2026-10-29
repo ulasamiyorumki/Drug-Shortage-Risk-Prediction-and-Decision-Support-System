@@ -4196,15 +4196,750 @@ function bindDetails() {
   });
 }
 
+// ==========================================================================
+// 6.7 RİSK ANALİZ KRİTERLERİ & AĞIRLIKLANDIRMA SİSTEMİ (8 ANA KRİTER)
+// ==========================================================================
+const defaultRiskCriteriaData = [
+  {
+    id: 1,
+    name: 'Önceki kıtlıklar ve kıtlığın devamlılığı',
+    nameEn: 'Previous shortages and persistence',
+    weight: 18,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 2,
+    name: 'Talep–stok dengesizliği',
+    nameEn: 'Demand–stock imbalance',
+    weight: 18,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 3,
+    name: 'Üretici ve tedarikçi yoğunlaşması',
+    nameEn: 'Manufacturer/supplier concentration',
+    weight: 15,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 4,
+    name: 'Üretim, hammadde ve kalite kesintileri',
+    nameEn: 'Production, raw-material and quality interruptions',
+    weight: 15,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 5,
+    name: 'Tedarik süresi ve lojistik riskleri',
+    nameEn: 'Lead time and logistics',
+    weight: 10,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 6,
+    name: 'İlişkili terapötik gruptaki kıtlıklar',
+    nameEn: 'Related therapeutic-group shortages',
+    weight: 10,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 7,
+    name: 'Ürün özellikleri ve ikame edilebilirlik',
+    nameEn: 'Product characteristics and substitutability',
+    weight: 7,
+    score: 50,
+    subCriteria: []
+  },
+  {
+    id: 8,
+    name: 'Finansal, düzenleyici ve bilgi akışı riskleri',
+    nameEn: 'Financial, regulatory and information-flow risks',
+    weight: 7,
+    score: 50,
+    subCriteria: []
+  }
+];
+
+let riskCriteriaState = {
+  activeId: 1,
+  criteria: JSON.parse(JSON.stringify(defaultRiskCriteriaData))
+};
+
+function calculateOverallRiskScores() {
+  const criteria = riskCriteriaState.criteria;
+  const totalWeight = criteria.reduce((sum, c) => sum + (Number(c.weight) || 0), 0);
+  const weightedSum = criteria.reduce((sum, c) => sum + ((Number(c.weight) || 0) * (Number(c.score) || 0)), 0);
+  const trp = totalWeight > 0 ? (weightedSum / totalWeight) : 0;
+  return {
+    totalWeight,
+    weightedSum,
+    trp,
+    isBalanced: totalWeight === 100
+  };
+}
+
+function getCriteriaRiskTier(score) {
+  if (score >= 85) {
+    return { label: 'KRİTİK RİSK', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' };
+  } else if (score >= 70) {
+    return { label: 'YÜKSEK RİSK', color: '#ea580c', bg: '#ffedd5', border: '#fed7aa' };
+  } else if (score >= 40) {
+    return { label: 'ORTA RİSK', color: '#b45309', bg: '#fef3c7', border: '#fde68a' };
+  } else {
+    return { label: 'DÜŞÜK RİSK', color: '#16a34a', bg: '#dcfce7', border: '#86efac' };
+  }
+}
+
+function selectRiskCriterion(id) {
+  riskCriteriaState.activeId = Number(id);
+  riskCriteriaPage();
+  const el = document.getElementById('criterion-detail-workspace');
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function updateMainCriterionWeight(id, val) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(id));
+  if (crit) {
+    crit.weight = Math.max(0, Math.min(100, Number(val) || 0));
+    riskCriteriaPage();
+  }
+}
+
+function updateMainCriterionScore(id, val) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(id));
+  if (crit) {
+    crit.score = Math.max(0, Math.min(100, Number(val) || 0));
+    riskCriteriaPage();
+  }
+}
+
+function addSubCriterion(critId) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  const count = crit.subCriteria.length + 1;
+  crit.subCriteria.push({
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    name: 'Alt Kriter ' + count,
+    weight: 0,
+    score: 50
+  });
+  distributeSubWeightsEqually(critId, false);
+  riskCriteriaPage();
+}
+
+function removeSubCriterion(critId, subId) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  crit.subCriteria = crit.subCriteria.filter(s => s.id !== Number(subId));
+  if (crit.subCriteria.length > 0) {
+    distributeSubWeightsEqually(critId, false);
+  }
+  riskCriteriaPage();
+}
+
+function updateSubCriterionName(critId, subId, name) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  const sub = crit.subCriteria.find(s => s.id === Number(subId));
+  if (sub) {
+    sub.name = String(name || '');
+  }
+}
+
+function updateSubCriterionWeight(critId, subId, weight) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  const sub = crit.subCriteria.find(s => s.id === Number(subId));
+  if (sub) {
+    sub.weight = Math.max(0, Math.min(100, Number(weight) || 0));
+    riskCriteriaPage();
+  }
+}
+
+function updateSubCriterionScore(critId, subId, score) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  const sub = crit.subCriteria.find(s => s.id === Number(subId));
+  if (sub) {
+    sub.score = Math.max(0, Math.min(100, Number(score) || 0));
+    riskCriteriaPage();
+  }
+}
+
+function distributeSubWeightsEqually(critId, reRender = true) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit || crit.subCriteria.length === 0) return;
+  const n = crit.subCriteria.length;
+  const baseWeight = Math.floor(100 / n);
+  const remainder = 100 - (baseWeight * n);
+  crit.subCriteria.forEach((s, idx) => {
+    s.weight = idx === 0 ? baseWeight + remainder : baseWeight;
+  });
+  if (reRender) riskCriteriaPage();
+}
+
+function applySubScoreToMainCriterion(critId) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  if (crit.subCriteria.length === 0) {
+    alert('Bu kriterde henüz alt kriter bulunmamaktadır. Önce alt kriter ekleyin.');
+    return;
+  }
+  const totalSubW = crit.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  let computedScore = 0;
+  if (totalSubW > 0) {
+    const weightedSum = crit.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0);
+    computedScore = weightedSum / totalSubW;
+  } else {
+    computedScore = crit.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / crit.subCriteria.length;
+  }
+  crit.score = Math.round(computedScore);
+  alert(`"${crit.name}" kriteri için hesaplanan alt ağırlıklı puan (${crit.score}/100) ana kritere başarıyla uygulandı.`);
+  riskCriteriaPage();
+}
+
+function clearSubCriteriaOfCriterion(critId) {
+  const crit = riskCriteriaState.criteria.find(c => c.id === Number(critId));
+  if (!crit) return;
+  if (confirm(`"${crit.name}" kriterinin alt kriterlerini temizleyip içini boşaltmak istediğinize emin misiniz?`)) {
+    crit.subCriteria = [];
+    riskCriteriaPage();
+  }
+}
+
+function resetAllCriteriaWeightsToDefault() {
+  defaultRiskCriteriaData.forEach(def => {
+    const current = riskCriteriaState.criteria.find(c => c.id === def.id);
+    if (current) current.weight = def.weight;
+  });
+  riskCriteriaPage();
+}
+
+function setAllCriteriaScoresValue(val) {
+  riskCriteriaState.criteria.forEach(c => {
+    c.score = val;
+  });
+  riskCriteriaPage();
+}
+
+function clearAllSubCriteriaSystem() {
+  if (confirm('Tüm 8 kriterin alt kriterlerini temizleyip içlerini tamamen boşaltmak istediğinize emin misiniz?')) {
+    riskCriteriaState.criteria.forEach(c => {
+      c.subCriteria = [];
+    });
+    riskCriteriaPage();
+  }
+}
+
+function loadExampleScenarioForCriteria() {
+  const exampleData = [
+    {
+      id: 1,
+      name: 'Önceki kıtlıklar ve kıtlığın devamlılığı',
+      nameEn: 'Previous shortages and persistence',
+      weight: 18,
+      subCriteria: [
+        { id: 101, name: 'Son 3 yıldaki FDA/TİTCK kıtlık sıklığı', weight: 50, score: 75 },
+        { id: 102, name: 'Kıtlığın ortalama devam süresi (ay)', weight: 50, score: 65 }
+      ]
+    },
+    {
+      id: 2,
+      name: 'Talep–stok dengesizliği',
+      nameEn: 'Demand–stock imbalance',
+      weight: 18,
+      subCriteria: [
+        { id: 201, name: 'Reçete ve talep artış hızı (trend)', weight: 60, score: 70 },
+        { id: 202, name: 'Güvenlik stoğu tükenme hızı', weight: 40, score: 80 }
+      ]
+    },
+    {
+      id: 3,
+      name: 'Üretici ve tedarikçi yoğunlaşması',
+      nameEn: 'Manufacturer/supplier concentration',
+      weight: 15,
+      subCriteria: [
+        { id: 301, name: 'Ruhsatlı üretici firma sayısı (Monopol)', weight: 50, score: 85 },
+        { id: 302, name: 'Yerli muadil / jenerik bulunabilirliği', weight: 50, score: 60 }
+      ]
+    },
+    {
+      id: 4,
+      name: 'Üretim, hammadde ve kalite kesintileri',
+      nameEn: 'Production, raw-material and quality interruptions',
+      weight: 15,
+      subCriteria: [
+        { id: 401, name: 'Aktif madde (API) tedarik darboğazı', weight: 60, score: 75 },
+        { id: 402, name: 'GMP ve kalite denetim uyumsuzlukları', weight: 40, score: 55 }
+      ]
+    },
+    {
+      id: 5,
+      name: 'Tedarik süresi ve lojistik riskleri',
+      nameEn: 'Lead time and logistics',
+      weight: 10,
+      subCriteria: [
+        { id: 501, name: 'Deniz/Hava sevkiyat süresi & Boğaz gecikmesi', weight: 70, score: 70 },
+        { id: 502, name: 'Gümrük ve ithalat izin işlem süreleri', weight: 30, score: 60 }
+      ]
+    },
+    {
+      id: 6,
+      name: 'İlişkili terapötik gruptaki kıtlıklar',
+      nameEn: 'Related therapeutic-group shortages',
+      weight: 10,
+      subCriteria: [
+        { id: 601, name: 'Aynı ATC sınıfındaki diğer ilaçların kıtlık durumu', weight: 60, score: 65 },
+        { id: 602, name: 'Terapötik çapraz talep kayması riski', weight: 40, score: 50 }
+      ]
+    },
+    {
+      id: 7,
+      name: 'Ürün özellikleri ve ikame edilebilirlik',
+      nameEn: 'Product characteristics and substitutability',
+      weight: 7,
+      subCriteria: [
+        { id: 701, name: 'Dar terapötik indeks ve kritik endikasyon', weight: 50, score: 80 },
+        { id: 702, name: 'Klinik biyoeşdeğer ikame zorluğu', weight: 50, score: 60 }
+      ]
+    },
+    {
+      id: 8,
+      name: 'Finansal, düzenleyici ve bilgi akışı riskleri',
+      nameEn: 'Financial, regulatory and information-flow risks',
+      weight: 7,
+      subCriteria: [
+        { id: 801, name: 'Fiyatlandırma & döviz kuru baskısı', weight: 60, score: 70 },
+        { id: 802, name: 'Erken tedarik uyarısı & şeffaflık eksikliği', weight: 40, score: 45 }
+      ]
+    }
+  ];
+
+  riskCriteriaState.criteria = exampleData.map(c => {
+    const subWeightSum = c.subCriteria.reduce((sum, s) => sum + s.weight, 0);
+    const subScore = subWeightSum > 0
+      ? c.subCriteria.reduce((sum, s) => sum + (s.weight * s.score), 0) / subWeightSum
+      : 50;
+    return {
+      ...c,
+      score: Math.round(subScore)
+    };
+  });
+  riskCriteriaPage();
+}
+
+function exportRiskCriteriaMatrixCSV() {
+  const headers = ['Kriter No', 'Kriter Adı (TR)', 'Kriter Adı (EN)', 'Ana Ağırlık (%)', 'Katsayı / Puan (0-100)', 'Ağırlıklı Katkı', 'Alt Kriter Sayısı', 'Alt Kriter Detayları'];
+  const rows = riskCriteriaState.criteria.map(c => {
+    const subDetails = c.subCriteria.length > 0
+      ? c.subCriteria.map(s => `${s.name} [Ağırlık: %${s.weight}, Puan: ${s.score}]`).join(' | ')
+      : 'Boş';
+    const contrib = (c.weight * c.score / 100).toFixed(2);
+    return [
+      c.id,
+      `"${(c.name || '').replace(/"/g, '""')}"`,
+      `"${(c.nameEn || '').replace(/"/g, '""')}"`,
+      c.weight,
+      c.score,
+      contrib,
+      c.subCriteria.length,
+      `"${subDetails.replace(/"/g, '""')}"`
+    ].join(';');
+  });
+
+  const { totalWeight, weightedSum, trp } = calculateOverallRiskScores();
+  const summaryRow = ['TOPLAM / ORTALAMA', 'Bileşik Risk Skoru', '', totalWeight, Math.round(trp), (weightedSum / 100).toFixed(2), '', ''];
+
+  const csvContent = '\uFEFF' + [headers.join(';'), ...rows, summaryRow.join(';')].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `risk_analiz_kriterleri_matrisi_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Global scope export for HTML attributes
+window.selectRiskCriterion = selectRiskCriterion;
+window.updateMainCriterionWeight = updateMainCriterionWeight;
+window.updateMainCriterionScore = updateMainCriterionScore;
+window.addSubCriterion = addSubCriterion;
+window.removeSubCriterion = removeSubCriterion;
+window.updateSubCriterionName = updateSubCriterionName;
+window.updateSubCriterionWeight = updateSubCriterionWeight;
+window.updateSubCriterionScore = updateSubCriterionScore;
+window.distributeSubWeightsEqually = distributeSubWeightsEqually;
+window.applySubScoreToMainCriterion = applySubScoreToMainCriterion;
+window.clearSubCriteriaOfCriterion = clearSubCriteriaOfCriterion;
+window.resetAllCriteriaWeightsToDefault = resetAllCriteriaWeightsToDefault;
+window.setAllCriteriaScoresValue = setAllCriteriaScoresValue;
+window.clearAllSubCriteriaSystem = clearAllSubCriteriaSystem;
+window.loadExampleScenarioForCriteria = loadExampleScenarioForCriteria;
+window.exportRiskCriteriaMatrixCSV = exportRiskCriteriaMatrixCSV;
+
 function riskCriteriaPage() {
-  page.innerHTML = header('Risk Analiz Kriterleri', 'Tedarik zinciri risk analiz kriterleri ve göstergeleri.') + `
-    <section class="glass panel" style="padding: 48px 24px; text-align: center;">
-      <div style="font-size: 36px; margin-bottom: 12px;">📊</div>
-      <h2 style="margin: 0 0 8px; font-family: Outfit;">Risk Analiz Kriterleri</h2>
-      <p style="color: var(--muted); margin: 0; font-size: 13px;">Bu dashboard risk analiz kriterleri için hazırlanmıştır.</p>
+  const { totalWeight, weightedSum, trp, isBalanced } = calculateOverallRiskScores();
+  const tier = getCriteriaRiskTier(trp);
+  const activeCrit = riskCriteriaState.criteria.find(c => c.id === riskCriteriaState.activeId) || riskCriteriaState.criteria[0];
+
+  // Selected criterion internal calculations
+  const subWeightSum = activeCrit.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = activeCrit.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? activeCrit.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : activeCrit.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / activeCrit.subCriteria.length)
+    : 0;
+
+  const guide = guideBanner(
+    "Endüstri Mühendisliği Çok Kriterli Karar Verme (MCDM) metodolojisiyle 8 ana risk kriterini, alt kriter ağırlıklarını ve katsayı bileşenlerini yönetme merkezidir.",
+    "Her kriter ayrı bir buton olarak çalışır; içine girilerek özel alt kriterler eklenebilir, alt ağırlıklar eşit/özel dağıtılabilir ve elde edilen iç puan ana kritere aktarılabilir.",
+    "Kriter butonlarına tıklayarak içine girin; alt kriter ağırlıklarını belirleyin. Genel risk hesaplama sistemi ağırlıklar ve katsayıları birleştirerek nihai risk skorunu üretir."
+  );
+
+  page.innerHTML = header('Risk Analiz Kriterleri ve Ağırlık Sistemi', '8 ana risk kriteri, kriter içi ağırlık hesaplayıcıları ve katsayı tabanlı genel risk hesaplama sistemi.') + guide + `
+    <!-- 1. ÜST KPI ÖZET KARTLARI -->
+    <div class="grid stats" style="margin-bottom: 20px;">
+      <div class="glass stat">
+        <div class="stat-label">Toplam Ana Kriter</div>
+        <strong>8 Kriter</strong>
+        <small style="color:var(--muted)">Ayrı butonlar olarak tanımlı</small>
+      </div>
+
+      <div class="glass stat">
+        <div class="stat-label">Toplam Ana Ağırlık</div>
+        <strong style="color: ${isBalanced ? 'var(--blue)' : 'var(--red)'}">%${totalWeight}</strong>
+        <small>${isBalanced ? '<span class="badge resolved">✓ %100 Dengeli</span>' : '<span class="badge current">⚠ Dengesiz (∑ ≠ 100)</span>'}</small>
+      </div>
+
+      <div class="glass stat">
+        <div class="stat-label">Bileşik Risk Skoru (TRP)</div>
+        <strong style="color: ${tier.color}">${trp.toFixed(1)} <span style="font-size:16px; color:var(--muted)">/ 100</span></strong>
+        <small>Ağırlıklı katsayı ortalaması</small>
+      </div>
+
+      <div class="glass stat">
+        <div class="stat-label">Genel Risk Seviyesi</div>
+        <div style="margin-top: 14px;">
+          <span style="background:${tier.bg}; color:${tier.color}; border:1px solid ${tier.border}; padding:6px 14px; border-radius:20px; font-weight:800; font-size:13px; display:inline-block;">
+            ${tier.label}
+          </span>
+        </div>
+        <small style="display:block; margin-top:6px; color:var(--muted)">0-100 risk skalası</small>
+      </div>
+    </div>
+
+    <!-- 2. BÖLÜM: 8 ANA RİSK KRİTERİ BUTONLARI -->
+    <section class="glass panel" style="margin-bottom: 22px;">
+      <div class="panel-head" style="margin-bottom: 8px;">
+        <div>
+          <h2 style="margin:0 0 4px; font-size:16px;">1. Ana Risk Kriterleri (Seçim & Ağırlık Butonları)</h2>
+          <p style="color:var(--muted); font-size:12px; margin:0;">
+            Aşağıdaki 8 ana kriterin her biri ayrı bir buton olarak tanımlanmıştır. Bir kritere tıklayarak içine girebilir, alt kriterler ekleyebilir ve kendi içinde ağırlık hesaplaması yapabilirsiniz.
+          </p>
+        </div>
+        <div>
+          <button class="button secondary" style="font-size:11px; padding:6px 12px;" onclick="resetAllCriteriaWeightsToDefault()">
+            🔄 Ağırlıkları Varsayılana Sıfırla
+          </button>
+        </div>
+      </div>
+
+      <div class="risk-crit-grid" style="margin-top: 16px;">
+        ${riskCriteriaState.criteria.map(c => {
+          const isActive = c.id === riskCriteriaState.activeId;
+          const subCount = c.subCriteria.length;
+          return `
+            <div role="button" tabindex="0" class="risk-crit-btn ${isActive ? 'active' : ''}" onclick="selectRiskCriterion(${c.id})" onkeydown="if(event.key==='Enter'||event.key===' ')selectRiskCriterion(${c.id})">
+              <div>
+                <div class="risk-crit-header">
+                  <span class="risk-crit-num">#${c.id}</span>
+                  <span class="risk-crit-weight-badge">%${c.weight} Ağırlık</span>
+                </div>
+                <div class="risk-crit-title">${esc(c.name)}</div>
+                <div class="risk-crit-subtitle">${esc(c.nameEn)}</div>
+              </div>
+              <div class="risk-crit-footer">
+                <span>Katsayı: <b style="color:var(--ink);">${c.score}/100</b></span>
+                <span>
+                  ${subCount === 0
+                    ? '<span class="badge neutral" style="font-size:9.5px;">📭 Boş (0 Alt Kriter)</span>'
+                    : `<span class="badge resolved" style="font-size:9.5px;">🟢 ${subCount} Alt Kriter</span>`}
+                </span>
+                <span style="color:var(--blue); font-weight:700;">İçine Gir ➔</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </section>
+
+    <!-- 3. BÖLÜM: SEÇİLİ KRİTERİN İÇİ (ALT KRİTER & İÇ AĞIRLIK HESAPLAMA ÇALIŞMA ALANI) -->
+    <section class="glass panel" id="criterion-detail-workspace" style="margin-bottom: 22px; border-left: 4px solid var(--blue);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:14px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="risk-crit-num">#${activeCrit.id}</span>
+            <h2 style="margin:0; font-size:17px; font-family:Outfit;">${esc(activeCrit.name)}</h2>
+            <span class="risk-crit-weight-badge">%${activeCrit.weight} Ana Ağırlık</span>
+          </div>
+          <p style="color:var(--muted); font-size:12px; margin:4px 0 0 34px;">
+            <b>İngilizce Adı:</b> ${esc(activeCrit.nameEn)} · Bu kriterin içine özel alt kırılımlar tanımlayabilir ve alt ağırlık hesaplaması yapabilirsiniz.
+          </p>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.7); padding:8px 14px; border-radius:12px; border:1px solid rgba(24,126,229,0.2);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:700;">ANA AĞIRLIK (%):</small>
+            <input type="number" min="0" max="100" value="${activeCrit.weight}" style="width:65px; height:32px; font-weight:800; text-align:center;" onchange="updateMainCriterionWeight(${activeCrit.id}, this.value)">
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:10px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:700;">RİSK KATSAYISI (0-100):</small>
+            <input type="number" min="0" max="100" value="${activeCrit.score}" style="width:65px; height:32px; font-weight:800; text-align:center;" onchange="updateMainCriterionScore(${activeCrit.id}, this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Kriter İçi Hesaplama Butonları Barı -->
+      <div class="crit-action-bar">
+        <button class="button" style="font-size:11.5px; padding:7px 14px;" onclick="addSubCriterion(${activeCrit.id})">
+          ➕ Yeni Alt Kriter Ekle
+        </button>
+        <button class="button secondary" style="font-size:11.5px; padding:7px 14px;" onclick="distributeSubWeightsEqually(${activeCrit.id})">
+          ⚖ Alt Ağırlıkları Eşit Dağıt (%100)
+        </button>
+        <button class="button secondary" style="font-size:11.5px; padding:7px 14px; background:#e0f2fe; color:#0369a1; border-color:#7dd3fc;" onclick="applySubScoreToMainCriterion(${activeCrit.id})">
+          ✓ Alt Kriter Puanını Ana Kritere Uygula
+        </button>
+        <button class="button secondary" style="font-size:11.5px; padding:7px 14px; background:#fff1f2; color:#be123c; border-color:#fecdd3; margin-left:auto;" onclick="clearSubCriteriaOfCriterion(${activeCrit.id})">
+          🗑 Alt Kriterleri Temizle (Boşalt)
+        </button>
+      </div>
+
+      <!-- Kriter İçi İçerik: Boş Durum veya Alt Kriter Tablosu -->
+      ${activeCrit.subCriteria.length === 0 ? `
+        <div style="padding: 38px 20px; text-align:center; background:rgba(255,255,255,0.45); border:1.5px dashed rgba(111,132,157,0.3); border-radius:14px; margin-top:10px;">
+          <div style="font-size: 34px; margin-bottom: 8px;">📭</div>
+          <h3 style="margin:0 0 6px; font-size:15px; color:var(--ink);">Bu Kriterin İçi Şu An Boştur</h3>
+          <p style="color:var(--muted); font-size:12.5px; max-width:620px; margin:0 auto 16px; line-height:1.5;">
+            Bu kriter için henüz herhangi bir alt kriter tanımlanmadı. Kriter kendi içinde alt ağırlık hesaplamasına hazırdır.
+            Yukarıdaki <b>"➕ Yeni Alt Kriter Ekle"</b> butonuna basarak ilk alt kriteri ekleyebilir veya sağ üstteki kutudan ana katsayıyı doğrudan (0-100) belirleyebilirsiniz.
+          </p>
+          <button class="button" style="font-size:12px; padding:8px 18px;" onclick="addSubCriterion(${activeCrit.id})">
+            ➕ İlk Alt Kriteri Ekle
+          </button>
+        </div>
+      ` : `
+        <div class="data-table" style="margin-top: 10px; background:rgba(255,255,255,0.6); border-radius:12px; border:1px solid rgba(24,126,229,0.15);">
+          <table class="sub-crit-table">
+            <thead>
+              <tr style="background: rgba(24,126,229,0.06);">
+                <th style="width:45px; text-align:center;">#</th>
+                <th style="min-width:260px;">Alt Kriter Tanımı / Adı</th>
+                <th style="width:140px; text-align:center;">Alt Ağırlık (w, %)</th>
+                <th style="width:140px; text-align:center;">Katsayı / Puan (s, 0-100)</th>
+                <th style="width:130px; text-align:center;">Ağırlıklı Katkı</th>
+                <th style="width:60px; text-align:center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${activeCrit.subCriteria.map((sub, idx) => {
+                const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+                return `
+                  <tr>
+                    <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                    <td>
+                      <input type="text" value="${esc(sub.name)}" placeholder="Alt kriter adını girin..." onchange="updateSubCriterionName(${activeCrit.id}, ${sub.id}, this.value)" oninput="updateSubCriterionName(${activeCrit.id}, ${sub.id}, this.value)">
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:6px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(${activeCrit.id}, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:6px; justify-content:center;">
+                        <input type="number" min="0" max="100" value="${sub.score}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionScore(${activeCrit.id}, ${sub.id}, this.value)">
+                        <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                      </div>
+                    </td>
+                    <td style="text-align:center; font-weight:700; color:var(--blue);">
+                      +${contrib}
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" title="Alt kriteri sil" style="border:0; background:none; cursor:pointer; font-size:15px; color:#ef4444;" onclick="removeSubCriterion(${activeCrit.id}, ${sub.id})">
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Alt Kriter Hesaplama Özeti Kutusu -->
+        <div class="crit-summary-box">
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div>
+              <small style="display:block; font-size:10px; color:var(--muted); font-weight:700;">TOPLAM ALT AĞIRLIK:</small>
+              <span style="font-size:15px; font-weight:800; color:${subWeightSum === 100 ? 'var(--blue)' : 'var(--red)'}">
+                %${subWeightSum}
+              </span>
+              ${subWeightSum === 100
+                ? '<span class="badge resolved" style="margin-left:6px;">✓ %100 Dengeli</span>'
+                : `<span class="badge current" style="margin-left:6px;">⚠ Fark: %${100 - subWeightSum}</span>`}
+            </div>
+            <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+              <small style="display:block; font-size:10px; color:var(--muted); font-weight:700;">HESAPLANAN İÇ AĞIRLIKLI PUAN:</small>
+              <b style="font-size:16px; color:var(--ink);">${subScore.toFixed(1)} <span style="font-size:12px; color:var(--muted)">/ 100</span></b>
+            </div>
+          </div>
+
+          <div>
+            <button class="button" style="font-size:11.5px; padding:7px 16px;" onclick="applySubScoreToMainCriterion(${activeCrit.id})">
+              ✓ Bu Puanı (${Math.round(subScore)}) Ana Katsayıya Aktar
+            </button>
+          </div>
+        </div>
+      `}
+    </section>
+
+    <!-- 4. BÖLÜM: GENEL RİSK HESAPLAMA SİSTEMİ (AĞIRLIKLAR VE KATSAYILAR MATRİSİ) -->
+    <section class="glass panel">
+      <div class="panel-head" style="margin-bottom: 12px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h2 style="margin:0 0 4px; font-size:16px;">2. Genel Risk Hesaplama Sistemi (Ağırlıklar & Katsayılar Matrisi)</h2>
+          <p style="color:var(--muted); font-size:12px; margin:0;">
+            8 ana kriterin ağırlıkları (W<sub>i</sub>) ve katsayıları (S<sub>i</sub>) kullanılarak hesaplanan nihai Tedarik Kırılganlık Riski dökümü.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="button secondary" style="font-size:11px; padding:6px 12px;" onclick="loadExampleScenarioForCriteria()">
+            💡 Örnek Senaryo Yükle
+          </button>
+          <button class="button secondary" style="font-size:11px; padding:6px 12px;" onclick="setAllCriteriaScoresValue(50)">
+            ⚖ Katsayıları 50 (Nötr) Yap
+          </button>
+          <button class="button secondary" style="font-size:11px; padding:6px 12px;" onclick="setAllCriteriaScoresValue(0)">
+            0️⃣ Katsayıları Sıfırla
+          </button>
+          <button class="button secondary" style="font-size:11px; padding:6px 12px; background:#fff1f2; color:#be123c;" onclick="clearAllSubCriteriaSystem()">
+            🗑 İçleri Boşalt
+          </button>
+          <button class="button" style="font-size:11px; padding:6px 14px;" onclick="exportRiskCriteriaMatrixCSV()">
+            📥 Kriter Matrisini İndir (CSV)
+          </button>
+        </div>
+      </div>
+
+      <!-- Matematiksel Model Kutusu -->
+      <div class="formula-card">
+        <div style="font-size:12px; font-weight:700; color:#187ce5; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+          Matematiksel Formül: Ağırlıklı Bileşik Tedarik Kırılganlık Riski (TKR)
+        </div>
+        <div class="formula-math">
+          TRP = [ ∑ (W<sub>i</sub> × S<sub>i</sub>) ] / [ ∑ W<sub>i</sub> ]
+        </div>
+        <div style="font-size:12px; color:#334155; line-height:1.6; margin-top:8px;">
+          <b>Canlı Hesaplama Adımı:</b><br>
+          <span style="font-family:'DM Mono', monospace; font-size:11.5px; background:rgba(255,255,255,0.7); padding:4px 8px; border-radius:6px; display:inline-block; margin-top:4px;">
+            TRP = [ ${riskCriteriaState.criteria.map(c => `(${c.weight}×${c.score})`).join(' + ')} ] / ${totalWeight} = <b>${trp.toFixed(2)} / 100</b>
+          </span>
+        </div>
+      </div>
+
+      <!-- 8 Kriter Genel Matris Tablosu -->
+      <div class="data-table" style="background:rgba(255,255,255,0.55); border-radius:12px; border:1px solid rgba(24,126,229,0.16);">
+        <table>
+          <thead>
+            <tr style="background: rgba(24,126,229,0.06);">
+              <th style="width:45px; text-align:center;">#</th>
+              <th>Ana Kriter Tanımı (TR / EN)</th>
+              <th style="width:130px; text-align:center;">Ağırlık (W<sub>i</sub>, %)</th>
+              <th style="width:130px; text-align:center;">Katsayı (S<sub>i</sub>, 0-100)</th>
+              <th style="width:130px; text-align:center;">Ağırlıklı Katkı Puanı</th>
+              <th style="width:160px; text-align:center;">Alt Kriter Durumu</th>
+              <th style="width:110px; text-align:center;">İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${riskCriteriaState.criteria.map(c => {
+              const contrib = (c.weight * c.score / 100).toFixed(2);
+              const isSelected = c.id === riskCriteriaState.activeId;
+              return `
+                <tr style="${isSelected ? 'background: rgba(24,126,229,0.06); font-weight:600;' : ''}">
+                  <td style="text-align:center; font-weight:700;">#${c.id}</td>
+                  <td>
+                    <b>${esc(c.name)}</b><br>
+                    <small style="color:var(--muted); font-style:italic;">${esc(c.nameEn)}</small>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${c.weight}" style="width:60px; text-align:center; font-weight:700;" onchange="updateMainCriterionWeight(${c.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${c.score}" style="width:60px; text-align:center; font-weight:700;" onchange="updateMainCriterionScore(${c.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:800; color:var(--blue);">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    ${c.subCriteria.length === 0
+                      ? '<span class="badge neutral" style="font-size:10px;">📭 Boş (0 Alt Kriter)</span>'
+                      : `<span class="badge resolved" style="font-size:10px;">🟢 ${c.subCriteria.length} Alt Kriter</span>`}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" class="button secondary" style="font-size:10.5px; padding:4px 10px;" onclick="selectRiskCriterion(${c.id})">
+                      İçine Gir ➔
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: rgba(24,126,229,0.12); font-weight:800; font-size:13px;">
+              <td colspan="2" style="text-align:right; padding:12px;">TOPLAM VE GENEL RİSK SONUCU:</td>
+              <td style="text-align:center;">
+                <span style="color:${isBalanced ? 'var(--blue)' : 'var(--red)'}">%${totalWeight}</span>
+                ${isBalanced ? '<small style="display:block; font-size:9.5px; color:var(--green)">✓ Dengeli</small>' : '<small style="display:block; font-size:9.5px; color:var(--red)">⚠ Dengesiz</small>'}
+              </td>
+              <td style="text-align:center; color:var(--muted); font-size:11px;">(Ağırlıklı Ort.)</td>
+              <td style="text-align:center; color:var(--blue); font-size:15px;">
+                ${(weightedSum / 100).toFixed(2)}
+              </td>
+              <td colspan="2" style="text-align:center;">
+                <div style="display:inline-flex; align-items:center; gap:8px;">
+                  <span style="font-size:14px; color:${tier.color};">TRP: <b>${trp.toFixed(1)} / 100</b></span>
+                  <span style="background:${tier.bg}; color:${tier.color}; border:1px solid ${tier.border}; padding:3px 10px; border-radius:12px; font-size:11px;">
+                    ${tier.label}
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </section>
   `;
 }
+
 
 // ==========================================================================
 // 7. YÖNLENDİRİCİ (ROUTER) & ETKİLEŞİMLER
