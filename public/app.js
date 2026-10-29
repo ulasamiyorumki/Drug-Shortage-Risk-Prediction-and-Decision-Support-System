@@ -4350,13 +4350,18 @@ const defaultRiskCriteriaData = [
     nameEn: 'Lead time and logistics',
     weight: 10,
     weightDec: 0.10,
-    score: 50,
+    score: 72.5,
     icon: '🚢',
     color: '#0284c7',
     colorBg: '#f0f9ff',
     colorBorder: '#7dd3fc',
     colorGradient: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-    subCriteria: []
+    subCriteria: [
+      { id: 1, code: 'S_L', name: 'Tedarik süresi göstergesi (Siparişten teslimata geçen süre)', weight: 35, score: 87.3, dataStatus: 'available' },
+      { id: 2, code: 'S_V', name: 'Tedarik süresindeki değişkenlik (Teslimat sürelerindeki belirsizlik/sapma)', weight: 25, score: 62.3, dataStatus: 'available' },
+      { id: 3, code: 'S_G', name: 'Lojistik gecikme riski (Sevkiyat ve dağıtım kaynaklı aksamalar)', weight: 25, score: 51.0, dataStatus: 'available' },
+      { id: 4, code: 'S_B', name: 'Tedarik zinciri bağımlılığı (Tek ülke/güzergâh coğrafi bağımlılığı)', weight: 15, score: 90.5, dataStatus: 'available' }
+    ]
   },
   {
     id: 6,
@@ -5442,6 +5447,308 @@ function applyCollectiveR4ToCriterion() {
 }
 
 // ==========================================================================
+// R5 (TEDARİK SÜRESİ VE LOJİSTİK RİSKLERİ) ÖZEL HESAPLAMA & DAĞILIM SİSTEMİ
+// Alt Bileşenler:
+// S_L: Tedarik Süresi (%35)
+// S_V: Tedarik Süresindeki Değişkenlik (%25)
+// S_G: Lojistik Gecikme Riski (%25)
+// S_B: Tedarik Zinciri Bağımlılığı (%15)
+// Formül: R_5 = 0.35 S_L + 0.25 S_V + 0.25 S_G + 0.15 S_B
+// ==========================================================================
+function calculateDrugR5Score(r) {
+  const isImport = (r.greenData && r.greenData.origin && r.greenData.origin.includes('İTHAL')) || false;
+  const isZeroLocal = Boolean(r.greenData && r.greenData.localEquivCount === 0);
+  const presLow = (r.presentation || '').toLowerCase();
+  const isSterileOrCold = presLow.includes('injection') || presLow.includes('enjeksiyon') || presLow.includes('ampul') || presLow.includes('vial') || presLow.includes('solution') || presLow.includes('infusion') || presLow.includes('şırınga') || presLow.includes('syringe');
+
+  const reasonRaw = (r.shortage_reason || r.reasonText || '').trim();
+  const reasonLow = reasonRaw.toLowerCase();
+  const isMissingReason = !reasonRaw || reasonLow.includes('belirtilmemiş') || reasonLow === 'unknown' || reasonLow === 'boş';
+  const hasShippingDelay = reasonLow.includes('shipping') || reasonLow.includes('sevkiyat') || reasonLow.includes('nakliye') || reasonLow.includes('lojistik');
+
+  const availLow = (r.availability || '').toLowerCase();
+  const isUnavailable = availLow.includes('unavailable') || availLow.includes('limited');
+
+  // 1. S_L: Tedarik Süresi (Lead Time) Puanı (%35)
+  let sL = 50;
+  let sLLabel = 'Standart Tedarik Süresi (30–45 Gün)';
+  if (isImport && isSterileOrCold) {
+    sL = 95;
+    sLLabel = 'Uluslararası & Soğuk Zincir / Steril (90–120+ Gün)';
+  } else if (isImport) {
+    sL = 85;
+    sLLabel = 'Uluslararası İthalat / SGK Ek-1 (60–90 Gün)';
+  } else if (isSterileOrCold) {
+    sL = 60;
+    sLLabel = 'Yerli Steril / Soğuk Zincir (20–40 Gün)';
+  } else {
+    sL = 30;
+    sLLabel = 'Yerli İmalat / Hızlı Dağıtım (7–15 Gün)';
+  }
+
+  // 2. S_V: Tedarik Süresindeki Değişkenlik (%25)
+  let sV = 50;
+  let sVLabel = 'Orta Düzey Teslimat Değişkenliği';
+  if (isImport && isUnavailable) {
+    sV = 90;
+    sVLabel = 'Aşırı Yüksek Belirsizlik & Teslimat Sapması';
+  } else if (isUnavailable) {
+    sV = 70;
+    sVLabel = 'Yüksek Stok Kısıtı & Termin Belirsizliği';
+  } else if (isImport) {
+    sV = 45;
+    sVLabel = 'Rutin İthalat / Gümrük-Uçuş Dalgalanması';
+  } else {
+    sV = 20;
+    sVLabel = 'Yüksek Öngörülebilirlik & Düşük Sapma';
+  }
+
+  // 3. S_G: Lojistik Gecikme Riski (%25)
+  let sG = 25;
+  let sGLabel = 'Düşük Lojistik Gecikme Riski';
+  let isMissingSg = false;
+  if (isMissingReason) {
+    sG = 0;
+    sGLabel = '⚠️ Eksik Veri (Kriz Nedeni Belirtilmemiş)';
+    isMissingSg = true;
+  } else if (hasShippingDelay) {
+    sG = 100;
+    sGLabel = '🚨 Aktif Sevkiyat & Lojistik Gecikmesi Bildirildi';
+  } else if (isImport && isSterileOrCold) {
+    sG = 50;
+    sGLabel = 'Uluslararası Özel Taşımacılık Riski';
+  } else if (isImport) {
+    sG = 35;
+    sGLabel = 'Genel Dış Ticaret & Gümrük Riski';
+  } else {
+    sG = 20;
+    sGLabel = 'Rutin Yurt İçi Dağıtım Güvencesi';
+  }
+
+  // 4. S_B: Tedarik Zinciri Bağımlılığı (%15)
+  let sB = 25;
+  let sBLabel = 'Çoklu Yurt İçi Dağıtım (Düşük Bağımlılık)';
+  if (isImport && isZeroLocal) {
+    sB = 100;
+    sBLabel = '🚨 %100 Tek İthalatçı & Tek Ülke Bağımlılığı (0 Muadil)';
+  } else if (isImport) {
+    sB = 65;
+    sBLabel = 'Dış Hat / Bölgesel Lojistik Güzergâh Bağımlılığı';
+  } else {
+    sB = 25;
+    sBLabel = 'Yerli İmalat / Dağıtık Tedarik Ağı';
+  }
+
+  // Ağırlıklı Toplam: R5 = 0.35 SL + 0.25 SV + 0.25 SG + 0.15 SB
+  const rawScore = (0.35 * sL) + (0.25 * sV) + (0.25 * sG) + (0.15 * sB);
+  const score = Math.round(rawScore * 10) / 10;
+
+  let level = 'Orta Risk';
+  let tierKey = 'orta';
+  let color = '#0284c7';
+  let bg = '#f0f9ff';
+  let border = '#bae6fd';
+  let badgeBg = '#e0f2fe';
+  let badgeColor = '#0369a1';
+
+  if (score >= 80) {
+    level = 'Kritik Risk (80–100 Puan)';
+    tierKey = 'kritik';
+    color = '#be123c';
+    bg = '#fff1f2';
+    border = '#fecdd3';
+    badgeBg = '#fee2e2';
+    badgeColor = '#9f1239';
+  } else if (score >= 60) {
+    level = 'Çok Yüksek Risk (60–79.9 Puan)';
+    tierKey = 'cokYuksek';
+    color = '#ea580c';
+    bg = '#fff7ed';
+    border = '#fed7aa';
+    badgeBg = '#ffedd5';
+    badgeColor = '#9a3412';
+  } else if (score >= 40) {
+    level = 'Yüksek Risk (40–59.9 Puan)';
+    tierKey = 'yuksek';
+    color = '#d97706';
+    bg = '#fef3c7';
+    border = '#fde68a';
+    badgeBg = '#fef9c3';
+    badgeColor = '#854d0e';
+  } else if (score >= 20) {
+    level = 'Orta Risk (20–39.9 Puan)';
+    tierKey = 'orta';
+    color = '#0284c7';
+    bg = '#f0f9ff';
+    border = '#bae6fd';
+    badgeBg = '#e0f2fe';
+    badgeColor = '#0369a1';
+  } else {
+    level = 'Düşük Risk (< 20 Puan)';
+    tierKey = 'dusuk';
+    color = '#16a34a';
+    bg = '#dcfce7';
+    border = '#86efac';
+    badgeBg = '#bbf7d0';
+    badgeColor = '#166534';
+  }
+
+  return {
+    score,
+    rawScore,
+    sL,
+    sLLabel,
+    sV,
+    sVLabel,
+    sG,
+    sGLabel,
+    isMissingSg,
+    sB,
+    sBLabel,
+    isImport,
+    isSterileOrCold,
+    hasShippingDelay,
+    level,
+    tierKey,
+    color,
+    bg,
+    border,
+    badgeBg,
+    badgeColor
+  };
+}
+
+let r5DrugFilterState = {
+  query: '',
+  tierFilter: 'all', // 'all', 'kritik', 'cokYuksek', 'yuksek', 'orta', 'dusuk', 'shipping_delay'
+  page: 1,
+  pageSize: 15
+};
+
+function getR5DistributionStats() {
+  const records = getV2Green400Records();
+  let sumL = 0;
+  let sumV = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let sumR5 = 0;
+  let shippingDelayCount = 0;
+  let sterileCount = 0;
+  let importCount = 0;
+
+  const tiers = [
+    { key: 'kritik', label: 'Kritik Risk (80–100 Puan)', minScore: 80, maxScore: 100, count: 0, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+    { key: 'cokYuksek', label: 'Çok Yüksek (60–79.9 Puan)', minScore: 60, maxScore: 79.9, count: 0, color: '#ea580c', bg: '#ffedd5', border: '#fed7aa' },
+    { key: 'yuksek', label: 'Yüksek (40–59.9 Puan)', minScore: 40, maxScore: 59.9, count: 0, color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
+    { key: 'orta', label: 'Orta (20–39.9 Puan)', minScore: 20, maxScore: 39.9, count: 0, color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+    { key: 'dusuk', label: 'Düşük (< 20 Puan)', minScore: 0, maxScore: 19.9, count: 0, color: '#16a34a', bg: '#dcfce7', border: '#86efac' }
+  ];
+
+  records.forEach(r => {
+    const res = calculateDrugR5Score(r);
+    sumL += res.sL;
+    sumV += res.sV;
+    sumG += res.sG;
+    sumB += res.sB;
+    sumR5 += res.score;
+    if (res.hasShippingDelay) shippingDelayCount++;
+    if (res.isSterileOrCold) sterileCount++;
+    if (res.isImport) importCount++;
+
+    const t = tiers.find(item => item.key === res.tierKey);
+    if (t) t.count++;
+  });
+
+  const total = records.length || 400;
+  const avgL = Math.round((sumL / total) * 10) / 10;
+  const avgV = Math.round((sumV / total) * 10) / 10;
+  const avgG = Math.round((sumG / total) * 10) / 10;
+  const avgB = Math.round((sumB / total) * 10) / 10;
+  const avgR5 = Math.round((sumR5 / total) * 10) / 10;
+
+  return {
+    total,
+    avgL,
+    avgV,
+    avgG,
+    avgB,
+    avgR5,
+    shippingDelayCount,
+    sterileCount,
+    importCount,
+    tiers
+  };
+}
+
+function handleR5DrugSearch(q) {
+  r5DrugFilterState.query = q || '';
+  r5DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR5TierFilter(tier) {
+  r5DrugFilterState.tierFilter = tier;
+  r5DrugFilterState.page = 1;
+  riskCriteriaPage();
+}
+
+function handleR5DrugPage(p) {
+  r5DrugFilterState.page = Math.max(1, p);
+  riskCriteriaPage();
+}
+
+function applySingleDrugR5ToCriterion(drugId) {
+  const records = getV2Green400Records();
+  const d = records.find(r => String(r.id) === String(drugId));
+  if (!d) return;
+
+  const res = calculateDrugR5Score(d);
+  const c5 = riskCriteriaState.criteria.find(item => item.id === 5);
+  if (c5) {
+    c5.score = res.score;
+    if (c5.subCriteria && c5.subCriteria.length >= 4) {
+      c5.subCriteria[0].score = res.sL;
+      c5.subCriteria[0].dataStatus = 'available';
+      c5.subCriteria[1].score = res.sV;
+      c5.subCriteria[1].dataStatus = 'available';
+      c5.subCriteria[2].score = res.sG;
+      c5.subCriteria[2].dataStatus = res.isMissingSg ? 'insufficient' : 'available';
+      c5.subCriteria[3].score = res.sB;
+      c5.subCriteria[3].dataStatus = 'available';
+    }
+  }
+  riskCriteriaSelectedDrugId = d.id;
+  riskCriteriaPage();
+
+  const drugName = d.generic_name || d.brand_name || 'Seçilen İlaç';
+  if (typeof alert === 'function') {
+    alert(`✓ "${drugName}" ilacının lojistik parametreleri (S_L: ${res.sL}, S_V: ${res.sV}, S_G: ${res.sG}, S_B: ${res.sB}) baz alınarak R₅ Puanı ${res.score}/100 (${res.level}) olarak atandı ve ana denkleme aktarıldı.`);
+  }
+}
+
+function applyCollectiveR5ToCriterion() {
+  const stats = getR5DistributionStats();
+  const c5 = riskCriteriaState.criteria.find(item => item.id === 5);
+  if (c5) {
+    c5.score = stats.avgR5;
+    if (c5.subCriteria && c5.subCriteria.length >= 4) {
+      c5.subCriteria[0].score = stats.avgL;
+      c5.subCriteria[0].dataStatus = 'available';
+      c5.subCriteria[1].score = stats.avgV;
+      c5.subCriteria[1].dataStatus = 'available';
+      c5.subCriteria[2].score = stats.avgG;
+      c5.subCriteria[2].dataStatus = 'available';
+      c5.subCriteria[3].score = stats.avgB;
+      c5.subCriteria[3].dataStatus = 'available';
+    }
+  }
+  riskCriteriaPage();
+  if (typeof alert === 'function') {
+    alert(`✓ 400 yeşil reçeteli ilacın ağırlıklı ortalama lojistik risk puanı (R₅: ${stats.avgR5}/100 · S_L: ${stats.avgL}, S_V: ${stats.avgV}, S_G: ${stats.avgG}, S_B: ${stats.avgB}) ana denkleme başarıyla aktarıldı!`);
+  }
+}
+
+// ==========================================================================
 // R6 (İLİŞKİLİ TERAPÖTİK GRUPTAKI KITLIKLAR) RESMİ LOGARİTMİK RİSK PUANLAMA SİSTEMİ
 // S_g = 100 * [ ln(1 + N_g) ] / [ ln(1 + N_max) ], N_max = 259 (Psychiatry)
 // R_6 = ( ∑ S_g ) / k
@@ -5747,15 +6054,9 @@ function applyDrugToRiskCriteria(drugId) {
   const r4Res = calculateDrugR4Score(d);
   const r4 = r4Res.score;
 
-  // R5: Tedarik süresi ve lojistik riskleri (İthal vs Yerli, enjeksiyon/soğuk zincir)
-  let r5 = 55;
-  const isImport = (d.greenData?.origin || '').includes('İTHAL');
-  if (isImport) r5 = 82;
-  else if ((d.greenData?.origin || '').includes('İMAL')) r5 = 38;
-  const presLow = (d.presentation || '').toLowerCase();
-  if (presLow.includes('injection') || presLow.includes('enjeksiyon') || presLow.includes('ampul') || presLow.includes('vial')) {
-    r5 = Math.min(100, r5 + 10);
-  }
+  // R5: Tedarik süresi ve lojistik riskleri (4 alt bileşenli resmi formül)
+  const r5Res = calculateDrugR5Score(d);
+  const r5 = r5Res.score;
 
   // R6: İlişkili terapötik gruptaki kıtlıklar (Terapötik sınıf logaritmik normalizasyon ve ortalama)
   const r6Info = calculateDrugR6Score(d);
@@ -5771,6 +6072,7 @@ function applyDrugToRiskCriteria(drugId) {
 
   // R8: Finansal, yasal ve bilgi akışı riskleri (yeşil reçete kotası & kur hassasiyeti)
   let r8 = 75;
+  const isImport = (d.greenData?.origin || '').includes('İTHAL');
   if (isImport) r8 = 88;
 
   const scoresMap = { 1: r1, 2: r2, 3: r3, 4: r4, 5: r5, 6: r6, 7: r7, 8: r8 };
@@ -5800,6 +6102,16 @@ function applyDrugToRiskCriteria(drugId) {
         } else {
           c.subCriteria.forEach(s => { s.score = 20; s.dataStatus = 'available'; });
         }
+      }
+      if (c.id === 5 && c.subCriteria && c.subCriteria.length >= 4) {
+        c.subCriteria[0].score = r5Res.sL;
+        c.subCriteria[0].dataStatus = 'available';
+        c.subCriteria[1].score = r5Res.sV;
+        c.subCriteria[1].dataStatus = 'available';
+        c.subCriteria[2].score = r5Res.sG;
+        c.subCriteria[2].dataStatus = r5Res.isMissingSg ? 'insufficient' : 'available';
+        c.subCriteria[3].score = r5Res.sB;
+        c.subCriteria[3].dataStatus = 'available';
       }
     }
   });
@@ -5999,6 +6311,7 @@ function renderRiskCriteriaDrugTableOnly() {
             const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
             const r2Drug = calculateDrugR2Score(r);
             const r4Drug = calculateDrugR4Score(r);
+            const r5Drug = calculateDrugR5Score(r);
             return `
               <tr data-id="${r.id}" class="selectable ${isSelected ? 'selected' : ''}" style="cursor:pointer;" onclick="detail('${r.id}')">
                 <td style="text-align:center; font-weight:700; color:#64748b; font-size:11.5px; vertical-align:top; padding:14px 8px;">
@@ -6047,8 +6360,13 @@ function renderRiskCriteriaDrugTableOnly() {
                   <div style="font-size:12.5px; color:#1e293b; line-height:1.55; word-break:break-word; font-weight:500;">
                     ${esc(r.presentation)}
                   </div>
+                  <div style="margin-top:6px;">
+                    <span class="badge" style="background:${r5Drug.badgeBg}; color:${r5Drug.badgeColor}; border:1px solid ${r5Drug.border}; font-weight:800; font-size:10px; padding:2px 7px; display:inline-block;" title="R5 Lojistik & Tedarik Süresi: S_L: ${r5Drug.sL}, S_V: ${r5Drug.sV}, S_G: ${r5Drug.sG}, S_B: ${r5Drug.sB}">
+                      🚢 R₅: ${r5Drug.score}/100 (${r5Drug.level})
+                    </span>
+                  </div>
                   ${(r.ndc || r.application_no) ? `
-                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
                       ${r.ndc ? `<code style="font-size:10.5px; color:#475569; background:#f1f5f9; padding:3px 8px; border-radius:5px; border:1px solid #e2e8f0; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#94a3b8;">NDC:</span> ${esc(r.ndc)}</code>` : ''}
                       ${r.application_no ? `<code style="font-size:10.5px; color:#0369a1; background:#e0f2fe; padding:3px 8px; border-radius:5px; font-weight:700; border:1px solid #bae6fd; font-family:monospace; display:inline-flex; align-items:center; gap:3px;"><span style="color:#0284c7;">FDA:</span> ${esc(r.application_no)}</code>` : ''}
                     </div>
@@ -6351,6 +6669,15 @@ window.handleR4DrugPage = handleR4DrugPage;
 window.applySingleDrugR4ToCriterion = applySingleDrugR4ToCriterion;
 window.applyCollectiveR4ToCriterion = applyCollectiveR4ToCriterion;
 window.renderCriterion4DetailPage = renderCriterion4DetailPage;
+
+window.calculateDrugR5Score = calculateDrugR5Score;
+window.getR5DistributionStats = getR5DistributionStats;
+window.handleR5DrugSearch = handleR5DrugSearch;
+window.handleR5TierFilter = handleR5TierFilter;
+window.handleR5DrugPage = handleR5DrugPage;
+window.applySingleDrugR5ToCriterion = applySingleDrugR5ToCriterion;
+window.applyCollectiveR5ToCriterion = applyCollectiveR5ToCriterion;
+window.renderCriterion5DetailPage = renderCriterion5DetailPage;
 
 function renderCriterion1DetailPage(c) {
   if (!c.subCriteria || c.subCriteria.length === 0) {
@@ -8353,6 +8680,560 @@ function renderCriterion4DetailPage(c) {
   `;
 }
 
+function renderCriterion5DetailPage(c) {
+  const stats = getR5DistributionStats();
+  const allDrugs = getV2Green400Records();
+
+  let filteredR5Drugs = allDrugs.map(r => {
+    const res = calculateDrugR5Score(r);
+    return {
+      record: r,
+      r5Score: res.score,
+      sL: res.sL,
+      sLLabel: res.sLLabel,
+      sV: res.sV,
+      sVLabel: res.sVLabel,
+      sG: res.sG,
+      sGLabel: res.sGLabel,
+      isMissingSg: res.isMissingSg,
+      sB: res.sB,
+      sBLabel: res.sBLabel,
+      isImport: res.isImport,
+      isSterileOrCold: res.isSterileOrCold,
+      hasShippingDelay: res.hasShippingDelay,
+      level: res.level,
+      tierKey: res.tierKey,
+      color: res.color,
+      bg: res.bg,
+      border: res.border,
+      badgeBg: res.badgeBg,
+      badgeColor: res.badgeColor
+    };
+  });
+
+  if (r5DrugFilterState.query) {
+    const q = r5DrugFilterState.query.toLowerCase().trim();
+    filteredR5Drugs = filteredR5Drugs.filter(item => {
+      const r = item.record;
+      const gn = (r.generic_name || '').toLowerCase();
+      const bn = (r.brand_name || '').toLowerCase();
+      const mf = (r.manufacturer || r.vendor || '').toLowerCase();
+      const pr = (r.presentation || '').toLowerCase();
+      const sr = (r.shortage_reason || r.reasonText || '').toLowerCase();
+      const orig = (r.greenData?.origin || '').toLowerCase();
+      return gn.includes(q) || bn.includes(q) || mf.includes(q) || pr.includes(q) || sr.includes(q) || orig.includes(q);
+    });
+  }
+
+  if (r5DrugFilterState.tierFilter !== 'all') {
+    if (r5DrugFilterState.tierFilter === 'shipping_delay') {
+      filteredR5Drugs = filteredR5Drugs.filter(item => item.hasShippingDelay);
+    } else if (r5DrugFilterState.tierFilter === 'sterile') {
+      filteredR5Drugs = filteredR5Drugs.filter(item => item.isSterileOrCold);
+    } else if (r5DrugFilterState.tierFilter === 'import') {
+      filteredR5Drugs = filteredR5Drugs.filter(item => item.isImport);
+    } else {
+      filteredR5Drugs = filteredR5Drugs.filter(item => item.tierKey === r5DrugFilterState.tierFilter);
+    }
+  }
+
+  const r5TotalFiltered = filteredR5Drugs.length;
+  const r5PageSize = r5DrugFilterState.pageSize || 15;
+  const r5TotalPages = Math.max(1, Math.ceil(r5TotalFiltered / r5PageSize));
+  if (r5DrugFilterState.page > r5TotalPages) r5DrugFilterState.page = r5TotalPages;
+  const r5StartIdx = (r5DrugFilterState.page - 1) * r5PageSize;
+  const r5EndIdx = Math.min(r5StartIdx + r5PageSize, r5TotalFiltered);
+  const r5PaginatedDrugs = filteredR5Drugs.slice(r5StartIdx, r5EndIdx);
+
+  const subWeightSum = c.subCriteria.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+  const subScore = c.subCriteria.length > 0
+    ? (subWeightSum > 0
+        ? c.subCriteria.reduce((sum, s) => sum + ((Number(s.weight) || 0) * (Number(s.score) || 0)), 0) / subWeightSum
+        : c.subCriteria.reduce((sum, s) => sum + (Number(s.score) || 0), 0) / c.subCriteria.length)
+    : 0;
+
+  page.innerHTML = `
+    <div style="margin-bottom: 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <button type="button" class="button secondary" style="font-size:12.5px; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; font-weight:700; border:1.5px solid #bae6fd;" onclick="leaveCriterion()">
+        ← 8 Kriter Butonuna & Ana Ekrana Geri Dön
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge" style="background:#f0f9ff; color:#0284c7; border:1.5px solid #7dd3fc; font-weight:800; font-size:12px; padding:6px 14px;">
+          🚢 R₅ Kriter Analiz & Alt Ağırlık Sistemi
+        </span>
+      </div>
+    </div>
+
+    <section class="glass panel" style="border-left: 6px solid #0284c7; border-color:#7dd3fc; padding: 26px; margin-bottom: 22px; background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #f0f9ff 100%);">
+      <!-- Kriter Başlık Bandı -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom: 22px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div class="dsrds-crit-badge" style="width:56px; height:56px; font-size:22px; background:linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); box-shadow:0 4px 14px rgba(2, 132, 199, 0.35);">
+            R₅
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:22px; font-family:Outfit; color:#0f2942; display:flex; align-items:center; gap:8px;">
+              <span>🚢</span> Tedarik Süresi ve Lojistik Riskleri
+            </h1>
+            <p style="color:#5a7590; font-size:13px; margin:3px 0 0; font-style:italic;">
+              Lead time and logistics · Değişken Kodu: <b style="color:#0284c7;">R5</b> · Ana Denklem Ağırlığı: <b style="color:#0284c7;">%10 (0.10)</b>
+            </p>
+          </div>
+        </div>
+
+        <!-- Ağırlık ve Katsayı Ayar Kutusu -->
+        <div style="display:flex; gap:12px; align-items:center; background:#ffffff; padding:10px 18px; border-radius:12px; border:1.5px solid #7dd3fc; box-shadow:0 4px 12px rgba(2,132,199,0.08);">
+          <div>
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">Kriter Ağırlığı (w₅):</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.weight}" style="width:65px; height:32px; font-weight:800; text-align:center; border:1px solid #cbd5e1; border-radius:6px;" onchange="updateMainCriterionWeight(5, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">% (${(c.weight/100).toFixed(2)})</span>
+            </div>
+          </div>
+          <div style="border-left:1px solid #cbd5e1; padding-left:12px;">
+            <small style="display:block; font-size:10px; color:var(--muted); font-weight:800; text-transform:uppercase;">R₅ Risk Puanı:</small>
+            <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+              <input type="number" min="0" max="100" value="${c.score}" id="r5MainScoreInput" style="width:65px; height:32px; font-weight:800; text-align:center; border:2px solid #0284c7; border-radius:6px; color:#0284c7;" onchange="updateMainCriterionScore(5, this.value)">
+              <span style="font-weight:700; color:var(--muted); font-size:12px;">/100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 1: METODOLOJİ, 4 ALT BİLEŞEN VE MATEMATİKSEL MODEL -->
+      <div style="background:#ffffff; border-radius:14px; border:1.5px solid #7dd3fc; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(2, 132, 199, 0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#0369a1; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 1. Metodoloji, 4 Alt Bileşen ve Matematiksel Model
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b; line-height:1.5;">
+              <b>R₅</b> kriteri, siparişten teslimata geçen süreyi, teslimat tarihlerindeki öngörülemezliği, sevkiyat kaynaklı gecikmeleri ve tek ülke/güzergâh bağımlılığını 4 alt bileşen üzerinden 0–100 skalasında ağırlıklandırarak değerlendirir.
+            </p>
+          </div>
+          <span class="badge" style="background:#f0f9ff; color:#0284c7; border:1px solid #7dd3fc; font-weight:800; font-size:11.5px; padding:4px 10px;">
+            4 Alt Bileşenli Lojistik Modeli
+          </span>
+        </div>
+
+        <!-- 4 Alt Kriter Tablosu -->
+        <div class="data-table" style="margin-bottom:16px; overflow-x:auto;">
+          <table class="r5-tier-table">
+            <thead>
+              <tr>
+                <th style="min-width:240px; text-align:left;">Alt Bileşen Tanımı</th>
+                <th style="width:100px; text-align:center;">Değişken</th>
+                <th style="width:120px; text-align:center;">İç Ağırlık</th>
+                <th style="min-width:280px; text-align:left;">Ölçülen Gösterge & Veri Seti Eşleme Mantığı</th>
+                <th style="width:130px; text-align:center;">Risk Puan Aralığı</th>
+                <th style="width:130px; text-align:center;">400 İlaç Ortalaması</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">1. Tedarik Süresi (Lead Time)</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#0284c7;">S_L</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">%35 (0.35)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Siparişten teslimata kadar geçen süre: İthal & soğuk zincir/steril (95), standart ithal (85), yerli enjeksiyon (60), yerli oral katı (30)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">30 – 95</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">${stats.avgL} / 100</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">2. Tedarik Süresindeki Değişkenlik</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#0284c7;">S_V</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">%25 (0.25)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Teslimat sürelerinin öngörülemezliği: İthal & FDA stok kısıtı (90), yerli stok kısıtı (70), ithal rutin (45), yerli rutin (20)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">20 – 90</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">${stats.avgV} / 100</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">3. Lojistik Gecikme Riski</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#0284c7;">S_G</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">%25 (0.25)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Sevkiyat ve dağıtım kaynaklı aksamalar: FDA'da doğrudan "Delay in shipping" bildirilmiş (100), ithal soğuk zincir (50), standart ithal (35), yerli (20)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">20 – 100</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">${stats.avgG} / 100</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700; color:#0f172a;">4. Tedarik Zinciri Bağımlılığı</td>
+                <td style="text-align:center; font-family:'DM Mono', monospace; font-weight:800; color:#0284c7;">S_B</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">%15 (0.15)</td>
+                <td style="font-size:12.5px; color:#334155;">
+                  Coğrafi ve güzergâh bağımlılığı: Tek ithalatçı bağımlısı (%100 İthal & 0 Yerli Muadil) (100), kısmi ithal (65), yerli çoklu kanal (25)
+                </td>
+                <td style="text-align:center; font-weight:700; color:#0f172a;">25 – 100</td>
+                <td style="text-align:center; font-weight:800; color:#0284c7;">${stats.avgB} / 100</td>
+              </tr>
+              <tr style="background:#f0f9ff; font-weight:800;">
+                <td style="color:#0369a1;">TOPLAM AĞIRLIKLI R₅ MODELİ</td>
+                <td style="text-align:center; color:#0369a1;">∑</td>
+                <td style="text-align:center; color:#0369a1;">%100 (1.00)</td>
+                <td colspan="2" style="font-family:'DM Mono', monospace; font-size:12.5px; color:#0369a1;">
+                  R₅ = 0.35 S_L + 0.25 S_V + 0.25 S_G + 0.15 S_B
+                </td>
+                <td style="text-align:center; font-size:14px; color:#0369a1;">
+                  ${stats.avgR5} / 100
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 4 Formül Kutusu -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px;">
+          <div style="background:#f8fafc; padding:14px 18px; border-radius:10px; border:1.5px solid #cbd5e1;">
+            <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase;">1. S_L — Tedarik Süresi (%35):</div>
+            <div style="font-size:14px; font-weight:800; color:#0f172a; margin:6px 0; font-family:'DM Mono', monospace;">
+              İthal/Soğuk: 95 · İthal: 85 · Yerli: 30
+            </div>
+            <div style="font-size:12px; color:#475569; line-height:1.45;">
+              • Siparişten teslimata kadar geçen süre. Taşıma mesafesi ve soğuk zincir gereksinimi arttıkça puan yükselir.
+            </div>
+          </div>
+
+          <div style="background:#eff6ff; padding:14px 18px; border-radius:10px; border:1.5px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase;">2. S_V — Değişkenlik (%25):</div>
+            <div style="font-size:14px; font-weight:800; color:#1e40af; margin:6px 0; font-family:'DM Mono', monospace;">
+              Kısıtlı: 70–90 · Rutin: 20–45
+            </div>
+            <div style="font-size:12px; color:#1e40af; line-height:1.45;">
+              • Teslimat sürelerindeki belirsizlik ve termin sapmaları. FDA stok kısıtı ve gümrük değişkenliği puanlanır.
+            </div>
+          </div>
+
+          <div style="background:#fef2f2; padding:14px 18px; border-radius:10px; border:1.5px solid #fecaca;">
+            <div style="font-size:11px; font-weight:800; color:#b91c1c; text-transform:uppercase;">3. S_G — Lojistik Gecikme (%25):</div>
+            <div style="font-size:14px; font-weight:800; color:#991b1b; margin:6px 0; font-family:'DM Mono', monospace;">
+              Shipping Delay: 100 · Standart: 20–50
+            </div>
+            <div style="font-size:12px; color:#7f1d1d; line-height:1.45;">
+              • FDA'da sevkiyat gecikmesi bildirilen ilaçlar 100 puan alır. Kriz nedeni boşsa eksik veri uyarısı verilir.
+            </div>
+          </div>
+
+          <div style="background:#faf5ff; padding:14px 18px; border-radius:10px; border:1.5px solid #e9d5ff;">
+            <div style="font-size:11px; font-weight:800; color:#7e22ce; text-transform:uppercase;">4. S_B — Coğrafi Bağımlılık (%15):</div>
+            <div style="font-size:14px; font-weight:800; color:#6b21a8; margin:6px 0; font-family:'DM Mono', monospace;">
+              0 Muadil İthal: 100 · Yerli: 25
+            </div>
+            <div style="font-size:12px; color:#581c87; line-height:1.45;">
+              • Tek kaynak ülke veya dış güzergâha coğrafi bağımlılık. Yerli muadili olmayan ithal ilaçlar 100 puan alır.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 2: 400 YEŞİL REÇETELİ İLAÇ İSTATİSTİK ÖZETİ & KOLEKTİF AKTARIM -->
+      <div style="background:#ffffff; border:1.5px solid #7dd3fc; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(2,132,199,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:12px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">
+              2. 400 Yeşil Reçeteli İlaç Lojistik Risk Dağılımı ve Kolektif Puan:
+            </div>
+            <p style="font-size:13px; color:#64748b; margin:3px 0 0;">
+              Veri tabanındaki 400 yeşil reçeteli ilacın tedarik menşei, soğuk zincir gereksinimi ve sevkiyat durumları analiz edilmiştir:
+            </p>
+          </div>
+
+          <button type="button" class="button" style="background:#0284c7; border-color:#0369a1; font-weight:800; font-size:12.5px; padding:10px 22px; box-shadow:0 4px 12px rgba(2,132,199,0.25);" onclick="applyCollectiveR5ToCriterion()">
+            🎯 400 İlacın Ağırlıklı Ortalama R₅ Puanını (${stats.avgR5}) Ata
+          </button>
+        </div>
+
+        <!-- 5 Metrik Kartı -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
+          <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; border:1px solid #e2e8f0;">
+            <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Ortalama S_L (%35):</div>
+            <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:2px;">${stats.avgL} / 100</div>
+            <small style="font-size:11px; color:#64748b; display:block; margin-top:2px;">Tedarik Süresi (Lead Time)</small>
+          </div>
+
+          <div style="background:#eff6ff; padding:12px 14px; border-radius:10px; border:1px solid #bfdbfe;">
+            <div style="font-size:11px; font-weight:700; color:#1d4ed8; text-transform:uppercase;">Ortalama S_V (%25):</div>
+            <div style="font-size:18px; font-weight:800; color:#1e40af; margin-top:2px;">${stats.avgV} / 100</div>
+            <small style="font-size:11px; color:#3b82f6; display:block; margin-top:2px;">Tedarik Değişkenliği</small>
+          </div>
+
+          <div style="background:#fef2f2; padding:12px 14px; border-radius:10px; border:1px solid #fecaca;">
+            <div style="font-size:11px; font-weight:700; color:#b91c1c; text-transform:uppercase;">Ortalama S_G (%25):</div>
+            <div style="font-size:18px; font-weight:800; color:#991b1b; margin-top:2px;">${stats.avgG} / 100</div>
+            <small style="font-size:11px; color:#b91c1c; display:block; margin-top:2px;">${stats.shippingDelayCount} İlaçta Sevkiyat Gecikmesi</small>
+          </div>
+
+          <div style="background:#faf5ff; padding:12px 14px; border-radius:10px; border:1px solid #e9d5ff;">
+            <div style="font-size:11px; font-weight:700; color:#7e22ce; text-transform:uppercase;">Ortalama S_B (%15):</div>
+            <div style="font-size:18px; font-weight:800; color:#6b21a8; margin-top:2px;">${stats.avgB} / 100</div>
+            <small style="font-size:11px; color:#7e22ce; display:block; margin-top:2px;">${stats.importCount} İlaç İthal Menşeli</small>
+          </div>
+
+          <div style="background:linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding:12px 14px; border-radius:10px; border:1.5px solid #7dd3fc; box-shadow:0 2px 8px rgba(2,132,199,0.1);">
+            <div style="font-size:11px; font-weight:800; color:#0369a1; text-transform:uppercase;">Kolektif Ağırlıklı R₅:</div>
+            <div style="font-size:19px; font-weight:800; color:#0c4a6e; margin-top:2px;">${stats.avgR5} / 100</div>
+            <small style="font-size:11px; font-weight:700; color:#0369a1; display:block; margin-top:2px;">Çok Yüksek Risk Bandı</small>
+          </div>
+        </div>
+
+        <!-- Risk Kademe ve Filtre Çipleri -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <span style="font-size:12px; font-weight:700; color:#64748b; margin-right:4px;">Lojistik Filtreleri:</span>
+          <button type="button" class="r2-filter-btn ${r5DrugFilterState.tierFilter === 'all' ? 'active' : ''}" onclick="handleR5TierFilter('all')">
+            🌐 Tümü (${stats.total})
+          </button>
+          <button type="button" class="r2-filter-btn ${r5DrugFilterState.tierFilter === 'shipping_delay' ? 'active' : ''}" style="${r5DrugFilterState.tierFilter === 'shipping_delay' ? 'background:#fee2e2; border-color:#fca5a5; color:#991b1b;' : 'border-color:#fecaca; color:#b91c1c;'}" onclick="handleR5TierFilter('shipping_delay')">
+            🚨 Sevkiyat Gecikmesi Bildirilenler (${stats.shippingDelayCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r5DrugFilterState.tierFilter === 'sterile' ? 'active' : ''}" style="${r5DrugFilterState.tierFilter === 'sterile' ? 'background:#e0f2fe; border-color:#bae6fd; color:#0369a1;' : 'border-color:#bfdbfe; color:#0284c7;'}" onclick="handleR5TierFilter('sterile')">
+            ❄️ Soğuk Zincir / Enjeksiyon (${stats.sterileCount})
+          </button>
+          <button type="button" class="r2-filter-btn ${r5DrugFilterState.tierFilter === 'import' ? 'active' : ''}" style="${r5DrugFilterState.tierFilter === 'import' ? 'background:#faf5ff; border-color:#e9d5ff; color:#6b21a8;' : 'border-color:#e9d5ff; color:#7e22ce;'}" onclick="handleR5TierFilter('import')">
+            🚢 İthal Menşeliler (${stats.importCount})
+          </button>
+          ${stats.tiers.map(t => `
+            <button type="button" class="r2-filter-btn ${r5DrugFilterState.tierFilter === t.key ? 'active' : ''}" onclick="handleR5TierFilter('${t.key}')">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${t.color};"></span>
+              ${t.label}: <b>${t.count}</b>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- BÖLÜM 3: 400 İLAÇ BAZINDA 4 ALT GÖSTERGE VE NİHAİ R₅ TABLOSU -->
+      <div style="background:#ffffff; border:1.5px solid #7dd3fc; border-radius:14px; padding:22px; margin-bottom:22px; box-shadow:0 4px 14px rgba(2,132,199,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h3 style="margin:0 0 4px; font-size:17px; font-family:Outfit; color:#0369a1; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> 400 Yeşil Reçeteli İlaç İçin Lojistik Alt Bileşenleri ve Nihai R₅ Tablosu
+            </h3>
+            <p style="margin:0; font-size:12.5px; color:#64748b;">
+              Her ilacın tedarik süresi (S_L), değişkenliği (S_V), lojistik gecikmesi (S_G) ve güzergâh bağımlılığı (S_B) hesaplanmıştır.
+            </p>
+          </div>
+
+          <div style="position:relative; width:260px;">
+            <input type="text" value="${esc(r5DrugFilterState.query)}" placeholder="İlaç adı, üretici veya form ara..." style="width:100%; height:34px; padding:0 12px 0 30px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:12px; outline:none; box-sizing:border-box;" oninput="handleR5DrugSearch(this.value)">
+            <span style="position:absolute; left:9px; top:8px; font-size:13px; color:#94a3b8;">🔍</span>
+          </div>
+        </div>
+
+        <div class="data-table" style="overflow-x:auto;">
+          <table class="r5-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">#</th>
+                <th style="min-width:180px;">İlaç / Etkin Madde & Dozaj Formu</th>
+                <th style="min-width:150px;">Üretici Firma</th>
+                <th style="min-width:140px; text-align:center;">Menşei & Soğuk Zincir</th>
+                <th style="min-width:100px; text-align:center;">S_L (%35)</th>
+                <th style="min-width:100px; text-align:center;">S_V (%25)</th>
+                <th style="min-width:100px; text-align:center;">S_G (%25)</th>
+                <th style="min-width:100px; text-align:center;">S_B (%15)</th>
+                <th style="min-width:120px; text-align:center;">Nihai R₅ Skoru</th>
+                <th style="min-width:130px; text-align:center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${r5PaginatedDrugs.length === 0 ? `
+                <tr>
+                  <td colspan="10" style="text-align:center; padding:32px; color:#64748b;">
+                    Arama kriterlerine uygun yeşil reçeteli ilaç bulunamadı.
+                  </td>
+                </tr>
+              ` : r5PaginatedDrugs.map((item, idx) => {
+                const r = item.record;
+                const seq = r5StartIdx + idx + 1;
+                const isSelected = riskCriteriaSelectedDrugId && String(riskCriteriaSelectedDrugId) === String(r.id);
+                return `
+                  <tr style="border-bottom:1px solid #f1f5f9; ${isSelected ? 'background:#f0f9ff;' : ''}">
+                    <td style="text-align:center; font-weight:700; color:#64748b;">${seq}</td>
+                    <td>
+                      <div style="font-weight:700; color:#0f172a; font-size:13px;">${esc(r.generic_name || r.brand_name || '—')}</div>
+                      <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${esc(r.presentation || '—')}</div>
+                    </td>
+                    <td>
+                      <span style="font-weight:600; color:#334155; font-size:12px;">🏢 ${esc(r.manufacturer || r.vendor || '—')}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:flex; flex-direction:column; gap:3px; align-items:center;">
+                        <span class="badge" style="background:${item.isImport ? '#faf5ff' : '#ecfdf5'}; color:${item.isImport ? '#7e22ce' : '#047857'}; border:1px solid ${item.isImport ? '#e9d5ff' : '#a7f3d0'}; font-weight:700; font-size:10.5px; padding:2px 7px;">
+                          ${item.isImport ? 'İthal Menşeli' : 'Yerli İmalat'}
+                        </span>
+                        ${item.isSterileOrCold ? `
+                          <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700; font-size:10px; padding:1px 6px;">
+                            ❄️ Soğuk Zincir/Steril
+                          </span>
+                        ` : ''}
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-weight:800; font-size:11px; padding:3px 7px;" title="${esc(item.sLLabel)}">
+                        ${item.sL}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-weight:800; font-size:11px; padding:3px 7px;" title="${esc(item.sVLabel)}">
+                        ${item.sV}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:${item.hasShippingDelay ? '#fee2e2' : '#f1f5f9'}; color:${item.hasShippingDelay ? '#991b1b' : '#0f172a'}; border:1px solid ${item.hasShippingDelay ? '#fca5a5' : '#cbd5e1'}; font-weight:800; font-size:11px; padding:3px 7px;" title="${esc(item.sGLabel)}">
+                        ${item.sG}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-weight:800; font-size:11px; padding:3px 7px;" title="${esc(item.sBLabel)}">
+                        ${item.sB}/100
+                      </span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:inline-flex; align-items:center; gap:6px;">
+                        <span class="badge" style="background:${item.badgeBg}; color:${item.badgeColor}; border:1px solid ${item.border}; font-weight:900; font-size:13px; padding:4px 10px;">
+                          ${item.r5Score}/100
+                        </span>
+                      </div>
+                    </td>
+                    <td style="text-align:center;">
+                      <button type="button" class="button secondary" style="font-size:11px; padding:5px 10px; font-weight:700; color:#0284c7; border-color:#7dd3fc; background:#fff;" onclick="applySingleDrugR5ToCriterion('${esc(r.id)}')">
+                        🎯 Bu Puanı (${item.r5Score}) R₅'e Ata
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sayfalama Kontrolleri -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:14px;">
+          <div style="font-size:12px; color:var(--muted); font-weight:600;">
+            Filtrelenen <b>${r5TotalFiltered}</b> yeşil reçeteli ilaçtan <b>${r5StartIdx + 1} - ${r5EndIdx}</b> arası listeleniyor.
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR5DrugPage(${r5DrugFilterState.page - 1})" ${r5DrugFilterState.page <= 1 ? 'disabled' : ''}>
+              ← Önceki
+            </button>
+            <span style="font-size:12px; font-weight:700; padding:0 8px; color:var(--ink);">
+              ${r5DrugFilterState.page} / ${r5TotalPages}
+            </span>
+            <button type="button" class="button secondary" style="font-size:11px; padding:5px 12px; font-weight:700;" onclick="handleR5DrugPage(${r5DrugFilterState.page + 1})" ${r5DrugFilterState.page >= r5TotalPages ? 'disabled' : ''}>
+              Sonraki →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BÖLÜM 4: KRİTER İÇİ ALT GÖSTERGE SİSTEMİ -->
+      <div class="dsrds-boxed-formula" style="margin-bottom: 22px; border-color:#7dd3fc;">
+        <div style="font-size:11px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+          Kriter İçi Matematiksel Alt Gösterge Denklem Sistemi:
+        </div>
+        <div style="font-family:'DM Mono', monospace, Consolas; font-size:16px; font-weight:800; color:#0369a1; margin:8px 0; background:#f0f9ff; padding:12px 16px; border-radius:8px; border:1px solid #7dd3fc;">
+          R₅ = [ ∑<sub>j=1</sub><sup>n₅</sup> ( a₅<sub>j</sub> × S₅<sub>j</sub> ) ] / [ ∑<sub>j=1</sub><sup>n₅</sup> a₅<sub>j</sub> ] = 0.35 S_L + 0.25 S_V + 0.25 S_G + 0.15 S_B
+        </div>
+        <div style="font-size:12px; color:#475569; line-height:1.6; margin-top:8px;">
+          • <b>R₅</b>: Tedarik süresi ve lojistik riskleri kriterinin nihai risk puanı (0–100).<br>
+          • <b>a₅₁ (Tedarik süresi S_L)</b>: %35 ağırlık · Siparişten teslimata kadar geçen süre.<br>
+          • <b>a₅₂ (Tedarik süresi değişkenliği S_V)</b>: %25 ağırlık · Teslimat sürelerindeki belirsizlik/termin sapması.<br>
+          • <b>a₅₃ (Lojistik gecikme riski S_G)</b>: %25 ağırlık · Sevkiyat ve dağıtım kaynaklı aksama ve gecikmeler.<br>
+          • <b>a₅₄ (Tedarik zinciri bağımlılığı S_B)</b>: %15 ağırlık · Tek ülke, tek tedarikçi veya tek güzergâha bağımlılık.<br>
+        </div>
+      </div>
+
+      <div class="crit-action-bar" style="margin-bottom: 20px;">
+        <button type="button" class="button" style="font-size:12px; padding:9px 18px; font-weight:700; background:#0284c7; border-color:#0369a1;" onclick="addSubCriterion(5)">
+          ➕ Yeni Alt Gösterge Ekle (S₅<sub>j</sub>)
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; font-weight:700;" onclick="distributeSubWeightsEqually(5)">
+          ⚖ Alt Ağırlıkları Eşit Dağıt
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#f0f9ff; color:#0369a1; border-color:#7dd3fc; font-weight:700;" onclick="applySubScoreToMainCriterion(5)">
+          ✓ Alt Göstergelerden Hesaplananı Aktar
+        </button>
+        <button type="button" class="button secondary" style="font-size:12px; padding:9px 18px; background:#f0f9ff; color:#0369a1; border-color:#7dd3fc; margin-left:auto; font-weight:700;" onclick="clearSubCriteriaOfCriterion(5)">
+          🗑 Temizle
+        </button>
+      </div>
+
+      <div class="data-table" style="background:#ffffff; border-radius:12px; border:1.5px solid #7dd3fc; overflow:hidden;">
+        <table class="sub-crit-table">
+          <thead>
+            <tr style="background: #f0f9ff;">
+              <th style="width:50px; text-align:center;">j</th>
+              <th style="min-width:280px;">Alt Gösterge Tanımı</th>
+              <th style="width:140px; text-align:center;">Veri Durumu</th>
+              <th style="width:150px; text-align:center;">Alt Ağırlık (a₅<sub>j</sub>, %)</th>
+              <th style="width:150px; text-align:center;">Risk Puanı (S₅<sub>j</sub>, 0-100)</th>
+              <th style="width:140px; text-align:center;">Ağırlıklı Katkı</th>
+              <th style="width:70px; text-align:center;">Sil</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.subCriteria.map((sub, idx) => {
+              const contrib = ((Number(sub.weight) || 0) * (Number(sub.score) || 0) / 100).toFixed(2);
+              return `
+                <tr>
+                  <td style="text-align:center; font-weight:700; color:var(--muted);">${idx + 1}</td>
+                  <td>
+                    <input type="text" value="${esc(sub.name)}" placeholder="Alt gösterge adını girin..." onchange="updateSubCriterionName(5, ${sub.id}, this.value)" oninput="updateSubCriterionName(5, ${sub.id}, this.value)">
+                  </td>
+                  <td style="text-align:center;">
+                    ${sub.dataStatus === 'insufficient' ? `
+                      <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:800; font-size:10.5px; padding:2px 7px;" title="Veri eksikliği uyarısı">⚠️ Eksik Veri</span>
+                    ` : `
+                      <span class="badge" style="background:#dcfce7; color:#166534; border:1px solid #86efac; font-weight:800; font-size:10.5px; padding:2px 7px;">🟢 Mevcut</span>
+                    `}
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" value="${sub.weight}" style="text-align:center; font-weight:700;" onchange="updateSubCriterionWeight(5, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">%</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:4px; justify-content:center;">
+                      <input type="number" min="0" max="100" step="0.1" value="${sub.score}" style="text-align:center; font-weight:700; color:#0284c7;" onchange="updateSubCriterionScore(5, ${sub.id}, this.value)">
+                      <span style="font-size:11px; font-weight:700; color:var(--muted)">/100</span>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:800; color:#0f2942; font-family:'DM Mono', monospace;">
+                    +${contrib}
+                  </td>
+                  <td style="text-align:center;">
+                    <button type="button" title="Sil" style="border:0; background:none; cursor:pointer; font-size:16px; color:#ef4444;" onclick="removeSubCriterion(5, ${sub.id})">
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#f8fafc; font-weight:800; border-top:2px solid #e2e8f0;">
+              <td colspan="3" style="text-align:right; color:var(--ink);">Ağırlıklar Toplamı & Ağırlıklı Ortalama Risk:</td>
+              <td style="text-align:center; color:${subWeightSum === 100 ? 'var(--green)' : '#ea580c'};">
+                ${subWeightSum}% ${subWeightSum === 100 ? '✓' : '⚠️'}
+              </td>
+              <td style="text-align:center; font-size:15px; color:#0284c7;">
+                ${subScore.toFixed(2)} / 100
+              </td>
+              <td style="text-align:center; color:#0284c7; font-family:'DM Mono', monospace;">
+                ${subScore.toFixed(2)}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function renderCriterion6DetailPage(c) {
   const stats = getR6DistributionStats();
   const allDrugs = getV2Green400Records();
@@ -8859,6 +9740,10 @@ function riskCriteriaPage() {
     }
     if (c.id === 4) {
       renderCriterion4DetailPage(c);
+      return;
+    }
+    if (c.id === 5) {
+      renderCriterion5DetailPage(c);
       return;
     }
     if (c.id === 6) {
